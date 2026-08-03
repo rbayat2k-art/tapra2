@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --app-font-family: 'Vazirmatn', 'Vazir', 'Shabnam', 'Samim', 'Sahel', system-ui, -apple-system, sans-serif;
+    --bg-main: #f8fafc;
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --accent-emerald: #059669;
+  }
+
+  .dark {
+    --bg-main: #020617;
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+    --card-bg: #0f172a;
+    --card-border: #1e293b;
+    --accent-emerald: #10b981;
+  }
+
+  * {
+    font-family: var(--app-font-family), system-ui, -apple-system, sans-serif !important;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: var(--app-font-family), system-ui, -apple-system, sans-serif !important;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  button, input, select, textarea, table, th, td, h1, h2, h3, h4, h5, h6, span, p, a, div {
+    font-family: var(--app-font-family), system-ui, -apple-system, sans-serif !important;
+  }
+}
+
+/* Dark Mode Universal Text Contrast Protection */
+html.dark {
+  background-color: #020617 !important;
+  color: #f8fafc !important;
+
+  .text-slate-900, .text-slate-800 {
+    color: #f8fafc !important;
+  }
+  .text-slate-700, .text-slate-600 {
+    color: #e2e8f0 !important;
+  }
+  .text-slate-500 {
+    color: #cbd5e1 !important;
+  }
+}
+
+/* Light Mode Custom Executive Emerald & Soft Slate Styling Helpers */
+html:not(.dark) {
+  /* Slate-900 and Slate-950 containers become crisp white in light mode */
+  .bg-slate-900, .bg-slate-950 {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+  }
+
+  .bg-slate-800 {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+  }
+
+  /* Soft containers & cards */
+  .bg-slate-800\/50, .bg-slate-800\/80, .bg-slate-900\/50, .bg-slate-900\/80, 
+  .bg-slate-950\/70, .bg-slate-950\/80, .bg-slate-950\/40, .bg-slate-900\/40 {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  /* Text colors adaptation for light theme - keep text white when inside dark or emerald containers */
+  .text-white:not(button *):not(.text-white-force):not(.bg-emerald-600 *):not(.bg-indigo-600 *):not(.bg-rose-600 *):not(.bg-amber-500 *):not(.bg-emerald-800 *):not(.bg-emerald-900 *):not(.from-emerald-800 *):not(.bg-slate-900 *) {
+    color: #0f172a;
+  }
+
+  .bg-gradient-to-r.from-emerald-800 *, .from-emerald-800 *, .bg-emerald-800 *, .bg-emerald-900 * {
+    color: #ffffff !important;
+  }
+
+  .from-emerald-800 * .text-emerald-100, .bg-emerald-800 * .text-emerald-100, .text-emerald-100 {
+    color: #e0f2fe !important;
+  }
+
+  .text-slate-100, .text-slate-200, .text-slate-300 {
+    color: #1e293b;
+  }
+
+  .text-slate-400, .text-slate-500 {
+    color: #475569 !important;
+  }
+
+  .border-slate-800, .border-slate-700, .border-slate-800\/80 {
+    border-color: #e2e8f0 !important;
+  }
+
+  /* Emerald executive primary accents in light mode */
+  .bg-indigo-600 {
+    background-color: #059669 !important; /* Rich Emerald Green */
+    color: #ffffff !important;
+  }
+
+  .hover\:bg-indigo-500:hover, .hover\:bg-indigo-600:hover {
+    background-color: #047857 !important;
+  }
+
+  .text-indigo-400, .text-indigo-300 {
+    color: #047857 !important;
+  }
+
+  .bg-indigo-600\/20, .bg-indigo-500\/20, .bg-indigo-950 {
+    background-color: #ecfdf5 !important;
+    color: #065f46 !important;
+    border-color: #a7f3d0 !important;
+  }
+
+  .border-indigo-500\/30, .border-indigo-500\/40 {
+    border-color: #a7f3d0 !important;
+  }
+
+  /* Filled colored buttons, badges and banners ALWAYS keep crisp white text */
+  .bg-emerald-600, .bg-emerald-700, .bg-indigo-600, .bg-blue-600, .bg-rose-600, .bg-amber-500, .bg-amber-600,
+  .bg-emerald-600 *, .bg-emerald-700 *, .bg-indigo-600 *, .bg-blue-600 *, .bg-rose-600 *, .bg-amber-500 *, .bg-amber-600 * {
+    color: #ffffff !important;
+  }
+
+  /* Hero Gradients in light mode */
+  .bg-gradient-to-r.from-slate-900.via-indigo-950.to-slate-900 {
+    background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #065f46 100%) !important;
+    color: #ffffff !important;
+  }
+
+  .bg-gradient-to-tr.from-indigo-600.via-blue-600.to-emerald-500 {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+  }
+
+  /* Tables in light mode */
+  table {
+    background-color: #ffffff !important;
+  }
+
+  thead, thead.bg-slate-950, thead.bg-slate-900 {
+    background-color: #f8fafc !important;
+    color: #1e293b !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+  }
+
+  tbody tr {
+    background-color: #ffffff !important;
+  }
+
+  tbody tr:hover {
+    background-color: #f0fdf4 !important; /* Soft emerald hover */
+  }
+
+  /* Inputs in light mode */
+  input, select, textarea {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: #94a3b8 !important;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #059669;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+

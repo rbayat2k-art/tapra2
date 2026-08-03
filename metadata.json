@@ -1,0 +1,6 @@
+{
+  "name": "سیستم خزانه‌داری یکپارچه tapra",
+  "description": "سیستم جامع خزانه‌داری tapra، مدیریت و تایید درخواست‌های پرداخت، بایگانی فاکتورها و فیش‌های واریزی و چارت گردش کار",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
