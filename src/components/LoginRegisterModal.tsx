@@ -75,7 +75,7 @@ export const LoginRegisterModal: React.FC<LoginRegisterModalProps> = ({
 
       storage.setCurrentUser(foundUser);
       onLoginSuccess(foundUser);
-      onClose();
+      if (onClose) onClose();
     } else {
       setLoginError('نام کاربری یا رمز عبور اشتباه است.');
     }

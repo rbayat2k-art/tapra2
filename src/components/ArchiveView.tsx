@@ -57,25 +57,37 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
   });
 
   // -------------------------------------------------------------
-  // 1. FILTERING PAYMENT REQUESTS
+  // 1. FILTERING PAYMENT REQUESTS ACCORDING TO ROLE & PERMISSIONS
   // -------------------------------------------------------------
   const accessibleRequests = requests.filter(req => {
-    if (!currentUser || isAdmin || currentUser.role === 'treasury_executor') return true;
+    if (!currentUser) return false;
+    if (isAdmin) return true;
 
-    if (currentUser.role === 'requestor') {
-      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
-      const isMyBranch = currentUser.allowedCostCenterIds?.includes(req.costCenterId) || req.costCenterId === currentUser.costCenterId;
-      return isMyOwn || isMyBranch;
+    // Requestors ONLY see their own requests (created by them)
+    if (currentUser.role === 'requestor' && !currentUser.isDualRole) {
+      return req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
     }
 
-    if (currentUser.role === 'approver') {
-      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
+    // Approvers (Branch Managers / Supervisors) see requests created by themselves, assigned to them, in their cost center branch, or where they acted
+    if (currentUser.role === 'approver' || currentUser.isDualRole) {
+      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
       const isAssigned = req.currentApproverId === currentUser.id;
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(req.costCenterId) || req.costCenterId === currentUser.costCenterId;
-      return isMyOwn || isAssigned || isMyBranch;
+      const isInTimeline = req.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
+      return isMyOwn || isAssigned || isMyBranch || isInTimeline;
     }
 
-    return true;
+    // Treasury Executors see requests in treasury stages, assigned to them, created by them, or in their cost center branch
+    if (currentUser.role === 'treasury_executor') {
+      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
+      const isAssigned = req.currentApproverId === currentUser.id;
+      const isTreasuryStage = ['approved_pending_payment', 'paid', 'completed'].includes(req.status);
+      const isMyBranch = currentUser.allowedCostCenterIds?.includes(req.costCenterId) || req.costCenterId === currentUser.costCenterId;
+      const isInTimeline = req.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
+      return isMyOwn || isAssigned || isTreasuryStage || isMyBranch || isInTimeline;
+    }
+
+    return req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
   });
 
   const filteredRequests = accessibleRequests.filter(req => {

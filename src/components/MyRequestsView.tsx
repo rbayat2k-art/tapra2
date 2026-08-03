@@ -44,14 +44,11 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
     return true;
   });
 
-  // Base list of user's requests
+  // Base list of user's requests ("درخواست‌های من" means strictly created by this user)
   const myBaseRequests = requests.filter(r => {
     if (!currentUser) return false;
     if (currentUser.role === 'admin') return true;
-    if (r.requestorId === currentUser.id || r.requestorName === currentUser.fullName) return true;
-    if (currentUser.costCenterId && r.costCenterId === currentUser.costCenterId) return true;
-    if (currentUser.allowedCostCenterIds?.includes(r.costCenterId)) return true;
-    return false;
+    return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
   });
 
   // Split into Open vs Completed
@@ -69,11 +66,22 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
   const filteredRequests = currentTabRequests.filter(r => {
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch = !query || 
-      r.trackingCode.toLowerCase().includes(query) ||
-      r.title.toLowerCase().includes(query) ||
-      r.requestorName.toLowerCase().includes(query) ||
-      r.destinationAccountName.toLowerCase().includes(query) ||
-      (r.description && r.description.toLowerCase().includes(query));
+      (r.trackingCode && r.trackingCode.toLowerCase().includes(query)) ||
+      (r.title && r.title.toLowerCase().includes(query)) ||
+      (r.requestorName && r.requestorName.toLowerCase().includes(query)) ||
+      (r.companyName && r.companyName.toLowerCase().includes(query)) ||
+      (r.costCenterName && r.costCenterName.toLowerCase().includes(query)) ||
+      (r.vendorName && r.vendorName.toLowerCase().includes(query)) ||
+      (r.destinationAccountName && r.destinationAccountName.toLowerCase().includes(query)) ||
+      (r.destinationCardNumber && r.destinationCardNumber.toLowerCase().includes(query)) ||
+      (r.destinationSheba && r.destinationSheba.toLowerCase().includes(query)) ||
+      (r.destinationBankName && r.destinationBankName.toLowerCase().includes(query)) ||
+      (r.description && r.description.toLowerCase().includes(query)) ||
+      (r.amount && r.amount.toString().includes(query)) ||
+      (r.amountInWords && r.amountInWords.toLowerCase().includes(query)) ||
+      (r.costCenterAllocations && r.costCenterAllocations.some(a => 
+        a.costCenterName.toLowerCase().includes(query) || a.companyName.toLowerCase().includes(query)
+      ));
 
     const matchesCostCenter = selectedCostCenter === 'all' || r.costCenterId === selectedCostCenter;
 
@@ -120,13 +128,15 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={onOpenNewRequest}
-          className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-2xl shadow-lg transition transform hover:-translate-y-0.5 flex items-center gap-2 cursor-pointer"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>ثبت درخواست جدید</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.canCreateRequests !== false) && (
+          <button
+            onClick={onOpenNewRequest}
+            className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-2xl shadow-lg transition transform hover:-translate-y-0.5 flex items-center gap-2 cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>ثبت درخواست جدید</span>
+          </button>
+        )}
       </div>
 
       {/* iOS Style Segmented Sub-Tab Switcher */}
@@ -189,12 +199,12 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           
           {/* Search Query Input */}
-          <div className="relative">
+          <div className="relative md:col-span-2">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="جستجو در عنوان، کد K500... یا نام صاحب حساب"
+              placeholder="جستجو بر اساس تمامی فیلدها (کد، عنوان، متقاضی، مرکز هزینه، شبا، کارت، مبلغ، توضیحات...)"
               className="w-full bg-slate-800 text-white text-xs rounded-xl pr-9 pl-3 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
             />
             <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />

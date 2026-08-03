@@ -230,6 +230,15 @@ export const AllCommunicationsAuditView: React.FC<AllCommunicationsAuditViewProp
   const filteredItems = useMemo(() => {
     return allAuditItems
       .filter((item) => {
+        // Privacy filter for non-admin users
+        if (currentUser && currentUser.role !== 'admin') {
+          const isParticipant = item.senderName === currentUser.fullName || item.recipientName === currentUser.fullName;
+          const isPublicChat = item.type === 'public_chat';
+          if (!isParticipant && !isPublicChat) {
+            return false;
+          }
+        }
+
         // Category filter
         if (selectedCategory !== 'all' && item.type !== selectedCategory) return false;
 

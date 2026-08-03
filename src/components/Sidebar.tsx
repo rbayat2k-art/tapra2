@@ -59,6 +59,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const hasAccess = (required?: SystemPermission[]) => {
     if (!required || required.length === 0) return true;
+    if (isAdmin) return true;
+
+    // Direct explicit toggle check for create_request permission
+    if (required.includes('create_request')) {
+      if (currentUser?.canCreateRequests !== undefined) {
+        if (currentUser.canCreateRequests) return true;
+        if (!currentUser.canCreateRequests) return false;
+      }
+    }
+
+    // Direct explicit check for task directives permission
+    if (required.includes('manage_assigned_tasks')) {
+      if (isAdmin) return true;
+      const canIssue = currentUser?.canIssueTasks === true;
+      const canExecute = currentUser?.canExecuteTasks === true;
+      const hasCustom = !!currentUser?.customPermissions?.includes('manage_assigned_tasks');
+      const hasTaskAccess = canIssue || canExecute || hasCustom;
+      if (!hasTaskAccess) return false;
+      return true;
+    }
+
     if (effectivePermissions === null) return true;
     return required.some((p) => effectivePermissions!.includes(p));
   };
@@ -70,7 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'داشبورد و خلاصه آمار', icon: LayoutDashboard, badge: null },
     { id: 'new_request', label: 'ثبت درخواست جدید', icon: PlusCircle, badge: null, requires: ['create_request'] },
     { id: 'my_requests', label: 'درخواست‌های من', icon: FileText, badge: myRequestsCount > 0 ? myRequestsCount : null, requires: ['create_request'] },
-    { id: 'assigned_tasks', label: 'کارهای محوله و دستورات', icon: CheckSquare, badge: 'جدید', badgeColor: 'bg-indigo-600' },
+    { id: 'assigned_tasks', label: 'کارهای محوله و دستورات', icon: CheckSquare, badge: 'جدید', badgeColor: 'bg-indigo-600', requires: ['manage_assigned_tasks'] },
     { id: 'approval_inbox', label: 'کارتابل تایید و پرداخت', icon: Inbox, badge: pendingApprovalCount > 0 ? pendingApprovalCount : null, badgeColor: 'bg-amber-500', requires: ['approve_branch_request', 'approve_treasury', 'execute_payment'] },
     { id: 'style_settings', label: 'تنظیمات استایل و فونت', icon: Palette, badge: 'جدید', badgeColor: 'bg-emerald-600' },
     { id: 'cost_centers', label: 'شعب فروش و مراکز هزینه', icon: MapPin, badge: null, requires: ['manage_cost_centers'] },

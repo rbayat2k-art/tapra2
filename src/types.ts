@@ -50,6 +50,7 @@ export interface User {
   password?: string;
   
   // Custom Task & Directive Permissions set by Admin
+  canCreateRequests?: boolean; // آیا مجاز به ایجاد و ثبت درخواست پرداخت جدید است (مستقل از نقش اصلی)
   canIssueTasks?: boolean; // آیا مجاز به صدور و ارجاع دستورات اداری به دیگران است (صادرکننده)
   canExecuteTasks?: boolean; // آیا مجاز به دریافت و انجام کارهای محوله است (مجری)
   

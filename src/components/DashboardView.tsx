@@ -26,10 +26,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onSelectRequest
 }) => {
-  const pendingCount = requests.filter(r => r.status === 'pending_approval' || r.status === 'approved_pending_payment').length;
-  const paidRequests = requests.filter(r => r.status === 'paid');
+  // Filter accessible requests according to user role
+  const userAccessibleRequests = requests.filter(r => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+
+    if (currentUser.role === 'requestor' && !currentUser.isDualRole) {
+      return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+    }
+
+    if (currentUser.role === 'approver' || currentUser.isDualRole) {
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isAssigned = r.currentApproverId === currentUser.id;
+      const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
+      const isInTimeline = r.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
+      return isMyOwn || isAssigned || isMyBranch || isInTimeline;
+    }
+
+    if (currentUser.role === 'treasury_executor') {
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isAssigned = r.currentApproverId === currentUser.id;
+      const isTreasuryStage = ['approved_pending_payment', 'paid', 'completed'].includes(r.status);
+      const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
+      return isMyOwn || isAssigned || isTreasuryStage || isMyBranch;
+    }
+
+    return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
+  });
+
+  const pendingCount = userAccessibleRequests.filter(r => r.status === 'pending_approval' || r.status === 'approved_pending_payment').length;
+  const paidRequests = userAccessibleRequests.filter(r => r.status === 'paid');
   const totalPaidAmount = paidRequests.reduce((sum, r) => sum + r.amount, 0);
-  const returnedCount = requests.filter(r => r.status === 'returned').length;
+  const returnedCount = userAccessibleRequests.filter(r => r.status === 'returned').length;
 
   // Security & Privacy: Filter cost centers based on user branch permissions
   const displayedCostCenters = costCenters.filter(cc => {
@@ -101,7 +129,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Returned Count */}
         <div 
-          onClick={() => onNavigateTab('my_requests')}
+          onClick={() => {
+            const canCreate = currentUser?.role === 'admin' || (currentUser?.canCreateRequests !== false);
+            if (canCreate) {
+              onNavigateTab('my_requests');
+            } else {
+              onNavigateTab('approval_inbox');
+            }
+          }}
           className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-orange-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
         >
           <div className="flex items-center justify-between mb-3">

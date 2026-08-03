@@ -47,30 +47,75 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [requestType, setRequestType] = useState<RequestType>('current_payment');
   const [title, setTitle] = useState('');
   
-  // Default company from currentUser if set by Admin
-  const defaultCompanyId = (currentUser?.companyId && companies.some(c => c.id === currentUser.companyId))
-    ? currentUser.companyId
-    : (companies[0]?.id || 'comp_sales');
-  const [companyId, setCompanyId] = useState(defaultCompanyId);
-  
-  // Branch / Cost Center filtering based on User's allowed cost centers
+  // 1. Branch / Cost Center filtering based on User's allowed cost centers
   const userAllowedCostCenters = costCenters.filter(cc => {
-    if (currentUser?.allowedCostCenterIds && currentUser.allowedCostCenterIds.length > 0) {
+    if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'treasury_executor') return true;
+    if (currentUser.allowedCostCenterIds && currentUser.allowedCostCenterIds.length > 0) {
       return currentUser.allowedCostCenterIds.includes(cc.id);
     }
-    if (currentUser?.costCenterId) {
+    if (currentUser.costCenterId) {
       return cc.id === currentUser.costCenterId;
     }
     return true;
   });
-  const availableCostCenters = userAllowedCostCenters.length > 0 ? userAllowedCostCenters : costCenters;
 
-  // Default Cost Center: if assigned by admin, pre-select it; otherwise default to '' requiring user selection
-  const defaultCostCenterId = (currentUser?.costCenterId && availableCostCenters.some(cc => cc.id === currentUser.costCenterId))
+  // 2. Allowed Companies: Only companies that contain at least one of the user's allowed cost centers (or assigned company)
+  const userAllowedCompanies = companies.filter(c => {
+    if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'treasury_executor') return true;
+    const hasCostCenterInCompany = userAllowedCostCenters.some(cc => cc.companyId === c.id);
+    if (currentUser.companyId) {
+      return c.id === currentUser.companyId || hasCostCenterInCompany;
+    }
+    return hasCostCenterInCompany;
+  });
+
+  const availableCompanies = userAllowedCompanies.length > 0 ? userAllowedCompanies : companies;
+
+  // Default company from currentUser if allowed, otherwise first available allowed company
+  const defaultCompanyId = (currentUser?.companyId && availableCompanies.some(c => c.id === currentUser.companyId))
+    ? currentUser.companyId
+    : (availableCompanies[0]?.id || companies[0]?.id || 'comp_sales');
+
+  const [companyId, setCompanyId] = useState(defaultCompanyId);
+  
+  // 3. Available Cost Centers strictly belonging to the currently selected Company AND allowed for user
+  const availableCostCentersForCompany = userAllowedCostCenters.filter(cc => cc.companyId === companyId);
+
+  // Default Cost Center: if assigned by admin and belongs to current company, pre-select it; otherwise auto-select if 1 option
+  const defaultCostCenterId = (currentUser?.costCenterId && availableCostCentersForCompany.some(cc => cc.id === currentUser.costCenterId))
     ? currentUser.costCenterId
-    : (availableCostCenters.length === 1 ? availableCostCenters[0].id : '');
+    : (availableCostCentersForCompany.length === 1 ? availableCostCentersForCompany[0].id : '');
 
   const [costCenterId, setCostCenterId] = useState(defaultCostCenterId);
+
+  // Handle changing selected company -> automatically filter and sync cost center
+  const handleCompanyChange = (newCompId: string) => {
+    setCompanyId(newCompId);
+    const validCCs = userAllowedCostCenters.filter(cc => cc.companyId === newCompId);
+    if (validCCs.length === 1) {
+      setCostCenterId(validCCs[0].id);
+    } else if (!validCCs.some(cc => cc.id === costCenterId)) {
+      setCostCenterId(validCCs[0]?.id || '');
+    }
+  };
+
+  // Sync state whenever modal opens or user permissions change
+  React.useEffect(() => {
+    if (isOpen) {
+      const validComps = userAllowedCompanies.length > 0 ? userAllowedCompanies : companies;
+      let compToUse = companyId;
+      if (!validComps.some(c => c.id === companyId)) {
+        compToUse = validComps[0]?.id || '';
+        setCompanyId(compToUse);
+      }
+      const validCCs = userAllowedCostCenters.filter(cc => cc.companyId === compToUse);
+      if (validCCs.length === 1) {
+        setCostCenterId(validCCs[0].id);
+      } else if (!validCCs.some(cc => cc.id === costCenterId)) {
+        setCostCenterId(validCCs[0]?.id || '');
+      }
+    }
+  }, [isOpen]);
   
   // Amount & Destination (No default amount!)
   const [amountRaw, setAmountRaw] = useState<string>('');
@@ -128,8 +173,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setIsMultiCostCenter(nextState);
 
     if (nextState && allocations.length === 0) {
-      const cc1 = costCenterId || availableCostCenters[0]?.id || costCenters[0]?.id || '';
-      const cc2 = availableCostCenters.find(c => c.id !== cc1)?.id || costCenters.find(c => c.id !== cc1)?.id || cc1;
+      const cc1 = costCenterId || userAllowedCostCenters[0]?.id || costCenters[0]?.id || '';
+      const cc2 = userAllowedCostCenters.find(c => c.id !== cc1)?.id || costCenters.find(c => c.id !== cc1)?.id || cc1;
 
       const share = numericAmount > 0 ? Math.floor(numericAmount / 2) : 0;
       const remainder = numericAmount > 0 ? numericAmount - (share * 2) : 0;
@@ -144,7 +189,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const addAllocationRow = () => {
     setFormError(null);
     const usedCcIds = allocations.map(a => a.costCenterId);
-    const unusedCc = availableCostCenters.find(c => !usedCcIds.includes(c.id)) || costCenters.find(c => !usedCcIds.includes(c.id)) || availableCostCenters[0] || costCenters[0];
+    const unusedCc = userAllowedCostCenters.find(c => !usedCcIds.includes(c.id)) || costCenters.find(c => !usedCcIds.includes(c.id)) || userAllowedCostCenters[0] || costCenters[0];
 
     setAllocations(prev => [
       ...prev,
@@ -173,6 +218,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       if (a.id === id) {
         if (field === 'amount') {
           return { ...a, amount: val.replace(/\D/g, '') };
+        }
+        if (field === 'companyId') {
+          const validCCs = userAllowedCostCenters.filter(cc => cc.companyId === val);
+          return { ...a, companyId: val, costCenterId: validCCs[0]?.id || '' };
         }
         return { ...a, [field]: val };
       }
@@ -308,7 +357,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     setIsSubmitting(true);
 
     const company = companies.find(c => c.id === companyId) || companies[0];
-    const costCenter = availableCostCenters.find(cc => cc.id === effectiveCostCenterId) || availableCostCenters[0] || costCenters[0];
+    const costCenter = userAllowedCostCenters.find(cc => cc.id === effectiveCostCenterId) || userAllowedCostCenters[0] || costCenters[0];
 
     const reqUser = currentUser || {
       id: 'guest',
@@ -558,11 +607,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               </label>
               <select
                 value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                onChange={(e) => handleCompanyChange(e.target.value)}
+                className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500 font-bold"
               >
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {availableCompanies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
                 ))}
               </select>
             </div>
@@ -582,13 +631,19 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 {!costCenterId && (
                   <option value="">-- انتخاب مرکز هزینه / شعبه (الزامی) --</option>
                 )}
-                {availableCostCenters.map(cc => (
-                  <option key={cc.id} value={cc.id}>{cc.name}</option>
+                {availableCostCentersForCompany.map(cc => (
+                  <option key={cc.id} value={cc.id}>{cc.name} ({cc.code})</option>
                 ))}
               </select>
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                هزینه‌ها در سیستم مالی به این مرکز هزینه تخصیص می‌یابند.
-              </span>
+              {availableCostCentersForCompany.length === 0 ? (
+                <span className="text-[10px] text-rose-400 mt-1 block font-bold">
+                  هیچ مرکز هزینه‌ای برای این شرکت در دسترسی شما تعریف نشده است.
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  هزینه‌ها در سیستم مالی به این مرکز هزینه تخصیص می‌یابند.
+                </span>
+              )}
             </div>
           </div>
 
@@ -690,9 +745,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                           <select
                             value={alloc.companyId}
                             onChange={(e) => updateAllocationRow(alloc.id, 'companyId', e.target.value)}
-                            className="w-full bg-slate-800 text-white text-xs rounded-lg p-1.5 border border-slate-700"
+                            className="w-full bg-slate-800 text-white text-xs rounded-lg p-1.5 border border-slate-700 font-bold"
                           >
-                            {companies.map(c => (
+                            {availableCompanies.map(c => (
                               <option key={c.id} value={c.id}>{c.name}</option>
                             ))}
                           </select>
@@ -706,9 +761,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                             className="w-full bg-slate-800 text-amber-300 text-xs rounded-lg p-1.5 border border-slate-700 font-bold"
                           >
                             <option value="">-- انتخاب شعبه --</option>
-                            {costCenters.map(cc => (
-                              <option key={cc.id} value={cc.id}>{cc.name}</option>
-                            ))}
+                            {userAllowedCostCenters
+                              .filter(cc => cc.companyId === alloc.companyId)
+                              .map(cc => (
+                                <option key={cc.id} value={cc.id}>{cc.name} ({cc.code})</option>
+                              ))}
                           </select>
                         </div>
 

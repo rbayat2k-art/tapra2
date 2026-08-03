@@ -260,6 +260,8 @@ export const DEFAULT_USERS: User[] = [
     approvalChain: ['user_admin_reza', 'user_treasury_exec'],
     allowDirectToTreasury: true,
     isSeniorTreasurySupervisor: true,
+    canIssueTasks: true,
+    canExecuteTasks: true,
     workflowNote: 'ادمین ارشد سیستم با اختیارات کامل جهت صدور دستور پرداخت و ارسال مستقیم به واریز'
   },
   {
@@ -277,6 +279,8 @@ export const DEFAULT_USERS: User[] = [
     allowedApproverIds: ['user_admin_reza'],
     approvalChain: ['user_admin_reza', 'user_treasury_exec'],
     allowDirectToTreasury: true,
+    canIssueTasks: true,
+    canExecuteTasks: true,
     workflowNote: 'مجری عملیات پرداخت بانکی و آپلود فیش‌های پایا / کارت‌به‌کارت'
   },
   {
@@ -295,6 +299,8 @@ export const DEFAULT_USERS: User[] = [
     allowedApproverIds: ['user_admin_reza', 'user_treasury_exec'],
     approvalChain: ['user_approver_sales', 'user_admin_reza', 'user_treasury_exec'],
     allowDirectToTreasury: true,
+    canIssueTasks: true,
+    canExecuteTasks: true,
     workflowNote: 'تاییدکننده اول درخواست‌های شعب فروش و ارجاع‌دهنده به خزانه‌داری مرکز'
   },
   {
@@ -312,6 +318,8 @@ export const DEFAULT_USERS: User[] = [
     allowedApproverIds: ['user_approver_sales', 'user_admin_reza'],
     approvalChain: ['user_requestor_poonak', 'user_approver_sales', 'user_admin_reza', 'user_treasury_exec'],
     allowDirectToTreasury: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
     workflowNote: 'مسئول خرید شعبه پونک با امکان ارسال به مهندس احمدی یا مستقیم به رضا بیات'
   },
   {
@@ -327,6 +335,8 @@ export const DEFAULT_USERS: User[] = [
     costCenterId: 'cc_saadatabad',
     password: '123456',
     isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
     workflowNote: 'ثبت‌کننده پرونده‌های تماس مشتریان و درخواست عودت وجه'
   },
   {
@@ -342,6 +352,8 @@ export const DEFAULT_USERS: User[] = [
     costCenterId: 'cc_hq',
     password: '123456',
     isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
     workflowNote: 'بررسی و تایید یا رد مبالغ عودتی ثبت‌شده توسط پشتیبانی'
   }
 ];

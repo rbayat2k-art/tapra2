@@ -55,13 +55,16 @@ export const AssignedTasksView: React.FC<AssignedTasksViewProps> = ({
   const [messageText, setMessageText] = useState('');
   const [messageLetterNumber, setMessageLetterNumber] = useState('');
 
+  // Filter users eligible to receive & execute tasks (admin or canExecuteTasks === true)
+  const eligibleAssignees = users.filter(u => u.role === 'admin' || u.canExecuteTasks === true);
+
   // Open New Task modal with automatic defaults
   const handleOpenNewTaskModal = () => {
     const today = getJalaliToday();
     const autoLetter = generateAutoLetterNumber(tasks.length + 101);
     setNewTitle('');
     setNewDescription('');
-    setNewAssigneeId(users[0]?.id || '');
+    setNewAssigneeId(eligibleAssignees[0]?.id || users[0]?.id || '');
     setNewPriority('normal');
     setNewDueDate(today);
     setNewLetterNumber(autoLetter);
@@ -71,10 +74,10 @@ export const AssignedTasksView: React.FC<AssignedTasksViewProps> = ({
 
   // Open Edit Task modal
   const handleOpenEditTaskModal = (task: AssignedTask) => {
-    const foundAssignee = users.find(u => u.id === task.assigneeId || u.fullName === task.assigneeName);
+    const foundAssignee = eligibleAssignees.find(u => u.id === task.assigneeId || u.fullName === task.assigneeName);
     setEditTitle(task.title);
     setEditDescription(task.description);
-    setEditAssigneeId(foundAssignee?.id || users[0]?.id || '');
+    setEditAssigneeId(foundAssignee?.id || eligibleAssignees[0]?.id || users[0]?.id || '');
     setEditPriority(task.priority);
     setEditDueDate(task.dueDate || getJalaliToday());
     setEditLetterNumber(task.letterNumber || generateAutoLetterNumber(tasks.length + 101));
@@ -83,13 +86,11 @@ export const AssignedTasksView: React.FC<AssignedTasksViewProps> = ({
   };
 
   // Check user permissions
-  const canIssueTasks = currentUser?.role === 'admin' || currentUser?.canIssueTasks !== false;
-  const canExecuteTasks = currentUser?.role === 'admin' || currentUser?.canExecuteTasks !== false;
+  const isAdminUser = currentUser?.role === 'admin';
+  const canIssueTasks = isAdminUser || currentUser?.canIssueTasks === true || currentUser?.customPermissions?.includes('manage_assigned_tasks');
+  const canExecuteTasks = isAdminUser || currentUser?.canExecuteTasks === true || currentUser?.customPermissions?.includes('manage_assigned_tasks');
 
-  const hasTaskAccess = canIssueTasks || canExecuteTasks || currentUser?.role === 'admin' || 
-    currentUser?.customPermissions?.includes('manage_assigned_tasks') ||
-    currentUser?.roleTitle?.includes('مدیر') ||
-    currentUser?.roleTitle?.includes('سرپرست');
+  const hasTaskAccess = canIssueTasks || canExecuteTasks;
 
   if (!currentUser) return null;
 
@@ -603,7 +604,7 @@ export const AssignedTasksView: React.FC<AssignedTasksViewProps> = ({
                   onChange={(e) => setNewAssigneeId(e.target.value)}
                   className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
                 >
-                  {users.map(u => (
+                  {eligibleAssignees.map(u => (
                     <option key={u.id} value={u.id}>
                       {u.fullName} ({u.roleTitle})
                     </option>
@@ -744,7 +745,7 @@ export const AssignedTasksView: React.FC<AssignedTasksViewProps> = ({
                   onChange={(e) => setEditAssigneeId(e.target.value)}
                   className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
                 >
-                  {users.map(u => (
+                  {eligibleAssignees.map(u => (
                     <option key={u.id} value={u.id}>
                       {u.fullName} ({u.roleTitle})
                     </option>

@@ -6,7 +6,7 @@ import { CostCentersView } from './CostCentersView';
 import { 
   ShieldCheck, UserPlus, Key, Phone, Mail, 
   Building, Building2, MapPin, CheckCircle2, UserX, Edit2, Plus, 
-  Trash2, Lock, Eye, EyeOff, ShieldAlert, Sparkles, Send, ChevronDown, ChevronUp 
+  Trash2, Lock, Eye, EyeOff, ShieldAlert, Sparkles, Send, ChevronDown, ChevronUp, LogIn
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -19,6 +19,7 @@ interface AdminPanelProps {
   onUpdateUsers: (newUsers: User[]) => void;
   onUpdateCompanies: (newComp: Company[]) => void;
   onUpdateCostCenters: (newCC: CostCenter[]) => void;
+  onImpersonateUser?: (targetUser: User) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -30,7 +31,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   currentUser,
   onUpdateUsers,
   onUpdateCompanies,
-  onUpdateCostCenters
+  onUpdateCostCenters,
+  onImpersonateUser
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'cost_centers' | 'companies'>('users');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -72,6 +74,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Extra permissions granted on top of the user's base role (e.g. give a
   // branch approver support-case access without changing their main role)
   const [customPermissions, setCustomPermissions] = useState<SystemPermission[]>([]);
+  const [canCreateRequests, setCanCreateRequests] = useState<boolean>(true);
 
   // Dual-role (requestor + approver) & senior treasury supervisor designation
   const [isDualRole, setIsDualRole] = useState<boolean>(false);
@@ -140,8 +143,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setStep3ApproverId('user_treasury_exec');
     setAllowDirectToTreasury(true);
     setWorkflowNote('ارجاع بر اساس فرم چارت گردش کار استاندارد سیستم');
-    setCanIssueTasks(true);
-    setCanExecuteTasks(true);
+    setCanIssueTasks(false);
+    setCanExecuteTasks(false);
+    setCanCreateRequests(true);
     setIsDualRole(false);
     setIsSeniorTreasurySupervisor(false);
     setCustomPermissions([]);
@@ -171,8 +175,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setStep3ApproverId(u.approvalChain?.[2] || 'user_treasury_exec');
     setAllowDirectToTreasury(u.allowDirectToTreasury ?? true);
     setWorkflowNote(u.workflowNote || '');
-    setCanIssueTasks(u.canIssueTasks ?? true);
-    setCanExecuteTasks(u.canExecuteTasks ?? true);
+    setCanIssueTasks(u.canIssueTasks ?? false);
+    setCanExecuteTasks(u.canExecuteTasks ?? false);
+    setCanCreateRequests(u.canCreateRequests ?? (u.customPermissions?.includes('create_request') || ['requestor', 'approver', 'admin'].includes(u.role)));
     setIsDualRole(u.isDualRole ?? false);
     setIsSeniorTreasurySupervisor(u.isSeniorTreasurySupervisor ?? false);
     setCustomPermissions(u.customPermissions || []);
@@ -197,6 +202,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     // instead of forcing a fallback branch on them.
     const finalAllowedBranches = allowedCostCenterIds;
 
+    // Sync customPermissions with canCreateRequests flag
+    let finalCustomPerms = [...customPermissions];
+    if (canCreateRequests && !finalCustomPerms.includes('create_request')) {
+      finalCustomPerms.push('create_request');
+    } else if (!canCreateRequests) {
+      finalCustomPerms = finalCustomPerms.filter(p => p !== 'create_request');
+    }
+
     if (editingUser) {
       // Update existing user
       let updated = users.map(u => u.id === editingUser.id ? {
@@ -217,9 +230,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         workflowNote: workflowNote.trim(),
         canIssueTasks,
         canExecuteTasks,
+        canCreateRequests,
         isDualRole,
         isSeniorTreasurySupervisor,
-        customPermissions,
+        customPermissions: finalCustomPerms,
         roleId
       } : u);
 
@@ -253,9 +267,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         workflowNote: workflowNote.trim(),
         canIssueTasks,
         canExecuteTasks,
+        canCreateRequests,
         isDualRole,
         isSeniorTreasurySupervisor,
-        customPermissions,
+        customPermissions: finalCustomPerms,
         roleId
       };
 
@@ -563,6 +578,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
+                            {/* Impersonate / Login as User Button (Admin only) */}
+                            {onImpersonateUser && u.id !== currentUser?.id && (
+                              <button
+                                onClick={() => onImpersonateUser(u)}
+                                className="p-1.5 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg transition"
+                                title={`ورود به حساب کاربر (${u.fullName}) - شبیه‌سازی کامل دسترسی`}
+                              >
+                                <LogIn className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             {/* Edit Button */}
                             <button
                               onClick={() => handleOpenEditUser(u)}
@@ -857,32 +883,64 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         : 'کاربر با این نقش، مدیر کل سیستم بوده و به تمامی شعب و مراکز هزینه دسترسی کامل دارد.'}
                     </p>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1">
-                      {costCenters.map((cc) => {
-                        const isSelected = allowedCostCenterIds.includes(cc.id);
+                    <div className="max-h-56 overflow-y-auto p-1 space-y-3">
+                      {companies.map((comp) => {
+                        const compCCs = costCenters.filter(cc => cc.companyId === comp.id);
+                        if (compCCs.length === 0) return null;
+                        const allCompSelected = compCCs.every(c => allowedCostCenterIds.includes(c.id));
                         return (
-                          <label
-                            key={cc.id}
-                            className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer transition ${
-                              isSelected
-                                ? 'bg-indigo-600/30 border-indigo-500 text-white shadow'
-                                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:bg-slate-800'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setAllowedCostCenterIds([...allowedCostCenterIds, cc.id]);
-                                } else {
-                                  setAllowedCostCenterIds(allowedCostCenterIds.filter(id => id !== cc.id));
-                                }
-                              }}
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-700 bg-slate-800 focus:ring-indigo-500"
-                            />
-                            <span className="truncate">{cc.name}</span>
-                          </label>
+                          <div key={comp.id} className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-amber-300 flex items-center gap-1.5">
+                                <Building className="w-3.5 h-3.5 text-amber-400" />
+                                {comp.name} ({comp.code})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const compIds = compCCs.map(c => c.id);
+                                  if (allCompSelected) {
+                                    setAllowedCostCenterIds(allowedCostCenterIds.filter(id => !compIds.includes(id)));
+                                  } else {
+                                    setAllowedCostCenterIds(Array.from(new Set([...allowedCostCenterIds, ...compIds])));
+                                  }
+                                }}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold hover:underline cursor-pointer"
+                              >
+                                {allCompSelected ? 'حذف همه شعب این شرکت' : 'انتخاب همه شعب این شرکت'}
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              {compCCs.map((cc) => {
+                                const isSelected = allowedCostCenterIds.includes(cc.id);
+                                return (
+                                  <label
+                                    key={cc.id}
+                                    className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 cursor-pointer transition ${
+                                      isSelected
+                                        ? 'bg-indigo-600/30 border-indigo-500 text-white shadow'
+                                        : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:bg-slate-800'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setAllowedCostCenterIds([...allowedCostCenterIds, cc.id]);
+                                        } else {
+                                          setAllowedCostCenterIds(allowedCostCenterIds.filter(id => id !== cc.id));
+                                        }
+                                      }}
+                                      className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-700 bg-slate-800 focus:ring-indigo-500"
+                                    />
+                                    <span className="truncate text-[11px]">{cc.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -980,8 +1038,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {openSections.customPerms && (
                   <div className="pt-2 border-t border-slate-800 space-y-2.5 animate-fade-in">
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      اگر می‌خواهید این کاربر، صرف‌نظر از نقش اصلی‌اش، به یک ماژول خاص هم دسترسی داشته باشد، از اینجا اضافه کنید:
+                      دسترسی به سایر ماژول‌های تکمیلی سیستم فراتر از نقش پایه:
                     </p>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {([
                         { key: 'manage_support_cases' as SystemPermission, title: 'ثبت پرونده خدمات پس از فروش', desc: 'دسترسی به بخش پشتیبانی برای ثبت پرونده و تراکنش' },
@@ -1121,6 +1180,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 {openSections.chain && (
                   <div className="pt-2 border-t border-slate-800 space-y-3 animate-fade-in">
+                    
+                    {/* Primary Toggle for Create Request Permission placed right at the top of Section 2 */}
+                    <label className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
+                      canCreateRequests 
+                        ? 'bg-emerald-950/50 border-emerald-500 text-white shadow-md' 
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={canCreateRequests}
+                        onChange={(e) => setCanCreateRequests(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 text-emerald-600 rounded border-slate-700 bg-slate-800 focus:ring-emerald-500"
+                      />
+                      <div>
+                        <span className="block text-emerald-300 font-extrabold mb-0.5">
+                          مجوز ایجاد و ثبت درخواست جدید (پرداخت فاکتور / تنخواه)
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal leading-relaxed block">
+                          نمایش دکمه «ثبت درخواست جدید» در منوی کناری و هدر. با فعال کردن این گزینه، این کاربر با هر نقشی (تاییدکننده مالی، مجری واریز، سرپرست یا...) می‌تواند برای خود یا حوزه کاری‌اش درخواست پرداخت ثبت کند.
+                        </span>
+                      </div>
+                    </label>
+
                     <p className="text-[11px] text-slate-400 leading-relaxed">
                       مشخص می‌کند وقتی این کاربر درخواستی ثبت می‌کند (اگر کاربر دوگانه نباشد)، به ترتیب از چه تاییدکنندگانی عبور کند:
                     </p>

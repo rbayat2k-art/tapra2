@@ -29,6 +29,7 @@ import { SupportView } from './components/SupportView';
 import { LettersView } from './components/LettersView';
 import { BulkPaymentExportModal } from './components/BulkPaymentExportModal';
 import { MyRequestsView } from './components/MyRequestsView';
+import { ApprovalInboxView } from './components/ApprovalInboxView';
 import { AssignedTasksView } from './components/AssignedTasksView';
 import { AllCommunicationsAuditView } from './components/AllCommunicationsAuditView';
 import { StyleSettingsView, AVAILABLE_FONTS } from './components/StyleSettingsView';
@@ -111,6 +112,36 @@ export default function App() {
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepRule[]>(() => storage.getWorkflow());
   const [notifications, setNotifications] = useState<SystemNotification[]>(() => storage.getNotifications(currentUser?.id));
   const [messages, setMessages] = useState<ChatMessage[]>(() => storage.getMessages());
+
+  // Impersonation (Admin Login as User) State
+  const [impersonatorAdmin, setImpersonatorAdmin] = useState<User | null>(() => {
+    const saved = localStorage.getItem('shavaz_impersonator_admin');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const handleImpersonateUser = (targetUser: User) => {
+    if (!impersonatorAdmin && currentUser?.role === 'admin') {
+      setImpersonatorAdmin(currentUser);
+      localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(currentUser));
+    }
+    setCurrentUser(targetUser);
+    storage.setCurrentUser(targetUser);
+    if (targetUser.role === 'requestor') {
+      setActiveTab('my_requests');
+    } else {
+      setActiveTab('approval_inbox');
+    }
+  };
+
+  const handleExitImpersonation = () => {
+    if (impersonatorAdmin) {
+      setCurrentUser(impersonatorAdmin);
+      storage.setCurrentUser(impersonatorAdmin);
+      setImpersonatorAdmin(null);
+      localStorage.removeItem('shavaz_impersonator_admin');
+      setActiveTab('admin');
+    }
+  };
 
   // Modals
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
@@ -667,6 +698,27 @@ export default function App() {
         }}
       />
 
+      {/* Impersonation Banner (When Admin is testing as another user) */}
+      {impersonatorAdmin && currentUser && (
+        <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-bold px-4 py-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs dir-rtl sticky top-16 z-30 border-b border-amber-600">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 bg-slate-950 text-amber-400 rounded-lg shrink-0 shadow-sm">
+              <ShieldAlert className="w-4 h-4" />
+            </span>
+            <span>
+              شما هم‌اکنون در حالت شبیه‌سازی دسترسی با حساب کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> هستید.
+            </span>
+          </div>
+          <button
+            onClick={handleExitImpersonation}
+            className="px-3 py-1.5 bg-slate-950 hover:bg-slate-900 text-amber-300 font-black rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer border border-amber-500/40 hover:scale-105 active:scale-95"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>خروج و بازگشت به حساب ادمین ارشد ({impersonatorAdmin.fullName})</span>
+          </button>
+        </div>
+      )}
+
       {/* Main Layout Body - Full Screen Container */}
       <div className="flex-1 w-full flex flex-col md:flex-row min-h-[calc(100vh-4rem)] relative">
         
@@ -810,29 +862,20 @@ export default function App() {
           )}
 
           {activeTab === 'approval_inbox' && (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-extrabold text-white">کارتابل تایید و پرداخت خزانه‌داری</h2>
-                  <p className="text-xs text-slate-400">درخواست‌های در انتظار بررسی، تایید نهایی و واریز وجه</p>
-                </div>
-                <span className="bg-amber-500/20 text-amber-300 font-bold text-xs px-3 py-1 rounded-xl border border-amber-500/30">
-                  {pendingApprovalRequests.length} درخواست در انتظار
-                </span>
-              </div>
-
-              <RequestTableView
-                requests={pendingApprovalRequests}
-                onSelectRequest={(req) => {
-                  setSelectedDetailRequest(req);
-                  setIsDetailModalOpen(true);
-                }}
-                onOpenPrintModal={(req) => {
-                  setSelectedPrintRequest(req);
-                  setIsPrintModalOpen(true);
-                }}
-              />
-            </div>
+            <ApprovalInboxView
+              requests={requests}
+              currentUser={currentUser}
+              companies={companies}
+              costCenters={costCenters}
+              onSelectRequest={(req) => {
+                setSelectedDetailRequest(req);
+                setIsDetailModalOpen(true);
+              }}
+              onOpenPrintModal={(req) => {
+                setSelectedPrintRequest(req);
+                setIsPrintModalOpen(true);
+              }}
+            />
           )}
 
           {activeTab === 'cost_centers' && (
@@ -1000,6 +1043,7 @@ export default function App() {
               onUpdateUsers={setUsers}
               onUpdateCompanies={setCompanies}
               onUpdateCostCenters={setCostCenters}
+              onImpersonateUser={handleImpersonateUser}
             />
           )}
             </>

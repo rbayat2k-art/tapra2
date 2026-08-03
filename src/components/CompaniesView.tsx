@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Company, CompanyBankAccount, User } from '../types';
 import { storage } from '../utils/storage';
-import { Building, Plus, Edit2, Trash2, CheckCircle2, CreditCard, Search, Landmark, ShieldCheck, XCircle } from 'lucide-react';
+import { Building, Plus, Edit2, Trash2, CheckCircle2, CreditCard, Search, Landmark, ShieldCheck, XCircle, MapPin } from 'lucide-react';
 
 interface CompaniesViewProps {
   companies: Company[];
@@ -488,6 +488,34 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
               <p className="text-xs text-slate-400 leading-relaxed">
                 {comp.description || 'توضیحاتی برای این شرکت ثبت نشده است.'}
               </p>
+
+              {/* Linked Cost Centers / Branches List */}
+              {(() => {
+                const linkedCostCenters = storage.getCostCenters().filter(cc => cc.companyId === comp.id);
+                return (
+                  <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-amber-300">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                        مراکز هزینه زیرمجموعه ({linkedCostCenters.length})
+                      </span>
+                    </div>
+
+                    {linkedCostCenters.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-0.5">
+                        {linkedCostCenters.map(cc => (
+                          <span key={cc.id} className="text-[11px] bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                            <span className="font-bold text-amber-300">{cc.name}</span>
+                            <span className="text-[9px] text-slate-400 font-mono font-bold">({cc.code})</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic block">هیچ مرکز هزینه‌ای برای این شرکت تعریف نشده است.</span>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 flex items-center justify-between">
                 <span>تعداد حساب‌های متصل: {bankAccounts.filter(a => a.companyId === comp.id).length}</span>
