@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { PaymentRequest, User, RequestStatus, AttachmentFile } from '../types';
-import { formatRial } from '../utils/numberToWords';
+import { PaymentRequest, User, RequestStatus, AttachmentFile, RequestBatchItem } from '../types';
+import { formatRial, numberToPersianWords } from '../utils/numberToWords';
 import { getJalaliNow } from '../utils/persianDate';
 import { 
   X, CheckCircle2, Clock, RefreshCw, RotateCcw, XCircle, 
@@ -35,6 +35,13 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   const [selectedForwardUserId, setSelectedForwardUserId] = useState(users[0]?.id || '');
   const [returnReason, setReturnReason] = useState('');
   const [showReturnInput, setShowReturnInput] = useState(false);
+
+  // Optional amount correction available to the current approver while using "تایید و ارجاع".
+  // Defaults to the request's current amount; only applied if the approver actually changes it.
+  const [correctedAmount, setCorrectedAmount] = useState<number>(0);
+
+  // Per-row optional rejection reason input for consolidated/batch requests
+  const [batchRejectReasons, setBatchRejectReasons] = useState<Record<string, string>>({});
   
   // Edit Mode State for Requestor
   const [isEditing, setIsEditing] = useState(false);
@@ -43,6 +50,17 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   const [editCardNumber, setEditCardNumber] = useState('');
   const [editAccountName, setEditAccountName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+
+  // Per-row editable fields for consolidated/batch requests (title/amount/destinationName/destinationCard),
+  // used instead of the single title/amount fields above when editing a request with batchItems.
+  interface EditableBatchItem {
+    id: string;
+    title: string;
+    amount: string;
+    destinationName: string;
+    destinationCard: string;
+  }
+  const [editBatchItems, setEditBatchItems] = useState<EditableBatchItem[]>([]);
 
   // Payment Receipt Upload State
   const [receiptFile, setReceiptFile] = useState<string | null>(null);
@@ -65,9 +83,17 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     if (request) {
       setEditTitle(request.title);
       setEditAmount(request.amount);
+      setCorrectedAmount(request.amount);
       setEditCardNumber(request.destinationCardNumber);
       setEditAccountName(request.destinationAccountName);
       setEditDescription(request.description);
+      setEditBatchItems((request.batchItems || []).map(bi => ({
+        id: bi.id,
+        title: bi.title,
+        amount: String(bi.amount),
+        destinationName: bi.destinationName,
+        destinationCard: bi.destinationCard
+      })));
       setIsEditing(false);
       setShowCancellationInput(false);
       setCancellationReasonInput('');
@@ -104,6 +130,25 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   const canReturnOrReject = !isSubmitting && (isApproverRole || isAdminRole || isTreasuryExecRole) && isCurrentResponsibleParty && (request.status === 'pending_approval' || request.status === 'approved_pending_payment');
   const canDelegateExecution = !isSubmitting && (isAdminRole || currentUser?.roleTitle?.includes('مدیر ارشد')) && (request.status === 'approved_pending_payment' || request.status === 'pending_approval');
 
+  // Consolidated / Batch Request Row-Level Approval
+  const hasBatchItems = !!request.batchItems && request.batchItems.length > 0;
+  const allBatchItemsDecided = !hasBatchItems || request.batchItems!.every(bi => bi.status !== 'pending');
+
+  // The row-level batch edit form only replaces the single title/amount edit form while the
+  // request is still in its pre-approval editable window (canEditOrDeleteInitial); a returned
+  // batch request falls back to the existing single-field edit form untouched.
+  const isBatchEditMode = hasBatchItems && canEditOrDeleteInitial;
+
+  const updateEditBatchItem = (id: string, field: 'title' | 'amount' | 'destinationName' | 'destinationCard', val: string) => {
+    setEditBatchItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      if (field === 'amount') return { ...item, amount: val.replace(/\D/g, '') };
+      return { ...item, [field]: val };
+    }));
+  };
+
+  const editBatchTotalAmount = editBatchItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+
   // Undo / Revert Action Permissions
   const lastTimelineEntry = request.timeline[request.timeline.length - 1];
   
@@ -129,7 +174,12 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     request.status === 'returned';
 
   const handleSaveEdit = () => {
-    if (!editTitle.trim() || !editAmount || editAmount <= 0) {
+    if (isBatchEditMode) {
+      if (editBatchTotalAmount <= 0) {
+        alert('لطفاً برای حداقل یکی از ردیف‌های درخواست تجمیعی، مبلغ معتبر بزرگ‌تر از صفر وارد کنید.');
+        return;
+      }
+    } else if (!editTitle.trim() || !editAmount || editAmount <= 0) {
       alert('لطفاً عنوان و مبلغ معتبر وارد کنید.');
       return;
     }
@@ -143,24 +193,57 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
         actorName: currentUser?.fullName || request.requestorName,
         actorRole: currentUser?.roleTitle || 'ثبت‌کننده',
         action: isResubmitting ? ('submitted' as const) : ('forwarded' as const),
-        actionTitle: isResubmitting ? 'اصلاح و ثبت مجدد درخواست' : 'ویرایش اطلاعات درخواست',
+        actionTitle: isResubmitting ? 'اصلاح و ثبت مجدد درخواست' : (isBatchEditMode ? 'ویرایش ردیف‌های درخواست تجمیعی' : 'ویرایش اطلاعات درخواست'),
         timestamp: getJalaliNow(),
-        comment: isResubmitting ? 'اطلاعات درخواست اصلاح گردید و مجدداً جهت بررسی ارسال شد.' : 'ویرایش جزئیات درخواست توسط ثبت‌کننده.'
+        comment: isResubmitting
+          ? 'اطلاعات درخواست اصلاح گردید و مجدداً جهت بررسی ارسال شد.'
+          : (isBatchEditMode ? 'ردیف‌های درخواست تجمیعی توسط ثبت‌کننده اصلاح و مبلغ کل درخواست بازمحاسبه شد.' : 'ویرایش جزئیات درخواست توسط ثبت‌کننده.')
       }
     ];
 
-    const updated: PaymentRequest = {
-      ...request,
-      title: editTitle.trim(),
-      amount: Number(editAmount),
-      amountInWords: `${editAmount.toLocaleString('fa-IR')} ریال`,
-      destinationCardNumber: editCardNumber.trim(),
-      destinationAccountName: editAccountName.trim(),
-      description: editDescription.trim(),
-      status: 'pending_approval',
-      updatedAt: getJalaliNow(),
-      timeline: updatedTimeline
-    };
+    // request.id and request.trackingCode are never included in either branch below,
+    // so the ...request spread always preserves them unchanged.
+    let updated: PaymentRequest;
+
+    if (isBatchEditMode) {
+      const updatedBatchItems: RequestBatchItem[] = request.batchItems!.map(bi => {
+        const edited = editBatchItems.find(e => e.id === bi.id);
+        if (!edited) return bi;
+        const amt = parseFloat(edited.amount) || 0;
+        return {
+          ...bi,
+          title: edited.title.trim() || 'پرداخت بابت فاکتور',
+          amount: amt,
+          amountInWords: numberToPersianWords(amt),
+          destinationName: edited.destinationName.trim() || 'صاحب حساب',
+          destinationCard: edited.destinationCard.trim() || '-'
+        };
+      });
+      const totalAmount = updatedBatchItems.reduce((sum, bi) => sum + bi.amount, 0);
+
+      updated = {
+        ...request,
+        amount: totalAmount,
+        amountInWords: numberToPersianWords(totalAmount),
+        batchItems: updatedBatchItems,
+        status: 'pending_approval',
+        updatedAt: getJalaliNow(),
+        timeline: updatedTimeline
+      };
+    } else {
+      updated = {
+        ...request,
+        title: editTitle.trim(),
+        amount: Number(editAmount),
+        amountInWords: `${editAmount.toLocaleString('fa-IR')} ریال`,
+        destinationCardNumber: editCardNumber.trim(),
+        destinationAccountName: editAccountName.trim(),
+        description: editDescription.trim(),
+        status: 'pending_approval',
+        updatedAt: getJalaliNow(),
+        timeline: updatedTimeline
+      };
+    }
 
     onUpdateRequest(updated);
     setIsEditing(false);
@@ -194,11 +277,25 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
       alert('هیچ مقصد مجازی برای ارجاع این درخواست تعریف نشده است. لطفاً با ادمین سیستم تماس بگیرید.');
       return;
     }
+
+    // Amount correction is optional: only validated/applied if the approver actually
+    // changed it away from the request's current amount (so info_request's amount=0,
+    // and every other unmodified case, is left completely untouched).
+    const isAmountCorrected = correctedAmount !== request.amount;
+    if (isAmountCorrected && (!correctedAmount || correctedAmount <= 0)) {
+      alert('مبلغ اصلاح‌شده باید عددی بزرگ‌تر از صفر باشد.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     const nextUser = forwardTargetUsers.find(u => u.id === selectedForwardUserId) || forwardTargetUsers[0];
     const actorName = currentUser?.fullName || 'تاییدکننده';
     const actorRole = currentUser?.roleTitle || 'مدیر مربوطه';
+
+    const amountCorrectionNote = isAmountCorrected
+      ? `اصلاح مبلغ توسط تاییدکننده: از ${formatRial(request.amount)} به ${formatRial(correctedAmount)} تغییر یافت.`
+      : undefined;
 
     const updatedTimeline = [
       ...request.timeline,
@@ -211,12 +308,15 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
         actionTitle: 'تایید و ارجاع به مرحله بعد',
         nextActorName: nextUser.fullName,
         timestamp: getJalaliNow(),
-        comment: commentText.trim() || `درخواست با تایید به ${nextUser.fullName} ارجاع داده شد.`
+        comment: commentText.trim() || `درخواست با تایید به ${nextUser.fullName} ارجاع داده شد.`,
+        amountCorrectionNote
       }
     ];
 
     const updated: PaymentRequest = {
       ...request,
+      amount: isAmountCorrected ? correctedAmount : request.amount,
+      amountInWords: isAmountCorrected ? numberToPersianWords(correctedAmount) : request.amountInWords,
       currentApproverId: nextUser.id,
       currentApproverName: nextUser.fullName,
       currentApproverPhone: nextUser.phone,
@@ -228,7 +328,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     onUpdateRequest(updated);
     setCommentText('');
     setIsSubmitting(false);
-    alert(`درخواست با موفقیت تایید و به ${nextUser.fullName} ارجاع گردید.`);
+    alert(isAmountCorrected
+      ? `درخواست با موفقیت تایید، مبلغ به ${formatRial(correctedAmount)} اصلاح و به ${nextUser.fullName} ارجاع گردید.`
+      : `درخواست با موفقیت تایید و به ${nextUser.fullName} ارجاع گردید.`);
   };
 
   // Undo a mistaken approve & forward / final approval - only possible if the next
@@ -650,6 +752,67 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     alert('با درخواست لغو مخالفت شد و روال پرداخت ادامه دارد.');
   };
 
+  // Consolidated / Batch Request Row-Level Decision Handlers
+  const canActOnBatchItems = !isSubmitting && !!currentUser && isCurrentResponsibleParty &&
+    (isApproverRole || isAdminRole || isTreasuryExecRole) &&
+    (request.status === 'pending_approval' || request.status === 'approved_pending_payment');
+
+  const handleBatchItemApprove = (itemId: string) => {
+    if (!canActOnBatchItems) return;
+    const updatedBatchItems = (request.batchItems || []).map(bi =>
+      bi.id === itemId
+        ? {
+            ...bi,
+            status: 'approved' as const,
+            decidedByUserId: currentUser?.id,
+            decidedByName: currentUser?.fullName,
+            decidedAt: getJalaliNow(),
+            rejectionReason: undefined
+          }
+        : bi
+    );
+    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+  };
+
+  const handleBatchItemReject = (itemId: string) => {
+    if (!canActOnBatchItems) return;
+    const reason = (batchRejectReasons[itemId] || '').trim();
+    if (!reason) {
+      alert('لطفاً دلیل رد این ردیف را وارد کنید.');
+      return;
+    }
+    const updatedBatchItems = (request.batchItems || []).map(bi =>
+      bi.id === itemId
+        ? {
+            ...bi,
+            status: 'rejected' as const,
+            decidedByUserId: currentUser?.id,
+            decidedByName: currentUser?.fullName,
+            decidedAt: getJalaliNow(),
+            rejectionReason: reason
+          }
+        : bi
+    );
+    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+  };
+
+  const handleBatchItemRevert = (itemId: string) => {
+    if (!canActOnBatchItems) return;
+    const updatedBatchItems = (request.batchItems || []).map(bi =>
+      bi.id === itemId
+        ? {
+            ...bi,
+            status: 'pending' as const,
+            decidedByUserId: undefined,
+            decidedByName: undefined,
+            decidedAt: undefined,
+            rejectionReason: undefined
+          }
+        : bi
+    );
+    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+  };
+
   // Senior Treasury Manager Delegation to Execution Specialist
   const handleDelegateExecution = () => {
     if (!selectedDelegatedUserId) {
@@ -887,57 +1050,120 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">عنوان درخواست <span className="text-rose-400">*</span></label>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+              {isBatchEditMode ? (
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[11px] font-bold text-indigo-200">
+                      ویرایش ردیف‌های درخواست تجمیعی ({editBatchItems.length} مورد)
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                      مبلغ کل جدید: {formatRial(editBatchTotalAmount)}
+                    </span>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">مبلغ به ریال <span className="text-rose-400">*</span></label>
-                  <input
-                    type="number"
-                    value={editAmount || ''}
-                    onChange={(e) => setEditAmount(Number(e.target.value))}
-                    className="w-full bg-slate-900 text-emerald-400 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                  />
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                    {editBatchItems.map((item, idx) => (
+                      <div key={item.id} className="p-3 bg-slate-900 border border-slate-700/80 rounded-xl space-y-2">
+                        <div className="text-[10px] font-bold text-indigo-300">ردیف {idx + 1}</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 mb-1">عنوان ردیف</label>
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(e) => updateEditBatchItem(item.id, 'title', e.target.value)}
+                              placeholder="پرداخت بابت فاکتور"
+                              className="w-full bg-slate-950 text-white text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 mb-1">مبلغ به ریال</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={item.amount ? Number(item.amount).toLocaleString('en-US') : ''}
+                              onChange={(e) => updateEditBatchItem(item.id, 'amount', e.target.value)}
+                              className="w-full bg-slate-950 text-emerald-400 font-mono font-bold text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 mb-1">نام ذینفع</label>
+                            <input
+                              type="text"
+                              value={item.destinationName}
+                              onChange={(e) => updateEditBatchItem(item.id, 'destinationName', e.target.value)}
+                              placeholder="صاحب حساب"
+                              className="w-full bg-slate-950 text-white text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 mb-1">شماره کارت / شبا</label>
+                            <input
+                              type="text"
+                              value={item.destinationCard}
+                              onChange={(e) => updateEditBatchItem(item.id, 'destinationCard', e.target.value)}
+                              placeholder="-"
+                              className="w-full bg-slate-950 text-white font-mono text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">عنوان درخواست <span className="text-rose-400">*</span></label>
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">شماره کارت / حساب / شبا</label>
-                  <input
-                    type="text"
-                    value={editCardNumber}
-                    onChange={(e) => setEditCardNumber(e.target.value)}
-                    className="w-full bg-slate-900 text-white font-mono text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">مبلغ به ریال <span className="text-rose-400">*</span></label>
+                    <input
+                      type="number"
+                      value={editAmount || ''}
+                      onChange={(e) => setEditAmount(Number(e.target.value))}
+                      className="w-full bg-slate-900 text-emerald-400 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">نام صاحب حساب</label>
-                  <input
-                    type="text"
-                    value={editAccountName}
-                    onChange={(e) => setEditAccountName(e.target.value)}
-                    className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">شماره کارت / حساب / شبا</label>
+                    <input
+                      type="text"
+                      value={editCardNumber}
+                      onChange={(e) => setEditCardNumber(e.target.value)}
+                      className="w-full bg-slate-900 text-white font-mono text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-300 mb-1">توضیحات و بابت درخواست</label>
-                  <textarea
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    rows={2.5}
-                    className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                  />
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">نام صاحب حساب</label>
+                    <input
+                      type="text"
+                      value={editAccountName}
+                      onChange={(e) => setEditAccountName(e.target.value)}
+                      className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">توضیحات و بابت درخواست</label>
+                    <textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      rows={2.5}
+                      className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-2 justify-end pt-2 border-t border-indigo-500/20">
                 <button
@@ -1047,6 +1273,124 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Consolidated / Batch Request Row-Level Approval Table */}
+          {hasBatchItems && (
+            <div className="p-4 bg-slate-950/90 rounded-2xl border-2 border-amber-500/40 space-y-3">
+              <div className="flex items-center justify-between border-b border-amber-500/20 pb-2.5 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  <h4 className="text-xs font-black text-white">جدول ردیف‌های درخواست تجمیعی (تایید/رد ردیف به ردیف)</h4>
+                </div>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${allBatchItemsDecided ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-300 bg-amber-500/20 border-amber-500/30'}`}>
+                  {allBatchItemsDecided ? 'تمام ردیف‌ها تعیین تکلیف شدند' : `${request.batchItems!.filter(bi => bi.status === 'pending').length} ردیف در انتظار تصمیم`}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-900/80 text-slate-400 text-[10px] border-b border-slate-800">
+                      <th className="p-2 font-bold">ردیف</th>
+                      <th className="p-2 font-bold">عنوان</th>
+                      <th className="p-2 font-bold text-left">مبلغ (ریال)</th>
+                      <th className="p-2 font-bold">ذینفع</th>
+                      <th className="p-2 font-bold">شماره کارت/شبا</th>
+                      <th className="p-2 font-bold">وضعیت</th>
+                      {canActOnBatchItems && <th className="p-2 font-bold">اقدام</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 text-slate-200">
+                    {request.batchItems!.map((bi, idx) => (
+                      <tr key={bi.id || idx} className="hover:bg-slate-900/50 align-top">
+                        <td className="p-2 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                        <td className="p-2 font-bold text-slate-200">{bi.title}</td>
+                        <td className="p-2 font-mono font-bold text-emerald-400 text-left dir-ltr">{formatRial(bi.amount)}</td>
+                        <td className="p-2 text-slate-300">{bi.destinationName}</td>
+                        <td className="p-2 font-mono text-[11px] text-slate-300">{bi.destinationCard}</td>
+                        <td className="p-2">
+                          {bi.status === 'pending' && (
+                            <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">در انتظار</span>
+                          )}
+                          {bi.status === 'approved' && (
+                            <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">تایید شد</span>
+                          )}
+                          {bi.status === 'rejected' && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-full">رد شد</span>
+                              {bi.rejectionReason && (
+                                <p className="text-[10px] text-rose-300/80 max-w-[160px]">دلیل: {bi.rejectionReason}</p>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        {canActOnBatchItems && (
+                          <td className="p-2 min-w-[180px]">
+                            {bi.status === 'pending' && (
+                              <div className="space-y-1.5">
+                                <input
+                                  type="text"
+                                  value={batchRejectReasons[bi.id] || ''}
+                                  onChange={(e) => setBatchRejectReasons(prev => ({ ...prev, [bi.id]: e.target.value }))}
+                                  placeholder="دلیل رد (در صورت رد ردیف)"
+                                  className="w-full bg-slate-900 text-white text-[10px] rounded-lg px-2 py-1 border border-slate-700 focus:outline-none focus:border-rose-500"
+                                />
+                                <div className="flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBatchItemApprove(bi.id)}
+                                    className="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>تایید ردیف</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBatchItemReject(bi.id)}
+                                    className="flex-1 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1"
+                                  >
+                                    <XCircle className="w-3 h-3" />
+                                    <span>رد ردیف</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {bi.status === 'approved' && (
+                              <button
+                                type="button"
+                                onClick={() => handleBatchItemRevert(bi.id)}
+                                className="w-full py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-bold rounded-lg transition cursor-pointer border border-slate-700 flex items-center justify-center gap-1"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>بازگشت از تایید</span>
+                              </button>
+                            )}
+                            {bi.status === 'rejected' && (
+                              <button
+                                type="button"
+                                onClick={() => handleBatchItemRevert(bi.id)}
+                                className="w-full py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-bold rounded-lg transition cursor-pointer border border-slate-700 flex items-center justify-center gap-1"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>بازگشت از رد</span>
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {!allBatchItemsDecided && (
+                <p className="text-[10.5px] text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-xl p-2.5 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>پیش از تایید و ارجاع کل درخواست، باید تکلیف تمام ردیف‌های جدول بالا (تایید یا رد) مشخص شود.</span>
+                </p>
+              )}
             </div>
           )}
 
@@ -1169,6 +1513,12 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                         {step.comment}
                       </p>
                     )}
+                    {step.amountCorrectionNote && (
+                      <p className="text-xs text-amber-300 mt-1.5 bg-amber-950/40 p-2 rounded-lg border border-amber-500/30 flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                        <span>{step.amountCorrectionNote}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1288,15 +1638,45 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                           ))}
                         </select>
                       </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-amber-300 mb-1">
+                          اصلاح مبلغ (اختیاری)
+                        </label>
+                        <input
+                          type="number"
+                          value={correctedAmount || ''}
+                          onChange={(e) => setCorrectedAmount(Number(e.target.value))}
+                          className="w-full bg-slate-800 text-emerald-300 font-mono font-bold text-[10px] rounded-lg px-2 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500"
+                        />
+                        {correctedAmount !== request.amount && (
+                          <span className="text-[9px] text-amber-400 block mt-1 leading-tight">
+                            {correctedAmount > 0
+                              ? `مبلغ از ${formatRial(request.amount)} به ${formatRial(correctedAmount)} اصلاح خواهد شد.`
+                              : 'مبلغ اصلاح‌شده باید بزرگ‌تر از صفر باشد.'}
+                          </span>
+                        )}
+                        {hasBatchItems && (
+                          <span className="text-[9px] text-slate-500 block mt-1 leading-tight">
+                            این اصلاح فقط روی مبلغ کل درخواست اعمال می‌شود و وضعیت تایید/رد ردیف‌های جدول تجمیعی را تغییر نمی‌دهد.
+                          </span>
+                        )}
+                      </div>
+
                       <button
                         onClick={handleApproveAndForward}
-                        disabled={isSubmitting}
-                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                        disabled={isSubmitting || (hasBatchItems && !allBatchItemsDecided)}
+                        title={hasBatchItems && !allBatchItemsDecided ? 'ابتدا باید تکلیف تمام ردیف‌های جدول تجمیعی مشخص شود.' : undefined}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>تایید و ارجاع</span>
                       </button>
-                      <span className="text-[9px] text-slate-400 block text-center">ارسال برای همکار یا مجری</span>
+                      {hasBatchItems && !allBatchItemsDecided ? (
+                        <span className="text-[9px] text-amber-400 font-bold block text-center">ابتدا ردیف‌های تجمیعی را تعیین تکلیف کنید</span>
+                      ) : (
+                        <span className="text-[9px] text-slate-400 block text-center">ارسال برای همکار یا مجری</span>
+                      )}
                     </div>
                   )}
 

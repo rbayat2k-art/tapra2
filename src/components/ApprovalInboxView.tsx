@@ -7,6 +7,24 @@ import {
   ArrowUpDown, Calendar, CheckSquare, CreditCard, XCircle, RefreshCw, Building, MapPin
 } from 'lucide-react';
 
+// Converts a Jalali createdAt string (format "YYYY/MM/DD - HH:MM", e.g. "1403/05/10 - 14:30")
+// into a single comparable number, so requests can be sorted by actual date/time
+// instead of by their (non-chronological) sample-data id string.
+const jalaliDateToComparable = (dateStr?: string): number => {
+  if (!dateStr) return 0;
+  const normalized = dateStr.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  const match = normalized.match(/(\d{1,4})\/(\d{1,2})\/(\d{1,2})\s*-\s*(\d{1,2}):(\d{1,2})/);
+  if (!match) return 0;
+  const [, year, month, day, hour, minute] = match;
+  return (
+    Number(year) * 100000000 +
+    Number(month) * 1000000 +
+    Number(day) * 10000 +
+    Number(hour) * 100 +
+    Number(minute)
+  );
+};
+
 interface ApprovalInboxViewProps {
   requests: PaymentRequest[];
   currentUser: User | null;
@@ -172,8 +190,8 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
   // Sort
   const sortedRequests = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
-      if (sortOption === 'newest') return (b.id || '').localeCompare(a.id || '');
-      if (sortOption === 'oldest') return (a.id || '').localeCompare(b.id || '');
+      if (sortOption === 'newest') return jalaliDateToComparable(b.createdAt) - jalaliDateToComparable(a.createdAt);
+      if (sortOption === 'oldest') return jalaliDateToComparable(a.createdAt) - jalaliDateToComparable(b.createdAt);
       if (sortOption === 'amount_desc') return b.amount - a.amount;
       if (sortOption === 'amount_asc') return a.amount - b.amount;
       return 0;

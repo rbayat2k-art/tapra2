@@ -370,6 +370,21 @@ export interface RequestTimelineStep {
   nextActorName?: string;
   timestamp: string;
   reverted?: boolean; // true if this approval/forward step was later undone by its actor
+  amountCorrectionNote?: string; // set when the approver corrected the request amount during this step (old → new)
+}
+
+export interface RequestBatchItem {
+  id: string;
+  title: string;
+  amount: number;
+  amountInWords: string;
+  destinationName: string;
+  destinationCard: string; // شماره کارت یا شبا ذینفع این ردیف
+  status: 'pending' | 'approved' | 'rejected';
+  decidedByUserId?: string;
+  decidedByName?: string;
+  decidedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface CostCenterAllocation {
@@ -434,6 +449,9 @@ export interface PaymentRequest {
   sourceSupportCaseTrackingCode?: string;
   sourceSupportTransactionId?: string;
   sourceCustomerName?: string;
+
+  // ردیف‌های درخواست تجمیعی (چند فاکتور/ذینفع در یک درخواست)
+  batchItems?: RequestBatchItem[];
 }
 
 export interface WorkflowStepRule {

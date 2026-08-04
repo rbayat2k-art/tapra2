@@ -69,6 +69,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     }
 
+    // Dual-role users (isDualRole) may approve/pay their own escalated requests even
+    // though their base role's permission set doesn't grant approval_inbox access.
+    if (required.includes('approve_branch_request') || required.includes('approve_treasury') || required.includes('execute_payment')) {
+      if (currentUser?.isDualRole === true) return true;
+    }
+
     // Direct explicit check for task directives permission
     if (required.includes('manage_assigned_tasks')) {
       if (isAdmin) return true;

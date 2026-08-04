@@ -385,6 +385,21 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       finalDescription = `📋 لیست ردیف‌های درخواست تجمیعی (${batchItems.length} مورد):\n${batchLines}${description.trim() ? '\n\nتوضیحات تکمیلی: ' + description.trim() : ''}`;
     }
 
+    const finalBatchItems = (entryMode === 'batch' && requestType !== 'info_request')
+      ? batchItems.map(bi => {
+          const biAmount = parseFloat(bi.amount) || 0;
+          return {
+            id: bi.id,
+            title: bi.title.trim() || 'پرداخت بابت فاکتور',
+            amount: biAmount,
+            amountInWords: numberToPersianWords(biAmount),
+            destinationName: bi.destinationName.trim() || 'صاحب حساب',
+            destinationCard: bi.destinationCard.trim() || '-',
+            status: 'pending' as const
+          };
+        })
+      : undefined;
+
     if (!finalDescription) {
       finalDescription = requestType === 'info_request' ? 'درخواست دریافت صورت‌حساب و فایل مالی' : 'توضیحات درخواست جهت بررسی خزانه‌داری';
     }
@@ -420,6 +435,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       destinationCardNumber: finalCard,
       destinationAccountName: finalAccount,
       description: finalDescription,
+      batchItems: finalBatchItems,
       requestorId: reqUser.id,
       requestorName: reqUser.fullName,
       requestorPhone: reqUser.phone,
