@@ -150,3 +150,32 @@
 **Impact:**
 تاییدکنندگان اکنون می‌توانند بدون عودت درخواست، مبلغ را در لحظه تایید و ارجاع اصلاح کنند و این اصلاح به‌طور کامل و شفاف در تایم‌لاین درخواست (مبلغ قبل/بعد) ثبت می‌شود. این قابلیت فقط در `handleApproveAndForward` فعال است، نه در «تایید نهایی خزانه‌داری» یا «تایید واریز». `forwardTargetUsers`/`selectedForwardUserId` و منطق انتخاب نفر بعدی زنجیره کاملاً دست‌نخورده ماندند؛ `isDualRole`, `approvalChain`, `allowedApproverIds` نیز تغییر نکردند.
 
+---
+
+### Date: 2026-08-04
+
+**Decision:**
+بازطراحی بخش «ویرایش کاربر و تعیین دسترسی» در `src/components/AdminPanel.tsx` به یک **مدل چندنقشی قابل‌تنظیم** (شاخه `feature/multi-role-permissions`):
+
+۱. **دو فیلد اختیاری جدید روی `User`** در `src/types.ts` (بدون rename/حذف هیچ فیلد یا اینترفیس موجودی):
+   - `additionalRoleIds?: string[]` — نقش‌های سیستمی اضافه‌ای که ادمین علاوه بر نقش پایه (`role`/`roleId`) برای کاربر فعال کرده.
+   - `roleAccessOverrides?: { roleId: string; permissions: SystemPermission[] }[]` — برای یک `roleId` مشخص، لیست پرمیشن آن نقش را **فقط برای همین کاربر** به‌طور کامل جایگزین می‌کند (نه merge).
+
+۲. **`src/utils/permissions.ts` (فایل جدید)**: تابع `getEffectiveUserPermissions(user, roles)` که پرمیشن‌های نقش پایه + همه `additionalRoleIds` را جمع می‌کند، `roleAccessOverrides` را per-role اعمال می‌کند (اگر برای آن `roleId` override ثبت شده باشد، جایگزین کامل؛ وگرنه `SystemRole.permissions` پیش‌فرض)، و در آخر `customPermissions` را هم اضافه می‌کند.
+
+۳. **`AdminPanel.tsx`**: سه بخش قدیمی («تعیین نقش کاربر در ماژول دستورات اداری و کارهای محوله»، «دسترسی‌های تکمیلی (فراتر از نقش پایه)»، و تیک دستی «نقش دوگانه») با یک بخش یکپارچه «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر» جایگزین شدند:
+   - چک‌لیست تمام `roles` (نقش پایه همیشه تیک‌خورده و غیرقابل‌حذف؛ بقیه در `additionalRoleIds`).
+   - برای هر نقش تیک‌خورده، پنل قابل‌بازشدنی با چک‌باکس تمام ۲۰ پرمیشن سیستم (`ALL_PERMISSIONS`، که از `RolesAndPermissionsView.tsx` export شد تا در هر دو فایل یک منبع واحد استفاده شود) که در `roleAccessOverrides` آن نقش ذخیره می‌شود.
+   - دو چک‌باکس مستقل و فشرده `canIssueTasks`/`canExecuteTasks` (قابل override دستی) که با هر تغییر در نقش‌های انتخابی، مقدار پیشنهادی خودکار می‌گیرند (`deriveTaskAccessFromRoles`).
+   - بخش «۲. تعیین مراحل تایید درخواست‌های ارسالی» (`approvalChain`/`allowedApproverIds`) و بخش «شعب و مراکز مجاز» (`allowedCostCenterIds`) کاملاً دست‌نخورده باقی ماندند.
+   - چک‌باکس دستی `isSeniorTreasurySupervisor` به یک بخش مستقل و کوچک منتقل شد (رفتارش عوض نشد؛ فقط از داخل جعبه قدیمی «نقش دوگانه» بیرون کشیده شد چون آن جعبه حذف شد).
+   - در `handleSaveUser`: اگر ترکیب نقش‌های انتخاب‌شده (`role`/`roleId` + `additionalRoleIds`) هم شامل یک نقش «درخواست‌کننده-مانند» (`role_purchaser` یا `role === 'requestor'`) و هم یک نقش «تاییدکننده-مانند» (`role_branch_approver`, `role_treasury_manager` یا `role === 'approver'`) باشد، `isDualRole` خودکار `true` ذخیره می‌شود (`deriveIsDualRoleFromRoles`)، وگرنه `false`. چک‌باکس دستی `isDualRole` حذف شد؛ یک نشان زنده («نقش دوگانه (خودکار)») در فرم مقدار محاسبه‌شده فعلی را نمایش می‌دهد.
+
+۴. **`Sidebar.tsx`**: محاسبه دستی `effectivePermissions` (که مستقیماً `roleId` تنها را lookup می‌کرد) با فراخوانی `getEffectiveUserPermissions(currentUser, roles)` جایگزین شد؛ حالت bypass ادمین (`isAdmin → return null`) دقیقاً همان‌جا و همان‌طور باقی ماند. `ApprovalInboxView.tsx`, `DashboardView.tsx`, `ArchiveView.tsx` در این مرحله دست‌نخورده ماندند (طبق دستور صریح کاربر) — مهاجرت آن‌ها به `getEffectiveUserPermissions` یک تسک بعدی است.
+
+**Reason:**
+نیاز به این بود که یک کاربر بتواند هم‌زمان بیش از یک نقش سازمانی داشته باشد (مثلاً هم درخواست‌کننده هم تاییدکننده یک شعبه دیگر) و برای هرکدام از آن نقش‌ها، دسترسی‌های ریزدانه‌ای مستقل از تعریف پیش‌فرض نقش تنظیم شود — چیزی که مدل قدیمی تک‌نقشی + یک لیست کوچک ۵تایی `customPermissions` پوشش نمی‌داد. این تغییر به‌صراحت توسط کاربر مجاز شد که رفتار `isDualRole` را خودکار از روی نقش‌های چندگانه derive کند، به شرطی که فیلد `isDualRole` و تمام چک‌های موجودش در پروژه معتبر و دست‌نخورده بمانند.
+
+**Impact:**
+ادمین اکنون می‌تواند به یک کاربر چند نقش هم‌زمان بدهد و برای هرکدام پرمیشن‌های اختصاصی تعریف کند، بدون آنکه نقش پایه یا `SystemRole` مشترک بین کاربران دیگر تغییر کند. `isDualRole` دیگر منبع خطای انسانی (فراموشی تیک زدن) ندارد — همیشه با واقعیتِ نقش‌های انتخابی سینک است. هیچ کاربر نمونه‌ای در `DEFAULT_USERS` تغییر نکرد: چون هیچ‌کدام `additionalRoleIds`/`roleAccessOverrides` ندارند، `getEffectiveUserPermissions` برایشان دقیقاً همان مقدار قبلی را برمی‌گرداند و اگر دوباره از `AdminPanel` بدون تغییر نقش ذخیره شوند، `isDualRole` مشتق‌شده هم `false` (مطابق مقدار فعلی همه ۶ کاربر) خواهد بود. `approvalChain`, `allowedApproverIds` و ساختار داده‌شان، و همه اینترفیس‌های `types.ts` دست‌نخورده ماندند — فقط دو فیلد اختیاری جدید اضافه شد.
+

@@ -65,6 +65,13 @@ export interface User {
   // Marks the single user who is the senior treasury supervisor - the mandatory
   // destination for self-submitted requests of dual-role users
   isSeniorTreasurySupervisor?: boolean;
+
+  // Multi-role access model: extra SystemRole ids granted to this user on top of
+  // their base role/roleId (see getEffectiveUserPermissions in utils/permissions.ts)
+  additionalRoleIds?: string[];
+  // Per-user, per-role permission overrides: for a given roleId, fully replaces that
+  // role's permission list (from base role or an additionalRoleIds entry) for this user only
+  roleAccessOverrides?: { roleId: string; permissions: SystemPermission[] }[];
 }
 
 export interface Company {

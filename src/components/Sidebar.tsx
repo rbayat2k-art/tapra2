@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, DirectMessage, SystemRole, SystemPermission, Letter } from '../types';
-import { DEFAULT_ROLE_ID_MAP } from '../utils/storage';
-import { 
+import { getEffectiveUserPermissions } from '../utils/permissions';
+import {
   LayoutDashboard, PlusCircle, Inbox, Archive, FileText, Search,
   GitFork, MessageSquare, ShieldCheck, CreditCard, Building, MapPin, KeyRound, Users, CheckSquare,
   ChevronDown, MoreHorizontal, UsersRound, BookUser, Tags, LifeBuoy, Mail, ShieldAlert, Palette,
@@ -50,11 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const effectivePermissions = useMemo(() => {
     if (!currentUser) return [] as SystemPermission[];
     if (isAdmin) return null; // null = unrestricted (admin bypasses all checks)
-    const roleId = currentUser.roleId || DEFAULT_ROLE_ID_MAP[currentUser.role];
-    const role = roles.find((r) => r.id === roleId);
-    const fromRole = role?.permissions || [];
-    const extra = currentUser.customPermissions || [];
-    return Array.from(new Set([...fromRole, ...extra]));
+    return getEffectiveUserPermissions(currentUser, roles);
   }, [currentUser, roles, isAdmin]);
 
   const hasAccess = (required?: SystemPermission[]) => {
@@ -107,9 +103,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'messenger', label: 'گفتگوی عمومی خزانه‌داری', icon: MessageSquare, badge: null },
   ];
 
+  // Visual grouping only — none of this changes hasAccess/requires, badges, icons, or
+  // isCollapsed/expandedGroup behavior; it only reorders where each (already-filtered)
+  // item renders. Groups: عملیات روزمره (primary, unchanged) → بایگانی و گزارش‌ها →
+  // دفترچه و منابع سازمانی → ارتباطات → خدمات پس از فروش → کاربران و دسترسی‌ها →
+  // تنظیمات شخصی (style_settings, moved to its own section at the very bottom).
   const visibleNavItems = navItems.filter((item) => hasAccess(item.requires));
+  const getVisibleItem = (id: string) => visibleNavItems.find((i) => i.id === id);
+
   const primaryItems = visibleNavItems.filter((i) => ['dashboard', 'new_request', 'my_requests', 'assigned_tasks', 'approval_inbox'].includes(i.id));
-  const secondaryItems = visibleNavItems.filter((i) => !['dashboard', 'new_request', 'my_requests', 'assigned_tasks', 'approval_inbox'].includes(i.id));
+  const archiveReportItems = ['archive', 'workflow'].map(getVisibleItem).filter(Boolean) as typeof navItems;
+  const orgResourceItems = ['cost_centers', 'companies'].map(getVisibleItem).filter(Boolean) as typeof navItems;
+  const communicationNavItems = ['messenger'].map(getVisibleItem).filter(Boolean) as typeof navItems;
+  const styleSettingsItem = getVisibleItem('style_settings');
 
   const canSeeVendors = hasAccess(['manage_vendors']);
   const canSeeVendorCategories = isAdmin || !!currentUser?.customPermissions?.includes('manage_vendors');
@@ -248,6 +254,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <nav className="space-y-1">
           {primaryItems.map(renderFlatItem)}
 
+          {/* ب) بایگانی و گزارش‌ها */}
+          {archiveReportItems.map(renderFlatItem)}
+
+          {/* ج) دفترچه و منابع سازمانی: گروه دفترچه، سپس شعب/مراکز هزینه و شرکت‌ها */}
           {/* directory group */}
           {showDirectoryGroup && !isCollapsed && (
             <div>
@@ -294,25 +304,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {secondaryItems.map(renderFlatItem)}
+          {orgResourceItems.map(renderFlatItem)}
 
-          {canSeeSupport && (
-            <button
-              onClick={() => { setActiveTab('support'); if (onCloseMobile) onCloseMobile(); }}
-              title="خدمات پس از فروش و شکایات"
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
-                activeTab === 'support'
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-                <LifeBuoy className={`w-4 h-4 shrink-0 ${activeTab === 'support' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                {!isCollapsed && <span>خدمات پس از فروش و شکایات</span>}
-              </div>
-              {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">جدید</span>}
-            </button>
-          )}
+          {/* د) ارتباطات: گفتگوی عمومی، نامه‌ها، کلیه مکاتبات */}
+          {communicationNavItems.map(renderFlatItem)}
 
           {canSeeLetters && (
             <button
@@ -356,6 +351,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
 
+          {/* ه) خدمات پس از فروش و شکایات */}
+          {canSeeSupport && (
+            <button
+              onClick={() => { setActiveTab('support'); if (onCloseMobile) onCloseMobile(); }}
+              title="خدمات پس از فروش و شکایات"
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
+                activeTab === 'support'
+                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+                <LifeBuoy className={`w-4 h-4 shrink-0 ${activeTab === 'support' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                {!isCollapsed && <span>خدمات پس از فروش و شکایات</span>}
+              </div>
+              {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">جدید</span>}
+            </button>
+          )}
+
+          {/* و) کاربران و دسترسی‌ها */}
           {/* users group */}
           {showUsersGroup && !isCollapsed && (
             <div>
@@ -446,6 +461,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
         </nav>
+
+        {/* ز) تنظیمات شخصی — جدا از گروه‌های گردش‌کاری بالا، در پایین‌ترین بخش محتوای سایدبار */}
+        {styleSettingsItem && (
+          <div className="pt-3 mt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1">
+            {renderFlatItem(styleSettingsItem)}
+          </div>
+        )}
       </div>
 
       {/* User Status Card at Bottom */}
