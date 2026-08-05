@@ -238,3 +238,25 @@
 **Impact:**
 فروشنده‌ی B نمی‌تواند برای مشتری‌ای که فروشنده‌ی A چرخه‌ی `active` باز دارد، چرخه‌ی جدید ثبت کند (پیام قفل شفاف نمایش داده می‌شود)؛ پس از بستن چرخه توسط A، فروشنده‌ی B می‌تواند چرخه‌ی جدید ثبت کند و کل تاریخچه‌ی قبلی مشتری (شامل چرخه‌های A) برایش قابل‌مشاهده می‌ماند. هیچ‌کدام از ۶ کاربر نمونه‌ی خزانه‌داری تغییر نکردند؛ `isDualRole`, `approvalChain`, `allowedApproverIds` و هیچ اینترفیس موجودی در `types.ts` دست نخوردند — فقط موارد کاملاً جدید اضافه شدند.
 
+---
+
+### Date: 2026-08-05
+
+**Decision:**
+مرج نهایی دو شاخه‌ی آماده (`feature/multi-tab-navigation` و `feature/multi-role-permissions`) داخل `stable`، به ترتیب:
+
+۱. **`feature/multi-tab-navigation` → `stable`**: fast-forward بدون conflict (چون `stable` از قبل هیچ کامیت جدیدی نداشت).
+۲. **`feature/multi-role-permissions` → `stable`**: ۶ فایل conflict داشتند (`AGENTS.md`, `DECISION_LOG.md`, `docs/MODULES_DOCUMENTATION.md`, `src/App.tsx`, `src/components/Sidebar.tsx`, `src/utils/storage.ts`) — همگی با اصل «حفظ کامل هر دو فیچر» حل شدند:
+   - `AGENTS.md`/`DECISION_LOG.md`: هر دو مجموعه قانون/تصمیم به‌صورت متوالی (نه جایگزین یکدیگر) نگه داشته شدند؛ بندهای `AGENTS.md` بازشماری شدند (۱۲-۱۳ چندتبی، ۱۴-۱۵ چندنقشی/مشتری).
+   - `docs/MODULES_DOCUMENTATION.md`: دو بخش مجزا (۹ چندتبی، ۱۰ ماژول فروش) نگه داشته شدند.
+   - `src/utils/storage.ts`: هر دو کلید (`TAB_USAGE` و `CUSTOMERS`) و هر دو مجموعه متد (`getTabUsage`/`saveTabUsage`/`recordTabUsage` و `getCustomers`/`saveCustomers`) نگه داشته شدند.
+   - `src/components/Sidebar.tsx`: بلوک تکراری/قدیمی «خدمات پس از فروش» (نسخه‌ی pre-reorg از شاخه‌ی چندتبی) حذف و فقط نسخه‌ی گروه‌بندی‌شده‌ی نهایی نگه داشته شد؛ یک `setActiveTab` باقی‌مانده در همان بلوک به `onOpenTab` تبدیل شد.
+   - `src/App.tsx`: بلوک `activeTab === 'customers'` (الگوی تک‌مقصدی قدیمی) به الگوی چندتبی `tab.id === 'customers'` تبدیل و کنار `vendor_categories` قرار گرفت؛ بلوک تکراری `activeTab === 'colleagues'` حذف شد چون نسخه‌ی `tab.id === 'colleagues'` از قبل در `App.tsx` وجود داشت.
+۳. **رفع یک شکاف کشف‌شده حین حل conflict**: تب `customers` در رجیستری مشترک `TAB_DEFINITIONS` (`src/components/TabBar.tsx`) تعریف نشده بود (چون این رجیستری روی شاخه‌ی چندتبی ساخته شده بود، پیش از وجود ماژول فروش) — یک ورودی `{ label: 'مشتریان', icon: Contact }` اضافه شد تا نوار تب برای این View هم آیکون/عنوان صحیح نشان دهد.
+۴. **مستندات**: `docs/DATABASE_DOCUMENTATION.md`/`docs/BUSINESS_RULES.md` بدون conflict merge شدند و بدون نیاز به تغییر محتوایی بودند (چون فقط شاخه‌ی چندنقشی/مشتری آن‌ها را لمس کرده بود). `docs/CODE_STRUCTURE.md` (بدون conflict merge شد) برای انعکاس مدل ناوبری چندتبی در بخش «نحوه ارتباط فایل‌ها» به‌روزرسانی شد. `docs/SALES_ARCHITECTURE_DRAFT.md` طبق دستور صریح دست‌نخورده ماند (سند طراحی در حال گفتگو، نه پیاده‌سازی نهایی).
+
+**Reason:**
+هر دو شاخه از نظر کاربر «آماده» بودند و باید هم‌زمان در `stable` (شاخه‌ی مرجع تولید) در دسترس باشند؛ merge متوالی (نه rebase یا cherry-pick) انتخاب شد تا تاریخچه‌ی کامل هر دو فیچر حفظ شود.
+
+**Impact:**
+`stable` اکنون شامل هر سه فیچر است: ناوبری چندتبی شبیه مرورگر + ویجت پرکاربردترین منوها، مدل چندنقشی کاربران (`getEffectiveUserPermissions`)، و ماژول فروش مشتری با قفل مالکیت پویا. تست دستی پس از merge (لاگین ادمین + شبیه‌سازی دو کاربر نمونه فروش) نشان داد داشبورد، سایدبار (شامل آیتم «مشتریان» و گروه «کاربران»)، و باز شدن/سوییچ تب‌ها بدون خطا کار می‌کنند. `npm run lint` (`tsc --noEmit`) بعد از هر مرحله (هر دو merge + رفع conflict + به‌روزرسانی مستندات) بدون خطا پاس شد. هیچ‌کدام از ۹ کاربر نمونه (۶ خزانه‌داری + ۳ فروش) و هیچ‌کدام از خط‌قرمزها (`isDualRole`, `approvalChain`, `allowedApproverIds`, rename اینترفیس) لمس نشدند.
