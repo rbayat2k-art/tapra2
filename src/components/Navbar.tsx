@@ -18,7 +18,7 @@ interface NavbarProps {
   onSelectNotificationColleague: (colleagueId: string) => void;
   onMarkNotificationRead: (id: string) => void;
   activeTab: string;
-  setActiveTab: (tab: string) => void;
+  onOpenTab: (tabId: string, label?: string) => void;
   onToggleSidebar?: () => void;
 }
 
@@ -34,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectNotificationColleague,
   onMarkNotificationRead,
   activeTab,
-  setActiveTab,
+  onOpenTab,
   onToggleSidebar
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => onOpenTab('dashboard')}>
               <div className="w-10 h-10 rounded-xl bg-emerald-600 dark:bg-gradient-to-tr dark:from-indigo-600 dark:via-blue-600 dark:to-emerald-500 flex items-center justify-center shadow-md shadow-emerald-600/20 text-white font-bold text-xl shrink-0">
                 <Building2 className="w-6 h-6 text-white" />
               </div>
@@ -266,7 +266,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {currentUser.role === 'admin' && (
                       <button
                         onClick={() => {
-                          setActiveTab('admin');
+                          onOpenTab('admin');
                           setShowUserMenu(false);
                         }}
                         className="w-full text-right px-3 py-2 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-slate-700/60 rounded-lg flex items-center gap-2 cursor-pointer"

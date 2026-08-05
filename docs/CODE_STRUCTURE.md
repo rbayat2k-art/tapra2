@@ -41,6 +41,7 @@
     │   ├── RolesAndPermissionsView.tsx # ماتریس نقش‌ها و دسترسی‌ها
     │   ├── Navbar.tsx                  # نوار بالایی و مشخصات کاربر
     │   ├── Sidebar.tsx                 # منوی ناوبری کناری
+    │   ├── TabBar.tsx                  # نوار تب‌های باز (ناوبری چندتبی شبیه مرورگر) + رجیستری TAB_DEFINITIONS
     │   ├── StyleSettingsView.tsx       # تنظیمات ظاهری
     │   ├── NewRequestModal.tsx         # مودال ثبت درخواست جدید
     │   ├── RequestDetailModal.tsx      # مودال بررسی و تایید درخواست

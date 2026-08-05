@@ -35,8 +35,15 @@ const STORAGE_KEYS = {
   REQUEST_COUNTER: 'shavaz_treasury_req_counter_v2',
   SUPPORT_CASE_COUNTER: 'shavaz_treasury_support_case_counter_v1',
   LETTER_COUNTER: 'shavaz_treasury_letter_counter_v1',
-  TASKS: 'shavaz_treasury_tasks_v2'
+  TASKS: 'shavaz_treasury_tasks_v2',
+  TAB_USAGE: 'shavaz_treasury_tab_usage_v1'
 };
+
+// Per-user tab/menu open counts, used to power the "پرکاربردترین منوهای شما" dashboard
+// widget: { [userId]: { [tabId]: openCount } }. Independent of everything else in
+// STORAGE_KEYS above; not part of src/types.ts since it's UI usage telemetry, not a
+// core data model.
+export type TabUsageCounts = Record<string, Record<string, number>>;
 
 // Default System Roles
 export const DEFAULT_ROLES: SystemRole[] = [
@@ -695,6 +702,23 @@ export const storage = {
   },
   saveTasks(tasks: AssignedTask[]): void {
     setStoredData(STORAGE_KEYS.TASKS, tasks);
+  },
+
+  getTabUsage(): TabUsageCounts {
+    return getStoredData<TabUsageCounts>(STORAGE_KEYS.TAB_USAGE, {});
+  },
+  saveTabUsage(usage: TabUsageCounts): void {
+    setStoredData(STORAGE_KEYS.TAB_USAGE, usage);
+  },
+  // Increments this user's open-count for a tab and persists it; returns the updated
+  // counts map so callers (e.g. App.tsx's openTab) can use it immediately if needed.
+  recordTabUsage(userId: string, tabId: string): TabUsageCounts {
+    const usage = getStoredData<TabUsageCounts>(STORAGE_KEYS.TAB_USAGE, {});
+    const userUsage = { ...(usage[userId] || {}) };
+    userUsage[tabId] = (userUsage[tabId] || 0) + 1;
+    const next = { ...usage, [userId]: userUsage };
+    setStoredData(STORAGE_KEYS.TAB_USAGE, next);
+    return next;
   },
 
   getCurrentUser(): User | null {

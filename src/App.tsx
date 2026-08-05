@@ -33,10 +33,63 @@ import { ApprovalInboxView } from './components/ApprovalInboxView';
 import { AssignedTasksView } from './components/AssignedTasksView';
 import { AllCommunicationsAuditView } from './components/AllCommunicationsAuditView';
 import { StyleSettingsView, AVAILABLE_FONTS } from './components/StyleSettingsView';
+import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storage.getCurrentUser());
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+
+  // Browser-like multi-tab navigation: every view the user opens stays mounted (App.tsx
+  // toggles visibility with CSS, see the main content section below) instead of being
+  // unmounted/discarded on every navigation, so scroll position, filters, and half-filled
+  // forms in a tab survive switching away and back. "dashboard" is always the first tab
+  // and can never be closed.
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([{ id: 'dashboard', label: TAB_DEFINITIONS.dashboard.label }]);
+  const [activeTabId, setActiveTabId] = useState<string>('dashboard');
+
+  const openTab = (tabId: string, label?: string) => {
+    setOpenTabs(prev => {
+      if (prev.some(t => t.id === tabId)) return prev;
+      const finalLabel = label || TAB_DEFINITIONS[tabId]?.label || tabId;
+      return [...prev, { id: tabId, label: finalLabel }];
+    });
+    setActiveTabId(tabId);
+    // Usage telemetry for the "پرکاربردترین منوهای شما" dashboard widget — counts every
+    // open/switch-to, per logged-in user, independent of the openTabs/activeTabId state above.
+    if (currentUser) {
+      storage.recordTabUsage(currentUser.id, tabId);
+    }
+  };
+
+  const closeTab = (tabId: string) => {
+    if (tabId === 'dashboard') return; // dashboard is never closable
+    setOpenTabs(prev => {
+      const idx = prev.findIndex(t => t.id === tabId);
+      if (idx === -1) return prev;
+      const next = prev.filter(t => t.id !== tabId);
+
+      if (activeTabId === tabId) {
+        // Activate the tab to its left (previous in the list); if it was the first tab,
+        // activate the one that takes its place instead. If nothing is left, fall back
+        // to (and re-open, since dashboard must always stay open) the dashboard tab.
+        const fallback = { id: 'dashboard', label: TAB_DEFINITIONS.dashboard.label };
+        const newActive = next[idx > 0 ? idx - 1 : 0] || fallback;
+        setActiveTabId(newActive.id);
+        return next.length > 0 ? next : [fallback];
+      }
+
+      return next;
+    });
+  };
+
+  // Whenever the logged-in identity changes (impersonation switch, exiting impersonation,
+  // or a plain logout/login), the open tab set must be wiped back to just the dashboard.
+  // Otherwise a tab opened under one identity (e.g. an admin's "مدیریت کاربران سیستمی" tab)
+  // would stay mounted and clickable after switching to a less-privileged user, since
+  // selecting an already-open tab does not re-check hasAccess.
+  const resetTabsToDashboard = () => {
+    setOpenTabs([{ id: 'dashboard', label: TAB_DEFINITIONS.dashboard.label }]);
+    setActiveTabId('dashboard');
+  };
 
   // Theme State (Dark / Light)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -126,10 +179,11 @@ export default function App() {
     }
     setCurrentUser(targetUser);
     storage.setCurrentUser(targetUser);
+    resetTabsToDashboard();
     if (targetUser.role === 'requestor') {
-      setActiveTab('my_requests');
+      openTab('my_requests');
     } else {
-      setActiveTab('approval_inbox');
+      openTab('approval_inbox');
     }
   };
 
@@ -139,7 +193,8 @@ export default function App() {
       storage.setCurrentUser(impersonatorAdmin);
       setImpersonatorAdmin(null);
       localStorage.removeItem('shavaz_impersonator_admin');
-      setActiveTab('admin');
+      resetTabsToDashboard();
+      openTab('admin');
     }
   };
 
@@ -294,7 +349,7 @@ export default function App() {
 
   const handleSelectNotificationColleague = (colleagueId: string) => {
     setColleagueChatTarget(colleagueId);
-    setActiveTab('colleagues');
+    openTab('colleagues');
   };
 
   // Direct Messages (همکاران - چت شخصی)
@@ -662,6 +717,7 @@ export default function App() {
           isStandalone={true}
           onLoginSuccess={(u) => {
             setCurrentUser(u);
+            resetTabsToDashboard();
           }}
           companies={companies}
           costCenters={costCenters}
@@ -685,13 +741,14 @@ export default function App() {
         onLogout={() => {
           storage.setCurrentUser(null);
           setCurrentUser(null);
+          resetTabsToDashboard();
         }}
         onSearchTrackingCode={handleSearchTrackingCode}
         onSelectNotificationRequest={handleSelectNotificationRequest}
         onSelectNotificationColleague={handleSelectNotificationColleague}
         onMarkNotificationRead={handleMarkNotificationRead}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        activeTab={activeTabId}
+        onOpenTab={openTab}
         onToggleSidebar={() => {
           setIsMobileSidebarOpen(prev => !prev);
           setIsSidebarCollapsed(prev => !prev);
@@ -725,12 +782,12 @@ export default function App() {
         {/* Desktop Sidebar (Collapsible) */}
         <div className="hidden md:flex shrink-0">
           <Sidebar
-            activeTab={activeTab}
-            setActiveTab={(tab) => {
-              if (tab === 'new_request') {
+            activeTab={activeTabId}
+            onOpenTab={(tabId, label) => {
+              if (tabId === 'new_request') {
                 setIsNewRequestModalOpen(true);
               } else {
-                setActiveTab(tab);
+                openTab(tabId, label);
               }
             }}
             currentUser={currentUser}
@@ -751,12 +808,12 @@ export default function App() {
           <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-start dir-rtl animate-fade-in">
             <div className="w-4/5 max-w-xs h-full bg-slate-900 overflow-y-auto shadow-2xl">
               <Sidebar
-                activeTab={activeTab}
-                setActiveTab={(tab) => {
-                  if (tab === 'new_request') {
+                activeTab={activeTabId}
+                onOpenTab={(tabId, label) => {
+                  if (tabId === 'new_request') {
                     setIsNewRequestModalOpen(true);
                   } else {
-                    setActiveTab(tab);
+                    openTab(tabId, label);
                   }
                   setIsMobileSidebarOpen(false);
                 }}
@@ -814,238 +871,252 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activeTab === 'dashboard' && (
-            <DashboardView
-              requests={requests}
-              currentUser={currentUser}
-              companies={companies}
-              costCenters={costCenters}
-              onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
-              onNavigateTab={setActiveTab}
-              onSelectRequest={(req) => {
-                setSelectedDetailRequest(req);
-                setIsDetailModalOpen(true);
-              }}
-            />
-          )}
+              <TabBar
+                openTabs={openTabs}
+                activeTabId={activeTabId}
+                onSelectTab={setActiveTabId}
+                onCloseTab={closeTab}
+              />
 
-          {activeTab === 'my_requests' && (
-            <MyRequestsView
-              requests={requests}
-              currentUser={currentUser}
-              costCenters={costCenters}
-              companies={companies}
-              onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
-              onSelectRequest={(req) => {
-                setSelectedDetailRequest(req);
-                setIsDetailModalOpen(true);
-              }}
-              onOpenPrintModal={(req) => {
-                setSelectedPrintRequest(req);
-                setIsPrintModalOpen(true);
-              }}
-            />
-          )}
+              {/* Every open tab stays mounted (hidden via CSS, not unmounted) so scroll
+                  position, filters, and half-filled forms in a tab survive switching away
+                  and back. Only views the user has actually opened are mounted at all. */}
+              {openTabs.map((tab) => (
+                <div key={tab.id} style={{ display: activeTabId === tab.id ? 'block' : 'none' }}>
+                  {tab.id === 'dashboard' && (
+                    <DashboardView
+                      requests={requests}
+                      currentUser={currentUser}
+                      companies={companies}
+                      costCenters={costCenters}
+                      onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
+                      onNavigateTab={openTab}
+                      onSelectRequest={(req) => {
+                        setSelectedDetailRequest(req);
+                        setIsDetailModalOpen(true);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'assigned_tasks' && (
-            <AssignedTasksView
-              currentUser={currentUser}
-              users={users}
-              tasks={tasks}
-              onUpdateTask={(updatedTask) => {
-                setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
-              }}
-              onCreateTask={(newTask) => {
-                setTasks(prev => [newTask, ...prev]);
-              }}
-            />
-          )}
+                  {tab.id === 'my_requests' && (
+                    <MyRequestsView
+                      requests={requests}
+                      currentUser={currentUser}
+                      costCenters={costCenters}
+                      companies={companies}
+                      onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
+                      onSelectRequest={(req) => {
+                        setSelectedDetailRequest(req);
+                        setIsDetailModalOpen(true);
+                      }}
+                      onOpenPrintModal={(req) => {
+                        setSelectedPrintRequest(req);
+                        setIsPrintModalOpen(true);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'approval_inbox' && (
-            <ApprovalInboxView
-              requests={requests}
-              currentUser={currentUser}
-              companies={companies}
-              costCenters={costCenters}
-              onSelectRequest={(req) => {
-                setSelectedDetailRequest(req);
-                setIsDetailModalOpen(true);
-              }}
-              onOpenPrintModal={(req) => {
-                setSelectedPrintRequest(req);
-                setIsPrintModalOpen(true);
-              }}
-            />
-          )}
+                  {tab.id === 'assigned_tasks' && (
+                    <AssignedTasksView
+                      currentUser={currentUser}
+                      users={users}
+                      tasks={tasks}
+                      onUpdateTask={(updatedTask) => {
+                        setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+                      }}
+                      onCreateTask={(newTask) => {
+                        setTasks(prev => [newTask, ...prev]);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'cost_centers' && (
-            <CostCentersView
-              costCenters={costCenters}
-              companies={companies}
-              requests={requests}
-              currentUser={currentUser}
-              onUpdateCostCenters={setCostCenters}
-            />
-          )}
+                  {tab.id === 'approval_inbox' && (
+                    <ApprovalInboxView
+                      requests={requests}
+                      currentUser={currentUser}
+                      companies={companies}
+                      costCenters={costCenters}
+                      onSelectRequest={(req) => {
+                        setSelectedDetailRequest(req);
+                        setIsDetailModalOpen(true);
+                      }}
+                      onOpenPrintModal={(req) => {
+                        setSelectedPrintRequest(req);
+                        setIsPrintModalOpen(true);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'vendors' && (
-            <VendorsView
-              vendors={vendors}
-              requests={requests}
-              currentUser={currentUser}
-              companies={companies}
-              onUpdateVendors={setVendors}
-              vendorCategories={vendorCategories}
-              onUpdateVendorCategories={setVendorCategories}
-              onOpenNewRequestWithVendor={() => {
-                setIsNewRequestModalOpen(true);
-              }}
-            />
-          )}
+                  {tab.id === 'cost_centers' && (
+                    <CostCentersView
+                      costCenters={costCenters}
+                      companies={companies}
+                      requests={requests}
+                      currentUser={currentUser}
+                      onUpdateCostCenters={setCostCenters}
+                    />
+                  )}
 
-          {activeTab === 'vendor_categories' && (
-            <VendorCategoriesView
-              categories={vendorCategories}
-              vendors={vendors}
-              currentUser={currentUser}
-              onUpdateCategories={setVendorCategories}
-            />
-          )}
+                  {tab.id === 'vendors' && (
+                    <VendorsView
+                      vendors={vendors}
+                      requests={requests}
+                      currentUser={currentUser}
+                      companies={companies}
+                      onUpdateVendors={setVendors}
+                      vendorCategories={vendorCategories}
+                      onUpdateVendorCategories={setVendorCategories}
+                      onOpenNewRequestWithVendor={() => {
+                        setIsNewRequestModalOpen(true);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'colleagues' && (
-            <ColleaguesView
-              users={users}
-              currentUser={currentUser}
-              messages={directMessages}
-              initialTargetUserId={colleagueChatTarget}
-              onSendMessage={handleSendDirectMessage}
-              onMarkConversationRead={handleMarkConversationRead}
-            />
-          )}
+                  {tab.id === 'vendor_categories' && (
+                    <VendorCategoriesView
+                      categories={vendorCategories}
+                      vendors={vendors}
+                      currentUser={currentUser}
+                      onUpdateCategories={setVendorCategories}
+                    />
+                  )}
 
-          {activeTab === 'support' && (
-            <SupportView
-              cases={supportCases}
-              currentUser={currentUser}
-              users={users}
-              companies={companies}
-              costCenters={costCenters}
-              onCreateCase={handleCreateSupportCase}
-              onUpdateCase={handleUpdateSupportCase}
-              onMarkRowApproved={handleMarkSupportRowApproved}
-              onSendApprovedRowsToTreasury={handleSendApprovedRowsToTreasury}
-            />
-          )}
+                  {tab.id === 'colleagues' && (
+                    <ColleaguesView
+                      users={users}
+                      currentUser={currentUser}
+                      messages={directMessages}
+                      initialTargetUserId={colleagueChatTarget}
+                      onSendMessage={handleSendDirectMessage}
+                      onMarkConversationRead={handleMarkConversationRead}
+                    />
+                  )}
 
-          {activeTab === 'letters' && (
-            <LettersView
-              letters={letters}
-              currentUser={currentUser}
-              users={users}
-              onCreateLetter={handleCreateLetter}
-              onUpdateLetter={handleUpdateLetter}
-              onSaveNewVersion={handleSaveNewLetterVersion}
-              onForward={handleForwardLetter}
-            />
-          )}
+                  {tab.id === 'support' && (
+                    <SupportView
+                      cases={supportCases}
+                      currentUser={currentUser}
+                      users={users}
+                      companies={companies}
+                      costCenters={costCenters}
+                      onCreateCase={handleCreateSupportCase}
+                      onUpdateCase={handleUpdateSupportCase}
+                      onMarkRowApproved={handleMarkSupportRowApproved}
+                      onSendApprovedRowsToTreasury={handleSendApprovedRowsToTreasury}
+                    />
+                  )}
 
-          {activeTab === 'companies' && (
-            <CompaniesView
-              companies={companies}
-              companyBankAccounts={companyBankAccounts}
-              currentUser={currentUser}
-              onUpdateCompanies={setCompanies}
-              onUpdateCompanyBankAccounts={setCompanyBankAccounts}
-            />
-          )}
+                  {tab.id === 'letters' && (
+                    <LettersView
+                      letters={letters}
+                      currentUser={currentUser}
+                      users={users}
+                      onCreateLetter={handleCreateLetter}
+                      onUpdateLetter={handleUpdateLetter}
+                      onSaveNewVersion={handleSaveNewLetterVersion}
+                      onForward={handleForwardLetter}
+                    />
+                  )}
 
-          {activeTab === 'archive' && (
-            <ArchiveView
-              requests={requests}
-              companies={companies}
-              costCenters={costCenters}
-              currentUser={currentUser}
-              supportCases={supportCases}
-              letters={letters}
-              vendors={vendors}
-              users={users}
-              onSelectRequest={(req) => {
-                setSelectedDetailRequest(req);
-                setIsDetailModalOpen(true);
-              }}
-              onOpenPrintModal={(req) => {
-                setSelectedPrintRequest(req);
-                setIsPrintModalOpen(true);
-              }}
-            />
-          )}
+                  {tab.id === 'companies' && (
+                    <CompaniesView
+                      companies={companies}
+                      companyBankAccounts={companyBankAccounts}
+                      currentUser={currentUser}
+                      onUpdateCompanies={setCompanies}
+                      onUpdateCompanyBankAccounts={setCompanyBankAccounts}
+                    />
+                  )}
 
-          {activeTab === 'workflow' && (
-            <WorkflowChartView
-              workflowSteps={workflowSteps}
-              users={users}
-              currentUser={currentUser}
-              onUpdateUsers={setUsers}
-            />
-          )}
+                  {tab.id === 'archive' && (
+                    <ArchiveView
+                      requests={requests}
+                      companies={companies}
+                      costCenters={costCenters}
+                      currentUser={currentUser}
+                      supportCases={supportCases}
+                      letters={letters}
+                      vendors={vendors}
+                      users={users}
+                      onSelectRequest={(req) => {
+                        setSelectedDetailRequest(req);
+                        setIsDetailModalOpen(true);
+                      }}
+                      onOpenPrintModal={(req) => {
+                        setSelectedPrintRequest(req);
+                        setIsPrintModalOpen(true);
+                      }}
+                    />
+                  )}
 
-          {activeTab === 'messenger' && (
-            <ChatView
-              messages={messages}
-              currentUser={currentUser}
-              onSendMessage={(newMsg) => setMessages(prev => [...prev, newMsg])}
-            />
-          )}
+                  {tab.id === 'workflow' && (
+                    <WorkflowChartView
+                      workflowSteps={workflowSteps}
+                      users={users}
+                      currentUser={currentUser}
+                      onUpdateUsers={setUsers}
+                    />
+                  )}
 
-          {activeTab === 'roles_permissions' && (
-            <RolesAndPermissionsView
-              roles={roles}
-              users={users}
-              currentUser={currentUser}
-              onUpdateRoles={setRoles}
-            />
-          )}
+                  {tab.id === 'messenger' && (
+                    <ChatView
+                      messages={messages}
+                      currentUser={currentUser}
+                      onSendMessage={(newMsg) => setMessages(prev => [...prev, newMsg])}
+                    />
+                  )}
 
-          {activeTab === 'all_communications' && (
-            <AllCommunicationsAuditView
-              currentUser={currentUser}
-              users={users}
-              directMessages={directMessages}
-              publicMessages={messages}
-              letters={letters}
-              requests={requests}
-              tasks={tasks}
-              supportCases={supportCases}
-            />
-          )}
+                  {tab.id === 'roles_permissions' && (
+                    <RolesAndPermissionsView
+                      roles={roles}
+                      users={users}
+                      currentUser={currentUser}
+                      onUpdateRoles={setRoles}
+                    />
+                  )}
 
-          {activeTab === 'style_settings' && (
-            <StyleSettingsView
-              currentFont={currentFont}
-              onSelectFont={setCurrentFont}
-              theme={theme}
-              onToggleTheme={toggleTheme}
-              fontSize={fontSize}
-              onChangeFontSize={setFontSize}
-              accentColor={accentColor}
-              onChangeAccentColor={setAccentColor}
-            />
-          )}
+                  {tab.id === 'all_communications' && (
+                    <AllCommunicationsAuditView
+                      currentUser={currentUser}
+                      users={users}
+                      directMessages={directMessages}
+                      publicMessages={messages}
+                      letters={letters}
+                      requests={requests}
+                      tasks={tasks}
+                      supportCases={supportCases}
+                    />
+                  )}
 
-          {activeTab === 'admin' && (
-            <AdminPanel
-              users={users}
-              companies={companies}
-              costCenters={costCenters}
-              requests={requests}
-              roles={roles}
-              currentUser={currentUser}
-              onUpdateUsers={setUsers}
-              onUpdateCompanies={setCompanies}
-              onUpdateCostCenters={setCostCenters}
-              onImpersonateUser={handleImpersonateUser}
-            />
-          )}
+                  {tab.id === 'style_settings' && (
+                    <StyleSettingsView
+                      currentFont={currentFont}
+                      onSelectFont={setCurrentFont}
+                      theme={theme}
+                      onToggleTheme={toggleTheme}
+                      fontSize={fontSize}
+                      onChangeFontSize={setFontSize}
+                      accentColor={accentColor}
+                      onChangeAccentColor={setAccentColor}
+                    />
+                  )}
+
+                  {tab.id === 'admin' && (
+                    <AdminPanel
+                      users={users}
+                      companies={companies}
+                      costCenters={costCenters}
+                      requests={requests}
+                      roles={roles}
+                      currentUser={currentUser}
+                      onUpdateUsers={setUsers}
+                      onUpdateCompanies={setCompanies}
+                      onUpdateCostCenters={setCostCenters}
+                      onImpersonateUser={handleImpersonateUser}
+                    />
+                  )}
+                </div>
+              ))}
             </>
           )}
 
@@ -1083,6 +1154,7 @@ export default function App() {
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={(u) => {
           setCurrentUser(u);
+          resetTabsToDashboard();
           setIsLoginModalOpen(false);
         }}
         companies={companies}

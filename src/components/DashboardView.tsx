@@ -1,10 +1,12 @@
 import React from 'react';
 import { PaymentRequest, User, Company, CostCenter } from '../types';
 import { formatRial } from '../utils/numberToWords';
-import { 
-  CreditCard, CheckCircle2, Clock, RefreshCw, 
-  Building, MapPin, PlusCircle, Archive, ArrowUpRight, 
-  TrendingUp, Layers, Users, Sparkles, ShieldCheck 
+import { storage } from '../utils/storage';
+import { TAB_DEFINITIONS } from './TabBar';
+import {
+  CreditCard, CheckCircle2, Clock, RefreshCw,
+  Building, MapPin, PlusCircle, Archive, ArrowUpRight,
+  TrendingUp, Layers, Users, Sparkles, ShieldCheck
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -58,6 +60,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const paidRequests = userAccessibleRequests.filter(r => r.status === 'paid');
   const totalPaidAmount = paidRequests.reduce((sum, r) => sum + r.amount, 0);
   const returnedCount = userAccessibleRequests.filter(r => r.status === 'returned').length;
+
+  // "پرکاربردترین منوهای شما" widget data — read this user's per-tab open counts
+  // (recorded by App.tsx's openTab -> storage.recordTabUsage) and rank them. Only tab
+  // ids still present in TAB_DEFINITIONS are shown, so a removed/renamed tab can't leave
+  // a broken entry behind. Hidden entirely for a user with fewer than 3 distinct tabs
+  // used so far (new users never see an empty/awkward widget).
+  const tabUsageCounts = currentUser ? (storage.getTabUsage()[currentUser.id] || {}) : {};
+  const topUsedTabs = Object.entries(tabUsageCounts)
+    .filter(([tabId]) => !!TAB_DEFINITIONS[tabId])
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([tabId]) => ({ tabId, ...TAB_DEFINITIONS[tabId] }));
 
   // Security & Privacy: Filter cost centers based on user branch permissions
   const displayedCostCenters = costCenters.filter(cc => {
@@ -165,6 +179,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* Most-Used Menus Widget (per-user tab open counts) */}
+      {topUsedTabs.length >= 3 && (
+        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-indigo-500" />
+            <span>پرکاربردترین منوهای شما</span>
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {topUsedTabs.map(({ tabId, label, icon: Icon }) => (
+              <button
+                key={tabId}
+                onClick={() => onNavigateTab(tabId)}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-950/70 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/40 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-300 transition cursor-pointer"
+              >
+                <Icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Cost Centers Breakdown Cards with Budget vs. Actual Variance */}
       <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-5 shadow-sm">

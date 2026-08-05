@@ -10,7 +10,7 @@ import {
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: string) => void;
+  onOpenTab: (tabId: string, label?: string) => void;
   currentUser: User | null;
   pendingApprovalCount: number;
   myRequestsCount: number;
@@ -29,7 +29,7 @@ const conversationId = (a: string, b: string) => [a, b].sort().join('__');
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
-  setActiveTab,
+  onOpenTab,
   currentUser,
   pendingApprovalCount,
   myRequestsCount,
@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <button
         key={item.id}
         onClick={() => {
-          setActiveTab(item.id);
+          onOpenTab(item.id, item.label);
           if (onCloseMobile) onCloseMobile();
         }}
         title={isCollapsed ? item.label : undefined}
@@ -233,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {hasAccess(['create_request']) && (
           <button
             onClick={() => {
-              setActiveTab('new_request');
+              onOpenTab('new_request', 'ثبت درخواست جدید');
               if (onCloseMobile) onCloseMobile();
             }}
             title="ایجاد درخواست پرداخت جدید"
@@ -270,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="pr-4 mt-1 space-y-1 border-r border-slate-200 dark:border-slate-800 mr-4">
                   {canSeeVendors && (
                     <button
-                      onClick={() => { setActiveTab('vendors'); if (onCloseMobile) onCloseMobile(); }}
+                      onClick={() => { onOpenTab('vendors', 'ذینفعان و فروشندگان'); if (onCloseMobile) onCloseMobile(); }}
                       className={`w-full text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                         activeTab === 'vendors' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
                       }`}
@@ -280,7 +280,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
                   {canSeeVendorCategories && (
                     <button
-                      onClick={() => { setActiveTab('vendor_categories'); if (onCloseMobile) onCloseMobile(); }}
+                      onClick={() => { onOpenTab('vendor_categories', 'دسته‌بندی‌ها'); if (onCloseMobile) onCloseMobile(); }}
                       className={`w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                         activeTab === 'vendor_categories' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
                       }`}
@@ -298,7 +298,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {canSeeSupport && (
             <button
-              onClick={() => { setActiveTab('support'); if (onCloseMobile) onCloseMobile(); }}
+              onClick={() => { onOpenTab('support', 'خدمات پس از فروش و شکایات'); if (onCloseMobile) onCloseMobile(); }}
               title="خدمات پس از فروش و شکایات"
               className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
                 activeTab === 'support'
@@ -316,7 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {canSeeLetters && (
             <button
-              onClick={() => { setActiveTab('letters'); if (onCloseMobile) onCloseMobile(); }}
+              onClick={() => { onOpenTab('letters', 'نامه‌ها'); if (onCloseMobile) onCloseMobile(); }}
               title="نامه‌ها"
               className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
                 activeTab === 'letters'
@@ -340,7 +340,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {canSeeAllCommunications && (
             <button
-              onClick={() => { setActiveTab('all_communications'); if (onCloseMobile) onCloseMobile(); }}
+              onClick={() => { onOpenTab('all_communications', 'کلیه مکاتبات و چت‌های همکاران'); if (onCloseMobile) onCloseMobile(); }}
               title="کلیه مکاتبات و چت‌های همکاران"
               className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
                 activeTab === 'all_communications'
@@ -383,7 +383,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="pr-4 mt-1 space-y-1 border-r border-slate-200 dark:border-slate-800 mr-4">
                   {canSeeAdminUsers && (
                     <button
-                      onClick={() => { setActiveTab('admin'); if (onCloseMobile) onCloseMobile(); }}
+                      onClick={() => { onOpenTab('admin', 'مدیریت کاربران سیستمی'); if (onCloseMobile) onCloseMobile(); }}
                       className={`w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                         activeTab === 'admin' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
                       }`}
@@ -401,7 +401,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {recentColleagues.map(({ user, unread }) => (
                     <button
                       key={user.id}
-                      onClick={() => { onSelectColleague(user.id); setActiveTab('colleagues'); if (onCloseMobile) onCloseMobile(); }}
+                      onClick={() => { onSelectColleague(user.id); onOpenTab('colleagues', 'گفتگوی همکاران'); if (onCloseMobile) onCloseMobile(); }}
                       className={`w-full flex items-center justify-between text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                         activeTab === 'colleagues' ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
                       }`}
@@ -416,7 +416,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ))}
 
                   <button
-                    onClick={() => { onSelectColleague(''); setActiveTab('colleagues'); if (onCloseMobile) onCloseMobile(); }}
+                    onClick={() => { onSelectColleague(''); onOpenTab('colleagues', 'گفتگوی همکاران'); if (onCloseMobile) onCloseMobile(); }}
                     className="w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition cursor-pointer"
                     title="نمایش همه‌ی همکاران و شروع گفتگوی جدید"
                   >
@@ -430,7 +430,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {canSeeRoles && (
             <button
-              onClick={() => { setActiveTab('roles_permissions'); if (onCloseMobile) onCloseMobile(); }}
+              onClick={() => { onOpenTab('roles_permissions', 'نقش‌ها و دسترسی‌ها (RBAC)'); if (onCloseMobile) onCloseMobile(); }}
               title="نقش‌ها و دسترسی‌ها (RBAC)"
               className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
                 activeTab === 'roles_permissions'
