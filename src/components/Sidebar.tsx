@@ -5,7 +5,7 @@ import {
   LayoutDashboard, PlusCircle, Inbox, Archive, FileText, Search,
   GitFork, MessageSquare, ShieldCheck, CreditCard, Building, MapPin, KeyRound, Users, CheckSquare,
   ChevronDown, MoreHorizontal, UsersRound, BookUser, Tags, LifeBuoy, Mail, ShieldAlert, Palette,
-  Menu, X, PanelRightClose, PanelRightOpen
+  Menu, X, PanelRightClose, PanelRightOpen, Contact
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -101,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'archive', label: 'جستجوی پیشرفته و خروجی', icon: Search, badge: 'جامع', badgeColor: 'bg-indigo-600' },
     { id: 'workflow', label: 'چارت گردش کار (فلو)', icon: GitFork, badge: null, requires: ['view_analytics'] },
     { id: 'messenger', label: 'گفتگوی عمومی خزانه‌داری', icon: MessageSquare, badge: null },
+    { id: 'customers', label: 'مشتریان', icon: Contact, badge: null, requires: ['sales_access'] },
   ];
 
   // Visual grouping only — none of this changes hasAccess/requires, badges, icons, or
@@ -115,6 +116,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const archiveReportItems = ['archive', 'workflow'].map(getVisibleItem).filter(Boolean) as typeof navItems;
   const orgResourceItems = ['cost_centers', 'companies'].map(getVisibleItem).filter(Boolean) as typeof navItems;
   const communicationNavItems = ['messenger'].map(getVisibleItem).filter(Boolean) as typeof navItems;
+  // گروه جدید «فروش» (ماژول فروش، گام اول) — فعلاً فقط یک آیتم (مشتریان)؛ یک ردیف
+  // مستقل و ساده، نه یک گروه کشویی کامل مثل «دفترچه»/«کاربران»، چون هنوز آیتم دومی ندارد.
+  const salesNavItems = ['customers'].map(getVisibleItem).filter(Boolean) as typeof navItems;
   const styleSettingsItem = getVisibleItem('style_settings');
 
   const canSeeVendors = hasAccess(['manage_vendors']);
@@ -350,6 +354,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">امنیتی</span>}
             </button>
           )}
+
+          {/* گروه فروش (مشتریان) */}
+          {salesNavItems.map(renderFlatItem)}
 
           {/* ه) خدمات پس از فروش و شکایات */}
           {canSeeSupport && (

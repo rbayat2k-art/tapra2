@@ -31,6 +31,7 @@
 - `isSeniorTreasurySupervisor` (boolean, Optional): سرپرست ارشد خزانه‌داری (مقصد نهایی درخواست‌های کاربران دوگانه) — همچنان یک تیک دستی و مستقل از مدل چندنقشی است.
 - `additionalRoleIds` (string[], Optional): نقش‌های سیستمی اضافه‌ای (`SystemRole.id`) که ادمین علاوه بر نقش پایه (`role`/`roleId`) برای همین کاربر فعال کرده است. بخشی از «مدل چندنقشی کاربران» — به `getEffectiveUserPermissions` در `src/utils/permissions.ts` و بخش «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر» در `AdminPanel.tsx` مراجعه کنید.
 - `roleAccessOverrides` (`{ roleId: string; permissions: SystemPermission[] }[]`, Optional): برای یک `roleId` مشخص (نقش پایه یا یکی از `additionalRoleIds`)، لیست پرمیشن‌های آن نقش را **فقط برای همین کاربر** به‌طور کامل جایگزین می‌کند (نه merge؛ replace کامل) — می‌تواند هم پرمیشن‌های آن نقش را محدود کند و هم پرمیشن‌هایی فراتر از پیش‌فرض همان نقش به آن اضافه کند.
+- `salesSupervisorId` (string, Optional): زنجیره‌ی سرپرستی فروش این کاربر (فروشنده ← سرپرست فروش ← مدیر فروش ← ...) — **کاملاً مستقل از `approvalChain`/`allowedApproverIds` خزانه‌داری** و فقط توسط `src/utils/salesHierarchy.ts` برای محاسبه‌ی دید سلسله‌مراتبی مشتریان (`getVisibleCustomerIds`) استفاده می‌شود؛ با گردش کار تایید درخواست پرداخت هیچ ارتباطی ندارد و نباید با آن قاطی شود.
 
 > **یکپارچگی داده نمونه (`DEFAULT_USERS` در `src/utils/storage.ts`)**: مقادیر `allowedCostCenterIds` هر کاربر باید دقیقاً با `id` واقعی موجود در `DEFAULT_COST_CENTERS` مطابقت داشته باشد (مثلاً `cc_mokhberi_1` با آندرلاین، نه `cc_mokhberi1`) و همگی باید به `companyId` همان کاربر یا شرکت‌های در دسترس او تعلق داشته باشند؛ در غیر این صورت آن مرکز هزینه در فیلترهای دسترسی (`ApprovalInboxView`, `ArchiveView`, `CostCentersView`, `DashboardView`, `MyRequestsView`, `NewRequestModal`) هرگز match نمی‌شود و در `AdminPanel.tsx` به‌صورت شناسه خام (raw id) به‌جای نام شعبه نمایش داده می‌شود. در بازبینی داده نمونه کاربران (نگاه کنید به `DECISION_LOG.md`) چند مورد از همین ناسازگاری در `user_admin_reza` و `user_approver_sales` اصلاح شد. هیچ‌کدام از ۶ کاربر نمونه `additionalRoleIds`/`roleAccessOverrides` ندارند (هر دو `undefined`، معادل آرایه خالی)، چون `isDualRole` فعلی همه آن‌ها `false`/`undefined` است و تنها یک نقش دارند؛ `getEffectiveUserPermissions` برای این حالت دقیقاً همان مقدار قبلی (مبتنی‌بر `roleId` تنها) را برمی‌گرداند، پس دسترسی و منوی این کاربران بدون تغییر باقی می‌ماند.
 
@@ -157,6 +158,18 @@
 - `financialApprovalStatus`: وضعیت تایید مالی مبلغ
 - `status`: وضعیت پرونده
 
+### ي) جدول مشتریان ماژول فروش (`Customer`) — گام اول
+اولین موجودیت پیاده‌سازی‌شده از ماژول فروش (به `docs/SALES_ARCHITECTURE_DRAFT.md` بخش ۱۰ مراجعه کنید: «مشتری یک رکورد دائمی و متمرکز است»). ذخیره‌سازی در کلید مستقل `STORAGE_KEYS.CUSTOMERS` در `src/utils/storage.ts` (`getCustomers`/`saveCustomers`)، کاملاً جدا از هر کلید دیگر.
+- `id` (string, Primary Key)
+- `fullName` (string, Optional): نام و نام خانوادگی — اختیاری
+- `phone1` (string, Optional): **کلید شناسایی یکتای مشتری در کل سیستم** — اگر پر شود باید در کل سیستم یکتا باشد (چک یکتایی توسط `findCustomerByPhone` در `src/utils/salesHierarchy.ts` انجام می‌شود، نه با یک constraint دیتابیسی چون این پروژه از localStorage استفاده می‌کند)؛ خودِ فیلد اجباری نیست
+- `phone2` (string, Optional): شماره تماس دوم — در جستجوی یکتایی هم بررسی می‌شود
+- `address` / `province` / `city` / `postalCode` (string, Optional)
+- `createdAt` (string): تاریخ و زمان اولین ثبت مشتری
+- `activityLog` (`CustomerActivityLogEntry[]`, Optional): تاریخچه‌ی کامل همه‌ی چرخه‌های فروش این مشتری با فروشندگان مختلف در طول زمان. هر آیتم: `{ salespersonId, invoiceId?, startedAt, status: 'active' | 'completed' }`. `invoiceId` در فاز بعدی (فاکتور فروش) پر می‌شود؛ در این گام هنوز خالی می‌ماند.
+
+> **مالکیت فعلی مشتری بدون فیلد ذخیره‌شده**: `currentActiveSalespersonId` یک فیلد ذخیره‌شده روی `Customer` نیست — همیشه از روی `activityLog` با تابع `getCurrentActiveSalespersonId` در `src/utils/salesHierarchy.ts` محاسبه می‌شود (اولین entry با `status: 'active'`؛ اگر هیچ‌کدام active نبود، `null` یعنی مشتری آزاد است). این طراحی عمدی است تا مالکیت هیچ‌گاه از تاریخچه‌ی واقعی چرخه‌ها out-of-sync نشود. برای قانون کسب‌وکار «قفل مالکیت پویا» به `docs/BUSINESS_RULES.md` مراجعه کنید.
+
 ---
 
 ## ۳. روابط بین موجودیت‌ها (Entity Relationships)
@@ -164,3 +177,4 @@
 - هر **مرکز هزینه (`CostCenter`)** متعلق به یک **شرکت (`Company`)** است.
 - هر **حساب بانکی شرکت (`CompanyBankAccount`)** به یک شرکت متصل است.
 - هر **درخواست مالی (`PaymentRequest`)** توسط یک کاربر ثبت شده و به یک مرکز هزینه، یک شرکت و احتمالاً یک تامین‌کننده (`Vendor`) متصل است و توالی تایید آن از طریق `approvalChain` مدیریت می‌شود.
+- هر **مشتری (`Customer`)** ممکن است در طول زمان با چند **کاربر فروشنده (`User`)** مختلف در ارتباط بوده باشد (از طریق `activityLog[].salespersonId`)؛ در هر لحظه حداکثر یک چرخه‌ی فروش `active` می‌تواند وجود داشته باشد (قفل مالکیت پویا). دید سلسله‌مراتبی روی مشتریان از طریق `User.salesSupervisorId` (زنجیره‌ی مستقل از `approvalChain`) محاسبه می‌شود، نه از طریق `companyId`/`costCenterId`.

@@ -179,3 +179,22 @@
 **Impact:**
 ادمین اکنون می‌تواند به یک کاربر چند نقش هم‌زمان بدهد و برای هرکدام پرمیشن‌های اختصاصی تعریف کند، بدون آنکه نقش پایه یا `SystemRole` مشترک بین کاربران دیگر تغییر کند. `isDualRole` دیگر منبع خطای انسانی (فراموشی تیک زدن) ندارد — همیشه با واقعیتِ نقش‌های انتخابی سینک است. هیچ کاربر نمونه‌ای در `DEFAULT_USERS` تغییر نکرد: چون هیچ‌کدام `additionalRoleIds`/`roleAccessOverrides` ندارند، `getEffectiveUserPermissions` برایشان دقیقاً همان مقدار قبلی را برمی‌گرداند و اگر دوباره از `AdminPanel` بدون تغییر نقش ذخیره شوند، `isDualRole` مشتق‌شده هم `false` (مطابق مقدار فعلی همه ۶ کاربر) خواهد بود. `approvalChain`, `allowedApproverIds` و ساختار داده‌شان، و همه اینترفیس‌های `types.ts` دست‌نخورده ماندند — فقط دو فیلد اختیاری جدید اضافه شد.
 
+---
+
+### Date: 2026-08-04
+
+**Decision:**
+پیاده‌سازی گام اول ماژول فروش: موجودیت «مشتری» (`Customer`) با شناسایی یکتا بر اساس شماره‌تلفن، قفل مالکیت پویا، و دید سلسله‌مراتبی فروش (طبق تصمیمات مستندشده در `docs/SALES_ARCHITECTURE_DRAFT.md`):
+
+۱. **`src/types.ts`**: اینترفیس جدید `Customer` (`id`, `fullName?`, `phone1?` به‌عنوان کلید شناسایی یکتا، `phone2?`, `address?`, `province?`, `city?`, `postalCode?`, `createdAt`, `activityLog?`) و `CustomerActivityLogEntry` (`salespersonId`, `invoiceId?`, `startedAt`, `status: 'active'|'completed'`). فیلد جدید اختیاری `User.salesSupervisorId` (زنجیره‌ی سرپرستی فروش، مستقل از `approvalChain`/`allowedApproverIds`). مقدار جدید `'sales_access'` به یونیون `SystemPermission` اضافه شد. هیچ اینترفیس/فیلد موجودی rename یا حذف نشد.
+۲. **`src/utils/storage.ts`**: کلید مستقل `STORAGE_KEYS.CUSTOMERS`، ثابت `DEFAULT_CUSTOMERS` (خالی — سناریوی قفل مالکیت باید از طریق UI تست شود، نه داده‌ی از پیش‌ساخته)، و متدهای `getCustomers`/`saveCustomers`. سه کاربر نمونه‌ی جدید فروش (`user_sales_person_1` فروشنده، `user_sales_supervisor_1` سرپرست، `user_sales_manager_1` مدیر فروش) به انتهای `DEFAULT_USERS` اضافه شدند — همگی `role: 'requestor'` با `customPermissions: ['sales_access']` (بدون افزودن مقدار جدید به یونیون `UserRole`) و زنجیره‌ی `salesSupervisorId: فروشنده → سرپرست → مدیر`. هیچ‌کدام از ۶ کاربر خزانه‌داری موجود لمس نشدند.
+۳. **`src/utils/salesHierarchy.ts` (فایل جدید)**: `getVisibleCustomerIds` (دید سلسله‌مراتبی بر پایه‌ی `salesSupervisorId`)، `findCustomerByPhone` (جستجوی سراسری، مستقل از دید سلسله‌مراتبی)، `getCurrentActiveSalespersonId` (محاسبه‌ی مالکیت فعلی از روی `activityLog` — بدون فیلد ذخیره‌شده)، `canStartNewSale`، `startNewSaleCycle`، و `closeSaleCycle` (بستن دستی/تستی چرخه).
+۴. **`src/components/CustomersView.tsx` (فایل جدید)**: فرم جستجو/ثبت بر پایه‌ی شماره تماس با سه حالت (مشتری جدید / مشتری آزاد / مشتری قفل‌شده با پیام شفاف)، نمایش تاریخچه‌ی کامل `activityLog`، دکمه‌ی «شروع چرخه‌ی فروش جدید» و «بستن چرخه‌ی فروش» (فقط برای مالک فعلی)، و لیست «مشتریان قابل‌مشاهده» طبق `getVisibleCustomerIds`.
+۵. **`Sidebar.tsx`/`App.tsx`**: آیتم منوی «مشتریان» با `requires: ['sales_access']` (بخش مستقل «گروه فروش»، چون هنوز فقط یک آیتم دارد)؛ `CustomersView` طبق همان الگوی رندر شرطی `activeTab === 'x'` موجود در `App.tsx` اضافه شد.
+
+**Reason:**
+اولین گام قابل‌اجرا از `docs/SALES_ARCHITECTURE_DRAFT.md` که در چند گفتگوی طراحی جمع‌آوری شده بود؛ مشتری باید یک رکورد دائمی و متمرکز باشد (بخش ۱۰) و فروشندگان مختلف باید بتوانند در طول زمان با او کار کنند، اما هرگز هم‌زمان دو نفر روی یک مشتری کار نکنند — نیازمند یک مکانیزم قفل صریح بین فروشندگان به‌جای اتکا به هماهنگی دستی.
+
+**Impact:**
+فروشنده‌ی B نمی‌تواند برای مشتری‌ای که فروشنده‌ی A چرخه‌ی `active` باز دارد، چرخه‌ی جدید ثبت کند (پیام قفل شفاف نمایش داده می‌شود)؛ پس از بستن چرخه توسط A، فروشنده‌ی B می‌تواند چرخه‌ی جدید ثبت کند و کل تاریخچه‌ی قبلی مشتری (شامل چرخه‌های A) برایش قابل‌مشاهده می‌ماند. هیچ‌کدام از ۶ کاربر نمونه‌ی خزانه‌داری تغییر نکردند؛ `isDualRole`, `approvalChain`, `allowedApproverIds` و هیچ اینترفیس موجودی در `types.ts` دست نخوردند — فقط موارد کاملاً جدید اضافه شدند.
+

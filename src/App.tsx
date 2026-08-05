@@ -24,6 +24,7 @@ import { LoginRegisterModal } from './components/LoginRegisterModal';
 import { PrintRequestModal } from './components/PrintRequestModal';
 import { VendorsView } from './components/VendorsView';
 import { VendorCategoriesView } from './components/VendorCategoriesView';
+import { CustomersView } from './components/CustomersView';
 import { ColleaguesView } from './components/ColleaguesView';
 import { SupportView } from './components/SupportView';
 import { LettersView } from './components/LettersView';
@@ -103,6 +104,7 @@ export default function App() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>(() => storage.getCostCenters());
   const [vendors, setVendors] = useState(() => storage.getVendors());
   const [vendorCategories, setVendorCategories] = useState(() => storage.getVendorCategories());
+  const [customers, setCustomers] = useState(() => storage.getCustomers());
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>(() => storage.getDirectMessages());
   const [colleagueChatTarget, setColleagueChatTarget] = useState<string | null>(null);
   const [supportCases, setSupportCases] = useState<SupportCase[]>(() => storage.getSupportCases());
@@ -161,6 +163,10 @@ export default function App() {
   useEffect(() => {
     storage.saveVendorCategories(vendorCategories);
   }, [vendorCategories]);
+
+  useEffect(() => {
+    storage.saveCustomers(customers);
+  }, [customers]);
 
   useEffect(() => {
     storage.saveDirectMessages(directMessages);
@@ -909,6 +915,15 @@ export default function App() {
               vendors={vendors}
               currentUser={currentUser}
               onUpdateCategories={setVendorCategories}
+            />
+          )}
+
+          {activeTab === 'customers' && (
+            <CustomersView
+              customers={customers}
+              users={users}
+              currentUser={currentUser}
+              onUpdateCustomers={setCustomers}
             />
           )}
 
