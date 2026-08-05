@@ -20,7 +20,8 @@ export type SystemPermission =
   | 'manage_support_cases'     // ثبت و پیگیری پرونده‌های خدمات پس از فروش و شکایات
   | 'financial_approve_support'// تایید مالی مبالغ عودتی پرونده‌های پشتیبانی
   | 'view_support_reports'     // گزارش‌گیری پیشرفته کل پرونده‌های خدمات پس از فروش (ادمین)
-  | 'manage_letters';          // دسترسی به سامانه نامه‌نگاری داخلی (ثبت، ارجاع، پاسخ)
+  | 'manage_letters'           // دسترسی به سامانه نامه‌نگاری داخلی (ثبت، ارجاع، پاسخ)
+  | 'sales_access';            // دسترسی به ماژول فروش (مشتریان، فاکتور فروش)
 
 export interface SystemRole {
   id: string;
@@ -65,6 +66,18 @@ export interface User {
   // Marks the single user who is the senior treasury supervisor - the mandatory
   // destination for self-submitted requests of dual-role users
   isSeniorTreasurySupervisor?: boolean;
+
+  // Multi-role access model: extra SystemRole ids granted to this user on top of
+  // their base role/roleId (see getEffectiveUserPermissions in utils/permissions.ts)
+  additionalRoleIds?: string[];
+  // Per-user, per-role permission overrides: for a given roleId, fully replaces that
+  // role's permission list (from base role or an additionalRoleIds entry) for this user only
+  roleAccessOverrides?: { roleId: string; permissions: SystemPermission[] }[];
+
+  // Sales hierarchy supervisor chain (سرپرست فروش این کاربر) — completely independent of
+  // the treasury approvalChain/allowedApproverIds above; used only by src/utils/salesHierarchy.ts
+  // to compute which customers a salesperson/supervisor can see.
+  salesSupervisorId?: string;
 }
 
 export interface Company {
@@ -553,5 +566,32 @@ export interface AssignedTask {
   letterDate?: string;
   messages: TaskMessage[];
   logs: TaskLogEntry[];
+}
+
+// ============================================================
+// ماژول فروش (گام اول): مشتری با قفل مالکیت پویا و دید سلسله‌مراتبی
+// ============================================================
+
+export interface CustomerActivityLogEntry {
+  salespersonId: string;
+  invoiceId?: string; // در فاز بعدی (فاکتور فروش) پر می‌شود؛ در این گام هنوز فاکتوری وجود ندارد
+  startedAt: string;
+  status: 'active' | 'completed';
+}
+
+export interface Customer {
+  id: string;
+  fullName?: string;
+  phone1?: string; // کلید شناسایی یکتای مشتری در کل سیستم — اگر پر شود باید یکتا باشد؛ خودِ فیلد اجباری نیست
+  phone2?: string;
+  address?: string;
+  province?: string;
+  city?: string;
+  postalCode?: string;
+  createdAt: string;
+  // تاریخچه‌ی کامل همه‌ی چرخه‌های فروش این مشتری با فروشندگان مختلف در طول زمان.
+  // مالکیت فعلی مشتری (currentActiveSalespersonId) فیلد ذخیره‌شده نیست؛ از روی همین آرایه
+  // با getCurrentActiveSalespersonId در src/utils/salesHierarchy.ts محاسبه می‌شود.
+  activityLog?: CustomerActivityLogEntry[];
 }
 

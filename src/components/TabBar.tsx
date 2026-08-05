@@ -2,7 +2,7 @@ import React from 'react';
 import {
   X, LayoutDashboard, FileText, CheckSquare, Inbox, Palette, MapPin, Building,
   Search, GitFork, MessageSquare, BookUser, Tags, UsersRound, LifeBuoy, Mail,
-  ShieldAlert, KeyRound, Users
+  ShieldAlert, KeyRound, Users, Contact
 } from 'lucide-react';
 
 export interface OpenTab {
@@ -31,6 +31,7 @@ export const TAB_DEFINITIONS: Record<string, TabDefinition> = {
   messenger: { label: 'گفتگوی عمومی خزانه‌داری', icon: MessageSquare },
   vendors: { label: 'ذینفعان و فروشندگان', icon: BookUser },
   vendor_categories: { label: 'دسته‌بندی‌های دفترچه', icon: Tags },
+  customers: { label: 'مشتریان', icon: Contact },
   colleagues: { label: 'گفتگوی همکاران', icon: UsersRound },
   support: { label: 'خدمات پس از فروش و شکایات', icon: LifeBuoy },
   letters: { label: 'نامه‌ها', icon: Mail },

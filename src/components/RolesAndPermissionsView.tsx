@@ -12,7 +12,7 @@ interface RolesAndPermissionsViewProps {
   onUpdateRoles: (updatedRoles: SystemRole[]) => void;
 }
 
-const ALL_PERMISSIONS: { key: SystemPermission; title: string; category: string; description: string }[] = [
+export const ALL_PERMISSIONS: { key: SystemPermission; title: string; category: string; description: string }[] = [
   // Request Operations
   { key: 'create_request', title: 'ثبت درخواست جدید', category: 'عملیات درخواست‌ها', description: 'امکان ایجاد و ارسال فاکتور و درخواست پرداخت جدید' },
   { key: 'view_all_requests', title: 'مشاهده تمامی درخواست‌های کل سازمان', category: 'عملیات درخواست‌ها', description: 'دسترسی کامل به بایگانی و کارتابل کل شرکت‌ها و شعب' },

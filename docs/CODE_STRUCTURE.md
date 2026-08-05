@@ -33,6 +33,7 @@
     │   ├── LettersView.tsx             # سامانه نامه‌نگاری و دبیرخانه
     │   ├── SupportView.tsx             # مدیریت خدمات پس از فروش و شکایات
     │   ├── VendorsView.tsx             # دفترچه تامین‌کنندگان
+    │   ├── CustomersView.tsx           # ماژول فروش، گام اول: مشتریان (قفل مالکیت پویا + دید سلسله‌مراتبی)
     │   ├── CompaniesView.tsx           # مدیریت شرکت‌ها و بانک‌ها
     │   ├── CostCentersView.tsx         # مدیریت شعب و مراکز هزینه
     │   ├── MyRequestsView.tsx          # ثبت و پیگیری درخواست‌های کاربر
@@ -54,6 +55,8 @@
     │   └── ... (سایر مودال‌ها و ویوها)
     └── utils/
         ├── storage.ts          # مدیریت حالت سراسری، LocalStorage و دیتای اولیه
+        ├── permissions.ts      # محاسبه پرمیشن مؤثر کاربر در مدل چندنقشی (getEffectiveUserPermissions)
+        ├── salesHierarchy.ts   # قفل مالکیت پویا و دید سلسله‌مراتبی مشتریان ماژول فروش
         ├── persianDate.ts      # توابع تبدیل و مدیریت تاریخ شمسی
         ├── numberToWords.ts    # تبدیل اعداد مالی به حروف فارسی
         └── bankFormats.ts      # اعتبارسنجی شماره شبا و حساب‌های بانکی
@@ -62,8 +65,10 @@
 ## ۲. مسئولیت هر پوشه و فایل (Responsibilities)
 - **`src/types.ts`**: مرجع واحد و مرکزی تمام تایپ‌ها، مدل‌ها، پرمیشن‌ها (`SystemPermission`) و نقش‌های سیستم.
 - **`src/utils/storage.ts`**: مدیریت دیتای اولیه غنی (کاربران، درخواست‌ها، شرکت‌ها، مراکز هزینه، نامه‌ها، تامین‌کنندگان) و هماهنگ‌سازی با `localStorage`.
+- **`src/utils/permissions.ts`**: تابع `getEffectiveUserPermissions(user, roles)` که در مدل چندنقشی کاربران (`User.additionalRoleIds` + `User.roleAccessOverrides`)، پرمیشن مؤثر نهایی یک کاربر را از روی نقش پایه + نقش‌های اضافه + بازنویسی‌های اختصاصی + `customPermissions` محاسبه می‌کند؛ توسط `Sidebar.tsx` برای ساخت منو استفاده می‌شود.
+- **`src/utils/salesHierarchy.ts`**: `getVisibleCustomerIds`, `findCustomerByPhone`, `canStartNewSale`, `getCurrentActiveSalespersonId`, `startNewSaleCycle`, `closeSaleCycle` — منطق قفل مالکیت پویا و دید سلسله‌مراتبی مشتریان ماژول فروش، بر پایه‌ی `User.salesSupervisorId` (مستقل از `approvalChain` خزانه‌داری).
 - **`src/components/`**: حاوی ویوهای اصلی (Views) و مودال‌های تعاملی (Modals) که بر اساس وظیفه کسب‌وکاری جداسازی شده‌اند.
-- **`src/utils/`**: توابع کمکی محاسباتی، تبدیل اعداد به حروف، اعتبارسنجی بانکی و تقویم.
+- **`src/utils/`**: توابع کمکی محاسباتی، تبدیل اعداد به حروف، اعتبارسنجی بانکی، تقویم و محاسبه دسترسی.
 
 ## ۳. نحوه ارتباط فایل‌ها (Communication Flow)
 - فایل `App.tsx` به عنوان کنترلر اصلی، کاربر لاگین‌شده را می‌شناسد و بر اساس تب انتخابی در `Sidebar`، ویوی مربوطه را رندر می‌کند.

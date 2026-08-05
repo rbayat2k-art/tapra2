@@ -1,6 +1,7 @@
-import { 
-  User, Company, CompanyBankAccount, CostCenter, PaymentRequest, SystemNotification, 
-  ChatMessage, WorkflowStepRule, SystemRole, Vendor, AssignedTask, VendorCategory, DirectMessage, SupportCase, UserRole, Letter 
+import {
+  User, Company, CompanyBankAccount, CostCenter, PaymentRequest, SystemNotification,
+  ChatMessage, WorkflowStepRule, SystemRole, Vendor, AssignedTask, VendorCategory, DirectMessage, SupportCase, UserRole, Letter,
+  Customer
 } from '../types';
 import { numberToPersianWords } from './numberToWords';
 
@@ -36,7 +37,8 @@ const STORAGE_KEYS = {
   SUPPORT_CASE_COUNTER: 'shavaz_treasury_support_case_counter_v1',
   LETTER_COUNTER: 'shavaz_treasury_letter_counter_v1',
   TASKS: 'shavaz_treasury_tasks_v2',
-  TAB_USAGE: 'shavaz_treasury_tab_usage_v1'
+  TAB_USAGE: 'shavaz_treasury_tab_usage_v1',
+  CUSTOMERS: 'shavaz_treasury_customers_v1'
 };
 
 // Per-user tab/menu open counts, used to power the "پرکاربردترین منوهای شما" dashboard
@@ -362,6 +364,63 @@ export const DEFAULT_USERS: User[] = [
     canIssueTasks: false,
     canExecuteTasks: true,
     workflowNote: 'بررسی و تایید یا رد مبالغ عودتی ثبت‌شده توسط پشتیبانی'
+  },
+
+  // --- ماژول فروش (گام اول): سه کاربر نمونه با زنجیره‌ی سرپرستی فروش (salesSupervisorId) ---
+  // این زنجیره کاملاً مستقل از approvalChain/allowedApproverIds خزانه‌داری است و فقط توسط
+  // src/utils/salesHierarchy.ts برای دید سلسله‌مراتبی مشتریان استفاده می‌شود.
+  {
+    id: 'user_sales_person_1',
+    username: 'sales_hosseini',
+    fullName: 'زهرا حسینی (فروشنده تلفنی)',
+    phone: '09121230010',
+    email: 'hosseini.sales@shavaz.com',
+    role: 'requestor',
+    roleTitle: 'فروشنده تلفنی',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_saadatabad',
+    password: '123456',
+    isActive: true,
+    customPermissions: ['sales_access'],
+    canIssueTasks: false,
+    canExecuteTasks: true,
+    salesSupervisorId: 'user_sales_supervisor_1',
+    workflowNote: 'فروشنده تلفنی شعبه سعادت‌آباد — ثبت و پیگیری مشتریان و فاکتور فروش'
+  },
+  {
+    id: 'user_sales_supervisor_1',
+    username: 'sales_karimi',
+    fullName: 'بهروز کریمی (سرپرست فروش)',
+    phone: '09121230011',
+    email: 'karimi.sales@shavaz.com',
+    role: 'requestor',
+    roleTitle: 'سرپرست فروش',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_saadatabad',
+    password: '123456',
+    isActive: true,
+    customPermissions: ['sales_access'],
+    canIssueTasks: true,
+    canExecuteTasks: true,
+    salesSupervisorId: 'user_sales_manager_1',
+    workflowNote: 'سرپرست تیم فروشندگان تلفنی — دید سلسله‌مراتبی روی مشتریان زیرمجموعه'
+  },
+  {
+    id: 'user_sales_manager_1',
+    username: 'sales_hashemi',
+    fullName: 'مریم هاشمی (مدیر فروش)',
+    phone: '09121230012',
+    email: 'hashemi.sales@shavaz.com',
+    role: 'requestor',
+    roleTitle: 'مدیر فروش',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    customPermissions: ['sales_access'],
+    canIssueTasks: true,
+    canExecuteTasks: true,
+    workflowNote: 'مدیر فروش — رأس زنجیره‌ی سرپرستی فروش نمونه، دید کامل روی همه‌ی مشتریان زیرمجموعه'
   }
 ];
 
@@ -574,6 +633,10 @@ export const DEFAULT_TASKS: AssignedTask[] = [
   }
 ];
 
+// Default Customers (ماژول فروش، گام اول) — عمداً خالی: سناریوی قفل مالکیت پویا و دید
+// سلسله‌مراتبی باید از طریق خودِ رابط کاربری (CustomersView) و کاربران نمونه فروش بالا تست شود.
+export const DEFAULT_CUSTOMERS: Customer[] = [];
+
 // LocalStorage Helper Methods
 export function getStoredData<T>(key: string, defaultValue: T): T {
   try {
@@ -719,6 +782,13 @@ export const storage = {
     const next = { ...usage, [userId]: userUsage };
     setStoredData(STORAGE_KEYS.TAB_USAGE, next);
     return next;
+  },
+
+  getCustomers(): Customer[] {
+    return getStoredData(STORAGE_KEYS.CUSTOMERS, DEFAULT_CUSTOMERS);
+  },
+  saveCustomers(customers: Customer[]): void {
+    setStoredData(STORAGE_KEYS.CUSTOMERS, customers);
   },
 
   getCurrentUser(): User | null {

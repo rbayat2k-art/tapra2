@@ -3,11 +3,32 @@ import { User, Company, CostCenter, UserRole, PaymentRequest, SystemPermission, 
 import { storage, DEFAULT_ROLE_ID_MAP } from '../utils/storage';
 import { CompaniesView } from './CompaniesView';
 import { CostCentersView } from './CostCentersView';
-import { 
-  ShieldCheck, UserPlus, Key, Phone, Mail, 
-  Building, Building2, MapPin, CheckCircle2, UserX, Edit2, Plus, 
+import { ALL_PERMISSIONS } from './RolesAndPermissionsView';
+import {
+  ShieldCheck, UserPlus, Key, Phone, Mail,
+  Building, Building2, MapPin, CheckCircle2, UserX, Edit2, Plus,
   Trash2, Lock, Eye, EyeOff, ShieldAlert, Sparkles, Send, ChevronDown, ChevronUp, LogIn
 } from 'lucide-react';
+
+// Multi-role access model helpers: which SystemRole ids count as "requestor-like" /
+// "approver-like" (for deriving isDualRole) and which count as issuer-capable (for
+// suggesting canIssueTasks) when the admin picks additional roles for a user.
+const REQUESTOR_LIKE_ROLE_IDS = ['role_purchaser'];
+const APPROVER_LIKE_ROLE_IDS = ['role_branch_approver', 'role_treasury_manager'];
+const ISSUER_CAPABLE_ROLE_IDS = ['role_super_admin', 'role_treasury_manager', 'role_branch_approver', 'role_treasury_executor'];
+
+function deriveIsDualRoleFromRoles(baseRole: UserRole, selectedRoleIds: string[]): boolean {
+  const hasRequestorLike = baseRole === 'requestor' || selectedRoleIds.some((id) => REQUESTOR_LIKE_ROLE_IDS.includes(id));
+  const hasApproverLike = baseRole === 'approver' || selectedRoleIds.some((id) => APPROVER_LIKE_ROLE_IDS.includes(id));
+  return hasRequestorLike && hasApproverLike;
+}
+
+function deriveTaskAccessFromRoles(selectedRoleIds: string[]): { canIssueTasks: boolean; canExecuteTasks: boolean } {
+  return {
+    canIssueTasks: selectedRoleIds.some((id) => ISSUER_CAPABLE_ROLE_IDS.includes(id)),
+    canExecuteTasks: true
+  };
+}
 
 interface AdminPanelProps {
   users: User[];
@@ -71,14 +92,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [canIssueTasks, setCanIssueTasks] = useState<boolean>(true);
   const [canExecuteTasks, setCanExecuteTasks] = useState<boolean>(true);
 
-  // Extra permissions granted on top of the user's base role (e.g. give a
-  // branch approver support-case access without changing their main role)
+  // Extra permissions granted on top of the user's base role. Still used internally to
+  // sync the canCreateRequests toggle (see handleSaveUser) — the old standalone 5-item
+  // checklist UI for this field was folded into the multi-role panel below.
   const [customPermissions, setCustomPermissions] = useState<SystemPermission[]>([]);
   const [canCreateRequests, setCanCreateRequests] = useState<boolean>(true);
 
-  // Dual-role (requestor + approver) & senior treasury supervisor designation
-  const [isDualRole, setIsDualRole] = useState<boolean>(false);
+  // Senior treasury supervisor designation (independent of the multi-role access model)
   const [isSeniorTreasurySupervisor, setIsSeniorTreasurySupervisor] = useState<boolean>(false);
+
+  // Multi-role access model: extra SystemRole ids granted on top of the base role/roleId,
+  // and per-role permission overrides (full replace) scoped to this user only.
+  // isDualRole is no longer a manual checkbox — it is derived from the selected role set
+  // (see deriveIsDualRoleFromRoles) every render and at save time.
+  const [additionalRoleIds, setAdditionalRoleIds] = useState<string[]>([]);
+  const [roleAccessOverrides, setRoleAccessOverrides] = useState<{ roleId: string; permissions: SystemPermission[] }[]>([]);
+  const [openRolePanels, setOpenRolePanels] = useState<Record<string, boolean>>({});
 
   // Quick Password Change State
   const [newPasswordValue, setNewPasswordValue] = useState('');
@@ -86,9 +115,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Accordion / Collapsible states for User Modal sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     branches: false,
-    tasks: false,
-    customPerms: false,
-    dualRole: true,
+    multiRole: true,
+    seniorSupervisor: false,
     forward: true,
     chain: true,
   });
@@ -100,9 +128,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const expandAllSections = () => {
     setOpenSections({
       branches: true,
-      tasks: true,
-      customPerms: true,
-      dualRole: true,
+      multiRole: true,
+      seniorSupervisor: true,
       forward: true,
       chain: true,
     });
@@ -111,13 +138,52 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const collapseAllSections = () => {
     setOpenSections({
       branches: false,
-      tasks: false,
-      customPerms: false,
-      dualRole: false,
+      multiRole: false,
+      seniorSupervisor: false,
       forward: false,
       chain: false,
     });
   };
+
+  // Effective permissions for a given role id, honoring this user's roleAccessOverrides
+  // (a full replace, not a merge) when present.
+  const getRoleEffectivePermissions = (rId: string): SystemPermission[] => {
+    const override = roleAccessOverrides.find((o) => o.roleId === rId);
+    if (override) return override.permissions;
+    return roles.find((r) => r.id === rId)?.permissions || [];
+  };
+
+  const toggleAdditionalRole = (rId: string) => {
+    if (rId === roleId) return; // base role is always included, not toggleable here
+    setAdditionalRoleIds((prev) => {
+      const next = prev.includes(rId) ? prev.filter((x) => x !== rId) : [...prev, rId];
+      // Auto-suggest task-directive access from the new role set; admin can still
+      // manually flip the checkboxes afterward to override this suggestion.
+      const derived = deriveTaskAccessFromRoles([roleId, ...next]);
+      setCanIssueTasks(derived.canIssueTasks);
+      setCanExecuteTasks(derived.canExecuteTasks);
+      return next;
+    });
+  };
+
+  const toggleRolePermissionOverride = (rId: string, perm: SystemPermission) => {
+    setRoleAccessOverrides((prev) => {
+      const existing = prev.find((o) => o.roleId === rId);
+      const basePerms = existing ? existing.permissions : (roles.find((r) => r.id === rId)?.permissions || []);
+      const nextPerms = basePerms.includes(perm) ? basePerms.filter((p) => p !== perm) : [...basePerms, perm];
+      if (existing) {
+        return prev.map((o) => (o.roleId === rId ? { ...o, permissions: nextPerms } : o));
+      }
+      return [...prev, { roleId: rId, permissions: nextPerms }];
+    });
+  };
+
+  const resetRolePermissionOverride = (rId: string) => {
+    setRoleAccessOverrides((prev) => prev.filter((o) => o.roleId !== rId));
+  };
+
+  // Live preview of the derived dual-role status for the currently selected role set.
+  const derivedIsDualRole = deriveIsDualRoleFromRoles(role, [roleId, ...additionalRoleIds]);
 
   const toggleShowPassword = (id: string) => {
     setShowPasswordMap(prev => ({ ...prev, [id]: !prev[id] }));
@@ -146,9 +212,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCanIssueTasks(false);
     setCanExecuteTasks(false);
     setCanCreateRequests(true);
-    setIsDualRole(false);
     setIsSeniorTreasurySupervisor(false);
     setCustomPermissions([]);
+    setAdditionalRoleIds([]);
+    setRoleAccessOverrides([]);
+    setOpenRolePanels({});
     setShowAddUserModal(true);
   };
 
@@ -178,9 +246,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCanIssueTasks(u.canIssueTasks ?? false);
     setCanExecuteTasks(u.canExecuteTasks ?? false);
     setCanCreateRequests(u.canCreateRequests ?? (u.customPermissions?.includes('create_request') || ['requestor', 'approver', 'admin'].includes(u.role)));
-    setIsDualRole(u.isDualRole ?? false);
     setIsSeniorTreasurySupervisor(u.isSeniorTreasurySupervisor ?? false);
     setCustomPermissions(u.customPermissions || []);
+    setAdditionalRoleIds(u.additionalRoleIds || []);
+    setRoleAccessOverrides(u.roleAccessOverrides || []);
+    setOpenRolePanels({});
   };
 
   const handleSaveUser = (e: React.FormEvent) => {
@@ -210,6 +280,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       finalCustomPerms = finalCustomPerms.filter(p => p !== 'create_request');
     }
 
+    // Multi-role access model: exclude the base role from additionalRoleIds if it ended
+    // up duplicated there, and derive isDualRole from the final selected role set.
+    const finalAdditionalRoleIds = additionalRoleIds.filter(id => id !== roleId);
+    const finalIsDualRole = deriveIsDualRoleFromRoles(role, [roleId, ...finalAdditionalRoleIds]);
+
     if (editingUser) {
       // Update existing user
       let updated = users.map(u => u.id === editingUser.id ? {
@@ -231,10 +306,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         canIssueTasks,
         canExecuteTasks,
         canCreateRequests,
-        isDualRole,
+        isDualRole: finalIsDualRole,
         isSeniorTreasurySupervisor,
         customPermissions: finalCustomPerms,
-        roleId
+        roleId,
+        additionalRoleIds: finalAdditionalRoleIds,
+        roleAccessOverrides
       } : u);
 
       // Only one user may hold the senior treasury supervisor designation at a time
@@ -268,10 +345,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         canIssueTasks,
         canExecuteTasks,
         canCreateRequests,
-        isDualRole,
+        isDualRole: finalIsDualRole,
         isSeniorTreasurySupervisor,
         customPermissions: finalCustomPerms,
-        roleId
+        roleId,
+        additionalRoleIds: finalAdditionalRoleIds,
+        roleAccessOverrides
       };
 
       let updated = [...users, newUser];
@@ -948,35 +1027,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 )}
               </div>
 
-              {/* Task & Directive Permissions Box (صادرکننده / مجری کارهای محوله) */}
-              <div className="p-3.5 bg-slate-950/90 border border-indigo-500/30 rounded-2xl space-y-2.5">
+              {/* Multi-Role Access Model: additional roles + per-role permission overrides.
+                  Replaces the old standalone task-directive box, custom-permissions box,
+                  and manual dual-role checkbox — isDualRole is now derived automatically
+                  from the selected role set (see deriveIsDualRoleFromRoles). */}
+              <div className="p-3.5 bg-slate-950/90 border border-violet-500/30 rounded-2xl space-y-2.5">
                 <button
                   type="button"
-                  onClick={() => toggleSection('tasks')}
+                  onClick={() => toggleSection('multiRole')}
                   className="w-full flex items-center justify-between cursor-pointer text-right"
                 >
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span className="text-xs font-extrabold text-indigo-300 truncate">
-                      تعیین نقش کاربر در ماژول دستورات اداری و کارهای محوله
+                  <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                    <ShieldCheck className="w-4 h-4 text-violet-400 shrink-0" />
+                    <span className="text-xs font-extrabold text-violet-300 truncate">
+                      نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر
                     </span>
-                    <span className="text-[10px] font-bold bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-800/60 shrink-0">
-                      {canIssueTasks && canExecuteTasks ? 'صادرکننده و مجری' : canIssueTasks ? 'فقط صادرکننده' : canExecuteTasks ? 'فقط مجری' : 'بدون دسترسی'}
+                    <span className="text-[10px] font-bold bg-violet-950 text-violet-300 px-2 py-0.5 rounded-full border border-violet-800/60 shrink-0">
+                      {1 + additionalRoleIds.length} نقش فعال
                     </span>
+                    {derivedIsDualRole && (
+                      <span className="text-[10px] font-bold bg-fuchsia-950 text-fuchsia-300 px-2 py-0.5 rounded-full border border-fuchsia-800/60 shrink-0">
+                        نقش دوگانه (خودکار)
+                      </span>
+                    )}
                   </div>
-                  {openSections.tasks ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+                  {openSections.multiRole ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
                 </button>
 
-                {openSections.tasks && (
-                  <div className="pt-2 border-t border-slate-800 space-y-2.5 animate-fade-in">
+                {openSections.multiRole && (
+                  <div className="pt-2 border-t border-slate-800 space-y-3 animate-fade-in">
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      مدیر سیستم می‌تواند مشخص کند این کاربر مجاز به «ثبت/صدور دستور به دیگران» است، یا «مجری و انجام‌دهنده کارهای محوله»، و یا هر دو:
+                      علاوه بر «نقش پایه» بالا، می‌توانید نقش‌های سیستمی دیگری هم برای این کاربر فعال کنید (مثلاً هم‌زمان درخواست‌کننده و تاییدکننده)، و برای هر نقش فعال، پرمیشن‌هایش را فقط برای همین کاربر محدود یا گسترش دهید. اگر ترکیب نقش‌های فعال شامل هم یک نقش درخواست‌کننده‌مانند و هم یک نقش تاییدکننده‌مانند باشد، «نقش دوگانه» این کاربر به‌صورت خودکار فعال می‌شود.
                     </p>
 
+                    {/* Task-directive access: auto-suggested from the selected roles above,
+                        always manually overridable by the admin. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <label className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
-                        canIssueTasks 
-                          ? 'bg-indigo-950/50 border-indigo-500 text-white shadow-md' 
+                      <label className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                        canIssueTasks
+                          ? 'bg-indigo-950/50 border-indigo-500 text-white shadow-md'
                           : 'bg-slate-900 border-slate-800 text-slate-400'
                       }`}>
                         <input
@@ -986,16 +1075,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           className="w-4 h-4 mt-0.5 text-indigo-600 rounded border-slate-700 bg-slate-800 focus:ring-indigo-500"
                         />
                         <div>
-                          <span className="block text-indigo-300 font-extrabold mb-0.5">۱. صادرکننده و ثبت‌کننده دستور</span>
+                          <span className="block text-indigo-300 font-extrabold mb-0.5">صادرکننده دستورات اداری</span>
                           <span className="text-[10px] text-slate-400 font-normal leading-relaxed block">
-                            اجازه ثبت کار محوله جدید، ارجاع نامه اداری به سایر پرسنل و ویرایش دستورات صادره.
+                            اجازه ثبت کار محوله جدید و ارجاع به سایر پرسنل (پیشنهاد خودکار بر اساس نقش‌های انتخابی؛ قابل تغییر دستی).
                           </span>
                         </div>
                       </label>
 
-                      <label className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
-                        canExecuteTasks 
-                          ? 'bg-emerald-950/50 border-emerald-500 text-white shadow-md' 
+                      <label className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                        canExecuteTasks
+                          ? 'bg-emerald-950/50 border-emerald-500 text-white shadow-md'
                           : 'bg-slate-900 border-slate-800 text-slate-400'
                       }`}>
                         <input
@@ -1005,68 +1094,83 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           className="w-4 h-4 mt-0.5 text-emerald-600 rounded border-slate-700 bg-slate-800 focus:ring-emerald-500"
                         />
                         <div>
-                          <span className="block text-emerald-300 font-extrabold mb-0.5">۲. مجری و انجام‌دهنده کار</span>
+                          <span className="block text-emerald-300 font-extrabold mb-0.5">مجری کارهای محوله</span>
                           <span className="text-[10px] text-slate-400 font-normal leading-relaxed block">
-                            امکان دریافت دستورات اداری، ثبت گزارش اقدام، شروع کار و ثبت تایید نهایی انجام کار.
+                            امکان دریافت و انجام دستورات اداری (پیشنهاد خودکار بر اساس نقش‌های انتخابی؛ قابل تغییر دستی).
                           </span>
                         </div>
                       </label>
                     </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Extra Permissions granted on top of the base role */}
-              <div className="p-3.5 bg-slate-950/90 border border-teal-500/30 rounded-2xl space-y-2.5">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('customPerms')}
-                  className="w-full flex items-center justify-between cursor-pointer text-right"
-                >
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-                    <span className="text-xs font-extrabold text-teal-300 truncate">
-                      دسترسی‌های تکمیلی (فراتر از نقش پایه)
-                    </span>
-                    <span className="text-[10px] font-bold bg-teal-950 text-teal-300 px-2 py-0.5 rounded-full border border-teal-800/60 shrink-0">
-                      {customPermissions.length} دسترسی فعال
-                    </span>
-                  </div>
-                  {openSections.customPerms ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
-                </button>
+                    <div className="space-y-2">
+                      {roles.map((r) => {
+                        const isBase = r.id === roleId;
+                        const isChecked = isBase || additionalRoleIds.includes(r.id);
+                        const isPanelOpen = !!openRolePanels[r.id];
+                        const hasOverride = roleAccessOverrides.some((o) => o.roleId === r.id);
+                        const effectivePerms = getRoleEffectivePermissions(r.id);
 
-                {openSections.customPerms && (
-                  <div className="pt-2 border-t border-slate-800 space-y-2.5 animate-fade-in">
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      دسترسی به سایر ماژول‌های تکمیلی سیستم فراتر از نقش پایه:
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {([
-                        { key: 'manage_support_cases' as SystemPermission, title: 'ثبت پرونده خدمات پس از فروش', desc: 'دسترسی به بخش پشتیبانی برای ثبت پرونده و تراکنش' },
-                        { key: 'financial_approve_support' as SystemPermission, title: 'تایید مالی خدمات پس از فروش', desc: 'دسترسی به کارتابل تایید مالی و تصمیم روی هر ردیف' },
-                        { key: 'view_support_reports' as SystemPermission, title: 'گزارش پیشرفته خدمات پس از فروش', desc: 'دسترسی به تب گزارش و جست‌وجوی پیشرفته و خروجی CSV' },
-                        { key: 'manage_vendors' as SystemPermission, title: 'مدیریت دسته‌بندی‌های دفترچه', desc: 'افزودن/ویرایش/حذف دسته‌بندی‌های دفترچه ذینفعان' },
-                        { key: 'manage_letters' as SystemPermission, title: 'دسترسی به سامانه نامه‌نگاری', desc: 'ثبت، ارجاع و پاسخ به نامه‌های داخلی با واحدهای دیگر' },
-                      ]).map((p) => {
-                        const checked = customPermissions.includes(p.key);
                         return (
-                          <label key={p.key} className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
-                            checked ? 'bg-teal-950/50 border-teal-500 text-white shadow-md' : 'bg-slate-900 border-slate-800 text-slate-400'
-                          }`}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => {
-                                setCustomPermissions((prev) => e.target.checked ? [...prev, p.key] : prev.filter((k) => k !== p.key));
-                              }}
-                              className="w-4 h-4 mt-0.5 text-teal-600 rounded border-slate-700 bg-slate-800 focus:ring-teal-500"
-                            />
-                            <div>
-                              <span className="block text-teal-300 font-extrabold mb-0.5">{p.title}</span>
-                              <span className="text-[10px] text-slate-400 font-normal leading-relaxed block">{p.desc}</span>
+                          <div key={r.id} className={`rounded-xl border ${isChecked ? 'border-violet-500/50 bg-violet-950/20' : 'border-slate-800 bg-slate-900/60'}`}>
+                            <div className="p-2.5 flex items-center justify-between gap-2 flex-wrap">
+                              <label className={`flex items-center gap-2.5 flex-1 min-w-[160px] ${isBase ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isBase}
+                                  onChange={() => toggleAdditionalRole(r.id)}
+                                  className="w-4 h-4 text-violet-600 rounded border-slate-700 bg-slate-800 focus:ring-violet-500 disabled:opacity-60"
+                                />
+                                <span className="text-xs font-bold text-white">{r.name}</span>
+                                {isBase && <span className="text-[9px] text-violet-300 font-bold">(نقش پایه)</span>}
+                                {hasOverride && <span className="text-[9px] text-amber-300 font-bold">(دسترسی سفارشی)</span>}
+                              </label>
+                              {isChecked && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenRolePanels((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}
+                                  className="text-[10px] text-violet-400 hover:text-violet-300 font-bold hover:underline cursor-pointer shrink-0"
+                                >
+                                  {isPanelOpen ? 'بستن پرمیشن‌ها' : `پرمیشن‌ها (${effectivePerms.length})`}
+                                </button>
+                              )}
                             </div>
-                          </label>
+
+                            {isChecked && isPanelOpen && (
+                              <div className="px-2.5 pb-2.5 pt-1.5 border-t border-slate-800/80 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-slate-500">پرمیشن‌های این نقش، مخصوص همین کاربر:</span>
+                                  {hasOverride && (
+                                    <button
+                                      type="button"
+                                      onClick={() => resetRolePermissionOverride(r.id)}
+                                      className="text-[10px] text-rose-400 hover:underline font-bold cursor-pointer"
+                                    >
+                                      بازگشت به پیش‌فرض نقش
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                                  {ALL_PERMISSIONS.map((p) => {
+                                    const checked = effectivePerms.includes(p.key);
+                                    return (
+                                      <label key={p.key} className={`p-2 rounded-lg border text-[10.5px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                                        checked ? 'bg-violet-950/50 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'
+                                      }`}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleRolePermissionOverride(r.id, p.key)}
+                                          className="w-3.5 h-3.5 mt-0.5 text-violet-600 rounded border-slate-700 bg-slate-800 focus:ring-violet-500"
+                                        />
+                                        <span>{p.title}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -1081,61 +1185,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <span>راهنمای پیکربندی گردش کار و ارجاعات کاربر</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  تنظیمات این بخش مستقل و مکمل یکدیگرند: 
-                  <strong className="text-slate-300"> نقش دوگانه</strong> برای ثبت درخواست شخصی مدیران، 
-                  <strong className="text-slate-300"> مراحل تایید</strong> برای مسیر درخواست‌های این کاربر، و 
+                  تنظیمات این بخش مستقل و مکمل یکدیگرند:
+                  <strong className="text-slate-300"> نقش‌های چندگانه</strong> (که نقش دوگانه به‌صورت خودکار از آن مشتق می‌شود)،
+                  <strong className="text-slate-300"> مراحل تایید</strong> برای مسیر درخواست‌های این کاربر، و
                   <strong className="text-slate-300"> مقصدهای ارجاع</strong> برای کارتابل بررسی این فرد است.
                 </p>
               </div>
 
-              {/* Dual Role: Requestor + Approver at the same time (Admin decision only) */}
-              <div className="p-3.5 bg-slate-950/90 border border-fuchsia-500/30 rounded-2xl space-y-2.5">
+              {/* Senior Treasury Supervisor Designation (independent of the multi-role model above) */}
+              <div className="p-3.5 bg-slate-950/90 border border-amber-500/30 rounded-2xl space-y-2.5">
                 <button
                   type="button"
-                  onClick={() => toggleSection('dualRole')}
+                  onClick={() => toggleSection('seniorSupervisor')}
                   className="w-full flex items-center justify-between cursor-pointer text-right"
                 >
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <ShieldCheck className="w-4 h-4 text-fuchsia-400 shrink-0" />
-                    <span className="text-xs font-extrabold text-fuchsia-300 truncate">
-                      ۱. نقش دوگانه و تعیین سرپرست ارشد خزانه‌داری
+                    <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-extrabold text-amber-300 truncate">
+                      تعیین سرپرست ارشد خزانه‌داری
                     </span>
-                    {isDualRole && (
-                      <span className="text-[10px] font-bold bg-fuchsia-950 text-fuchsia-300 px-2 py-0.5 rounded-full border border-fuchsia-800/60 shrink-0">
-                        کاربر دوگانه
-                      </span>
-                    )}
                     {isSeniorTreasurySupervisor && (
                       <span className="text-[10px] font-bold bg-amber-950 text-amber-300 px-2 py-0.5 rounded-full border border-amber-800/60 shrink-0">
                         سرپرست ارشد
                       </span>
                     )}
                   </div>
-                  {openSections.dualRole ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+                  {openSections.seniorSupervisor ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
                 </button>
 
-                {openSections.dualRole && (
+                {openSections.seniorSupervisor && (
                   <div className="pt-2 border-t border-slate-800 space-y-2.5 animate-fade-in">
-                    <label className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
-                      isDualRole
-                        ? 'bg-fuchsia-950/50 border-fuchsia-500 text-white shadow-md'
-                        : 'bg-slate-900 border-slate-800 text-slate-400'
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={isDualRole}
-                        onChange={(e) => setIsDualRole(e.target.checked)}
-                        className="w-4 h-4 mt-0.5 text-fuchsia-600 rounded border-slate-700 bg-slate-800 focus:ring-fuchsia-500"
-                      />
-                      <div>
-                        <span className="block text-fuchsia-300 font-extrabold mb-0.5">این کاربر هم‌زمان درخواست‌کننده و تاییدکننده است (نقش دوگانه)</span>
-                        <span className="text-[10px] text-slate-400 font-normal leading-relaxed block">
-                          علاوه بر تایید درخواست‌های دیگران، این کاربر می‌تواند برای خودش هم درخواست ثبت کند. در این حالت،
-                          درخواست‌های شخصی خودش مستقیماً به «سرپرست ارشد خزانه‌داری» ارسال می‌شود و مسیر تایید عادی را دور می‌زند.
-                        </span>
-                      </div>
-                    </label>
-
                     <label className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 cursor-pointer transition ${
                       isSeniorTreasurySupervisor
                         ? 'bg-amber-950/50 border-amber-500 text-white shadow-md'

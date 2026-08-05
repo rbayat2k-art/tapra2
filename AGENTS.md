@@ -73,3 +73,25 @@
     - ویجت (در `DashboardView.tsx`) باید per-user باشد (فقط شمارنده کاربر لاگین‌شده فعلی، نه کاربران دیگر) و **فقط** وقتی کاربر حداقل ۳ تب متفاوت باز کرده باشد رندر شود؛ برای کاربر تازه/کم‌سابقه نباید هیچ ویجت خالی یا پیام جایگزین نمایش داده شود — کل بلوک باید حذف شود.
     - آیکون/عنوان هر آیتم ویجت باید از رجیستری مشترک `TAB_DEFINITIONS` (`src/components/TabBar.tsx`) خوانده شود، نه رشته‌های جدا تعریف‌شده در `DashboardView.tsx`؛ اگر یک `tabId` دیگر در `TAB_DEFINITIONS` نباشد (حذف/تغییرنام‌یافته)، آن ورودی باید فیلتر شود، نه اینکه با آیکون/عنوان شکسته نمایش داده شود.
     - کلیک روی هر آیتم ویجت باید از همان `openTab`/`onNavigateTab` موجود عبور کند (نه منطق ناوبری مجزا)، تا تب واقعاً باز/فعال شود و رفتار مدل چندتبی (قانون ۱۲) حفظ بماند.
+14. **مدل چندنقشی کاربران و derive خودکار `isDualRole`/`canIssueTasks`/`canExecuteTasks` (Multi-Role Access Model)**:
+    - `User.additionalRoleIds` (نقش‌های اضافه بر نقش پایه) و `User.roleAccessOverrides` (جایگزینی کامل پرمیشن یک نقش خاص، فقط برای همان کاربر) منبع واحد مدل چندنقشی هستند. هر منطقی که پرمیشن مؤثر یک کاربر را می‌خواهد، باید از `getEffectiveUserPermissions(user, roles)` در `src/utils/permissions.ts` استفاده کند، نه اینکه دوباره `roleId`/`role.permissions` را مستقیم lookup کند.
+    - در `AdminPanel.tsx`، بخش «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر» تنها محل تعریف `additionalRoleIds`/`roleAccessOverrides` است. نقش پایه همیشه در این چک‌لیست تیک‌خورده و غیرقابل‌حذف است.
+    - `isDualRole` دیگر چک‌باکس دستی ندارد؛ در `handleSaveUser`، اگر نقش‌های فعال (پایه + اضافه) هم شامل یک نقش «درخواست‌کننده-مانند» (`role_purchaser` یا `role === 'requestor'`) و هم یک نقش «تاییدکننده-مانند» (`role_branch_approver`, `role_treasury_manager` یا `role === 'approver'`) باشند، `isDualRole` باید `true` ذخیره شود، وگرنه `false` (`deriveIsDualRoleFromRoles`). خودِ فیلد `isDualRole` در `types.ts` و همه چک‌های موجودش (`Sidebar.tsx`, `ApprovalInboxView.tsx`, `DashboardView.tsx`, `ArchiveView.tsx`, `NewRequestModal.tsx`) نباید rename یا حذف شوند.
+    - `canIssueTasks`/`canExecuteTasks` باید با تغییر نقش‌های انتخابی به‌صورت پیشنهادی بازمحاسبه شوند (`deriveTaskAccessFromRoles`)، اما همیشه یک چک‌باکس مستقل برای override دستی توسط ادمین باید در دسترس بماند — این دو مقدار هرگز 100% قفل‌شده روی مقدار مشتق‌شده نباشند.
+    - `approvalChain`، `allowedApproverIds` و بخش «شعب و مراکز مجاز» (`allowedCostCenterIds`) کاملاً مستقل از مدل چندنقشی‌اند و نباید توسط تغییرات این مدل لمس شوند.
+    - چون هیچ‌کدام از ۶ کاربر نمونه `DEFAULT_USERS` مقدار `additionalRoleIds`/`roleAccessOverrides` ندارند، `getEffectiveUserPermissions` برایشان دقیقاً همان نتیجه منطق قدیمی (`roleId` تنها) را می‌دهد؛ رفتار/دسترسی این ۶ کاربر نباید با این تغییر عوض شود.
+    - `ApprovalInboxView.tsx`, `DashboardView.tsx`, `ArchiveView.tsx` هنوز به `getEffectiveUserPermissions` مهاجرت نکرده‌اند (فقط `Sidebar.tsx` مهاجرت کرد) — این یک بدهی فنی شناخته‌شده است، نه یک باگ؛ در تسک بعدی باید انجام شود.
+
+## اصل بررسی کامل فلو (برای هر فیچر/تغییر جدید، به‌خصوص ماژول فروش)
+هنگام طراحی یا پیاده‌سازی هر فلوی جدید در این پروژه، باید همیشه:
+- تمام نقش‌ها/دسترسی‌های مرتبط با آن فلو شناسایی و بررسی شوند، از ابتدای فلو تا انتهای آن.
+- ارتباط و وابستگی بین این نقش‌ها (چه کسی به چه کسی ارجاع می‌دهد، چه کسی منتظر چه کسی می‌ماند) به‌طور کامل مشخص باشد.
+- به این تفکر تک‌بعدی (فقط حل یک مسئله‌ی مشخص بدون دیدن کل فلو و کل نقش‌های درگیر) پرهیز شود.
+این اصل مکمل خط قرمزهای موجود (isDualRole، approvalChain، allowedApproverIds، rename نکردن اینترفیس‌ها) است و باید در طراحی هر فیچر جدید رعایت شود.
+
+15. **ماژول فروش: مشتری با قفل مالکیت پویا و دید سلسله‌مراتبی (`Customer` — گام اول)**:
+    - `User.salesSupervisorId` (زنجیره‌ی سرپرستی فروش: فروشنده ← سرپرست فروش ← مدیر فروش) **کاملاً مستقل** از `approvalChain`/`allowedApproverIds` خزانه‌داری است. این دو زنجیره هرگز نباید با هم قاطی، merge یا جایگزین یکدیگر شوند؛ هر منطقی که دید سلسله‌مراتبی فروش می‌خواهد باید از `getVisibleCustomerIds` در `src/utils/salesHierarchy.ts` استفاده کند، نه از `approvalChain`.
+    - قفل مالکیت پویا: تا وقتی یک مشتری چرخه‌ی فروش `active` دارد (`Customer.activityLog`)، هیچ فروشنده‌ی دیگری نباید بتواند چرخه‌ی فروش جدیدی برایش ثبت کند (`canStartNewSale` باید قبل از هر `startNewSaleCycle` چک شود). `currentActiveSalespersonId` هرگز نباید به‌عنوان فیلد ذخیره‌شده اضافه شود؛ همیشه باید از روی `activityLog` با `getCurrentActiveSalespersonId` محاسبه شود.
+    - جستجوی مشتری بر اساس شماره تماس (`findCustomerByPhone`) باید سراسری (مستقل از دید سلسله‌مراتبی) بماند؛ فقط «لیست مشتریان قابل‌مشاهده» (`getVisibleCustomerIds`) باید بر اساس زنجیره‌ی `salesSupervisorId` محدود شود. این دو مسیر دسترسی را با هم قاطی نکنید.
+    - `SystemPermission` جدید `sales_access` فقط باید از طریق `customPermissions`/رجیستری پرمیشن‌ها اعمال شود؛ برای این گام اول نیازی به افزودن مقدار جدید به `UserRole` نیست (سه کاربر نمونه‌ی فروش همگی `role: 'requestor'` با `customPermissions: ['sales_access']` هستند).
+    - «تکمیل‌شدن» یک چرخه‌ی فروش در این گام صرفاً دستی/تستی است (`closeSaleCycle`، فقط توسط فروشنده‌ی مالک فعلی)؛ منطق واقعی («فاکتور تکمیل شد» بر اساس وضعیت ردیف‌های کالا/خدمت) در فاز فاکتور فروش اضافه می‌شود — به `docs/SALES_ARCHITECTURE_DRAFT.md` بخش ۱۴ مراجعه کنید.
