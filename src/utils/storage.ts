@@ -1,7 +1,7 @@
 import {
   User, Company, CompanyBankAccount, CostCenter, PaymentRequest, SystemNotification,
   ChatMessage, WorkflowStepRule, SystemRole, Vendor, AssignedTask, VendorCategory, DirectMessage, SupportCase, UserRole, Letter,
-  Customer
+  Customer, ImpersonationLogEntry, AuditLogEntry
 } from '../types';
 import { numberToPersianWords } from './numberToWords';
 
@@ -38,7 +38,10 @@ const STORAGE_KEYS = {
   LETTER_COUNTER: 'shavaz_treasury_letter_counter_v1',
   TASKS: 'shavaz_treasury_tasks_v2',
   TAB_USAGE: 'shavaz_treasury_tab_usage_v1',
-  CUSTOMERS: 'shavaz_treasury_customers_v1'
+  CUSTOMERS: 'shavaz_treasury_customers_v1',
+  IMPERSONATION_LOG: 'shavaz_treasury_impersonation_log_v1',
+  AUDIT_LOG: 'shavaz_treasury_audit_log_v1',
+  ROLES_MIGRATION_VERSION: 'shavaz_treasury_roles_migration_version_v1'
 };
 
 // Per-user tab/menu open counts, used to power the "پرکاربردترین منوهای شما" dashboard
@@ -61,7 +64,18 @@ export const DEFAULT_ROLES: SystemRole[] = [
       'return_reject_request', 'manage_cost_centers', 'manage_companies',
       'manage_users', 'manage_roles', 'manage_vendors', 'export_archive',
       'export_bank_batch', 'view_analytics', 'manage_assigned_tasks',
-      'manage_support_cases', 'financial_approve_support', 'view_support_reports', 'manage_letters'
+      'manage_support_cases', 'financial_approve_support', 'view_support_reports', 'manage_letters',
+      'impersonate_users', 'refer_for_payment', 'refer_for_emergency_payment', 'execute_emergency_payment',
+      'sales_access', 'view_own_customers', 'view_team_customers', 'view_descendant_customers',
+      'search_customer_by_phone', 'create_customer', 'edit_customer_basic_info', 'view_customer_contact_fields',
+      'view_customer_address', 'view_customer_purchase_history', 'view_customer_call_history',
+      'view_customer_complaint_summary', 'view_customer_complaint_details', 'start_sale_cycle', 'close_sale_cycle',
+      'assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'view_sales_reports',
+      'configure_sales_field_visibility', 'manage_sales_hierarchy',
+      'data_management_access', 'import_raw_contacts', 'review_import_conflicts', 'view_raw_contact_pool',
+      'configure_lead_assignment', 'view_data_reports',
+      'advertising_access', 'manage_advertising_campaigns', 'review_incoming_leads',
+      'convert_interaction_to_lead', 'view_campaign_reports'
     ]
   },
   {
@@ -126,8 +140,208 @@ export const DEFAULT_ROLES: SystemRole[] = [
     permissions: [
       'financial_approve_support'
     ]
+  },
+
+  // ============================================================
+  // نقش‌های رسمی سازمان فروش — رکورد واقعی و قابل‌مدیریت در «نقش‌ها و دسترسی‌ها»، نه صرفاً
+  // customPermissions روی کاربر. شناسه‌ی فنی (id/code) پایدار و مستقل از roleTitle آزاد است؛
+  // تشخیص نقش هرجا لازم باشد باید از roleId/پرمیشن مؤثر باشد، نه roleTitle.includes(...).
+  // عمداً بدون manage_vendors/create_request/view_branch_requests: هیچ نقش فروش نباید به‌صورت
+  // پیش‌فرض دسترسی مالی/دفترچه ذینفعان بگیرد (docs/BUSINESS_RULES.md).
+  // ============================================================
+  {
+    id: 'role_salesperson',
+    code: 'SALESPERSON',
+    name: 'فروشنده',
+    description: 'ثبت/پیگیری مشتری، شروع و بستن چرخه‌ی فروش با مشتریان خودش',
+    isSystemRole: true,
+    organizationalLevel: 1,
+    allowedParentRoleIds: ['role_sales_supervisor'],
+    implementationStatus: 'active',
+    permissions: [
+      'sales_access', 'view_own_customers', 'search_customer_by_phone', 'create_customer',
+      'edit_customer_basic_info', 'view_customer_contact_fields', 'start_sale_cycle', 'close_sale_cycle'
+    ]
+  },
+  {
+    id: 'role_sales_supervisor',
+    code: 'SALES_SUPERVISOR',
+    name: 'سرپرست فروش',
+    description: 'می‌تواند چند فروشنده زیرمجموعه داشته باشد؛ دید و مدیریت مشتریان تیم مستقیم + ارجاع Lead',
+    isSystemRole: true,
+    organizationalLevel: 2,
+    allowedParentRoleIds: ['role_senior_sales_supervisor'],
+    implementationStatus: 'active',
+    permissions: [
+      'sales_access', 'view_own_customers', 'search_customer_by_phone', 'create_customer',
+      'edit_customer_basic_info', 'view_customer_contact_fields', 'start_sale_cycle', 'close_sale_cycle',
+      'view_team_customers', 'assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue',
+      'view_sales_reports', 'view_customer_address', 'view_customer_purchase_history',
+      'view_customer_call_history', 'view_customer_complaint_summary'
+    ]
+  },
+  {
+    id: 'role_senior_sales_supervisor',
+    code: 'SENIOR_SALES_SUPERVISOR',
+    name: 'سرپرست ارشد فروش',
+    description: 'می‌تواند چند سرپرست فروش زیرمجموعه داشته باشد؛ دید کل زیردرخت سازمانی سرپرستان',
+    isSystemRole: true,
+    organizationalLevel: 3,
+    allowedParentRoleIds: ['role_sales_manager'],
+    implementationStatus: 'active',
+    permissions: [
+      'sales_access', 'view_own_customers', 'search_customer_by_phone', 'create_customer',
+      'edit_customer_basic_info', 'view_customer_contact_fields', 'start_sale_cycle', 'close_sale_cycle',
+      'assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'view_sales_reports',
+      'view_customer_address', 'view_customer_purchase_history', 'view_customer_call_history',
+      'view_customer_complaint_summary', 'view_descendant_customers', 'view_customer_complaint_details'
+    ]
+  },
+  {
+    id: 'role_sales_manager',
+    code: 'SALES_MANAGER',
+    name: 'مدیر فروش',
+    description: 'می‌تواند چند شعبه، سرپرست ارشد و ساختار فروش زیرمجموعه داشته باشد',
+    isSystemRole: true,
+    organizationalLevel: 4,
+    allowedParentRoleIds: ['role_sales_deputy'],
+    implementationStatus: 'active',
+    permissions: [
+      'sales_access', 'view_own_customers', 'search_customer_by_phone', 'create_customer',
+      'edit_customer_basic_info', 'view_customer_contact_fields', 'start_sale_cycle', 'close_sale_cycle',
+      'assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'view_sales_reports',
+      'view_customer_address', 'view_customer_purchase_history', 'view_customer_call_history',
+      'view_customer_complaint_summary', 'view_descendant_customers', 'view_customer_complaint_details',
+      'manage_sales_hierarchy'
+    ]
+  },
+  {
+    id: 'role_sales_deputy',
+    code: 'SALES_DEPUTY',
+    name: 'معاونت فروش',
+    description: 'می‌تواند چند مدیر فروش و ساختار زیرمجموعه داشته باشد — بالاترین سطح عملیاتی فروش؛ ادمین سیستم محسوب نمی‌شود و دسترسی خودکار به بخش‌های فنی/کاربران سیستمی/خزانه/دفترچه مالی نمی‌گیرد',
+    isSystemRole: true,
+    organizationalLevel: 5,
+    allowedParentRoleIds: [],
+    implementationStatus: 'active',
+    permissions: [
+      'sales_access', 'view_own_customers', 'search_customer_by_phone', 'create_customer',
+      'edit_customer_basic_info', 'view_customer_contact_fields', 'start_sale_cycle', 'close_sale_cycle',
+      'assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'view_sales_reports',
+      'view_customer_address', 'view_customer_purchase_history', 'view_customer_call_history',
+      'view_customer_complaint_summary', 'view_descendant_customers', 'view_customer_complaint_details',
+      'manage_sales_hierarchy', 'configure_sales_field_visibility'
+    ]
+  },
+
+  // مسئول بانک داده، Import، بررسی ورودی‌ها و تخصیص Lead — زیرساخت آماده، صفحه‌ی عملیاتی هنوز
+  // پیاده‌سازی نشده (کاربر Demo این نقش پایین‌تر در DEFAULT_USERS تعریف شده تا ورود و رفتار
+  // منو/دسترسی قابل تست باشد؛ منوی واقعی برای این پرمیشن‌ها هنوز اضافه نشده است).
+  {
+    id: 'role_data_manager',
+    code: 'DATA_MANAGER',
+    name: 'مدیر داده',
+    description: 'مسئول بانک داده، Import، بررسی تعارض‌های ورودی و تخصیص Lead',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: [
+      'data_management_access', 'import_raw_contacts', 'review_import_conflicts', 'view_raw_contact_pool',
+      'assign_sales_lead', 'reassign_sales_lead', 'configure_lead_assignment', 'view_data_reports'
+    ]
+  },
+  {
+    id: 'role_advertising_operator',
+    code: 'ADVERTISING_OPERATOR',
+    name: 'اپراتور تبلیغات',
+    description: 'مسئول ثبت کمپین، کانال ورودی و بررسی اولیه Lead — قلمرو فعالیت توسط مدیر داده تعیین می‌شود',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: [
+      'advertising_access', 'manage_advertising_campaigns', 'review_incoming_leads',
+      'convert_interaction_to_lead', 'view_campaign_reports'
+    ]
+  },
+
+  // نقش‌های آینده‌ی فروش — «آماده برای توسعه آینده»: تا وقتی فلوی مربوطه پیاده نشده، هیچ
+  // مجوز حساس (مالی/مشتریان عمومی/اطلاعات سایر واحد) نمی‌گیرند.
+  {
+    id: 'role_sales_payment_approver',
+    code: 'SALES_PAYMENT_APPROVER',
+    name: 'مسئول تأیید مالی واریزی فروش',
+    description: 'مستقل از تاییدکننده مالی خدمات پس از فروش و خزانه‌داری — آماده برای توسعه آینده',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: []
+  },
+  {
+    id: 'role_service_activation_officer',
+    code: 'SERVICE_ACTIVATION_OFFICER',
+    name: 'مسئول فعال‌سازی خدمات',
+    description: 'آماده برای توسعه آینده',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: []
+  },
+  {
+    id: 'role_dispatch_operator',
+    code: 'DISPATCH_OPERATOR',
+    name: 'مسئول ارسال و لجستیک',
+    description: 'آماده برای توسعه آینده',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: []
+  },
+  {
+    id: 'role_delivery_representative',
+    code: 'DELIVERY_REPRESENTATIVE',
+    name: 'نماینده تحویل',
+    description: 'آماده برای توسعه آینده',
+    isSystemRole: true,
+    implementationStatus: 'infrastructure_ready',
+    permissions: []
+  },
+
+  // پرداخت فوری: نقش مستقل (خارج از سازمان فروش)، عمداً به هیچ کاربر نمونه‌ای assign نمی‌شود.
+  {
+    id: 'role_emergency_payment_officer',
+    code: 'EMERGENCY_PAYMENT_OFFICER',
+    name: 'مسئول پرداخت فوری',
+    description: 'اجرای پرداخت فوری برای درخواست‌هایی که به مسیر فوری ارجاع شده‌اند (بدون تایید کامل زنجیره عادی)',
+    isSystemRole: true,
+    permissions: [
+      'execute_payment', 'execute_emergency_payment'
+    ]
   }
 ];
+
+// ============================================================
+// Migration نقش‌های پیش‌فرض — idempotent، بدون Reset داده‌ی موجود کاربران/نقش‌ها.
+// هر بار getRoles() صدا زده می‌شود: نقش‌های موجود در localStorage خوانده می‌شوند؛ هر نقش پایه‌ی
+// جدید (از DEFAULT_ROLES) که با id غایب است اضافه می‌شود؛ نقش‌های موجود (چه پیش‌فرض چه سفارشی
+// ادمین) هرگز overwrite نمی‌شوند. نسخه‌ی Migration در STORAGE_KEYS.ROLES_MIGRATION_VERSION ثبت
+// می‌شود تا اجرای مجدد هیچ‌چیز را تکرار نکند.
+// ============================================================
+const CURRENT_ROLES_MIGRATION_VERSION = 1;
+
+function ensureDefaultRolesMigrated(existingRoles: SystemRole[]): SystemRole[] {
+  const storedVersionRaw = localStorage.getItem(STORAGE_KEYS.ROLES_MIGRATION_VERSION);
+  const storedVersion = storedVersionRaw ? parseInt(storedVersionRaw, 10) : 0;
+
+  if (storedVersion >= CURRENT_ROLES_MIGRATION_VERSION) {
+    return existingRoles;
+  }
+
+  const existingIds = new Set(existingRoles.map((r) => r.id));
+  const missingDefaults = DEFAULT_ROLES.filter((r) => !existingIds.has(r.id));
+  const migrated = missingDefaults.length > 0 ? [...existingRoles, ...missingDefaults] : existingRoles;
+
+  if (missingDefaults.length > 0) {
+    setStoredData(STORAGE_KEYS.ROLES, migrated);
+  }
+  localStorage.setItem(STORAGE_KEYS.ROLES_MIGRATION_VERSION, String(CURRENT_ROLES_MIGRATION_VERSION));
+
+  return migrated;
+}
 
 // Default Companies
 export const DEFAULT_COMPANIES: Company[] = [
@@ -366,9 +580,12 @@ export const DEFAULT_USERS: User[] = [
     workflowNote: 'بررسی و تایید یا رد مبالغ عودتی ثبت‌شده توسط پشتیبانی'
   },
 
-  // --- ماژول فروش (گام اول): سه کاربر نمونه با زنجیره‌ی سرپرستی فروش (salesSupervisorId) ---
+  // --- سازمان فروش: ۵ کاربر نمونه، یک زنجیره‌ی کامل سرپرستی فروش (salesSupervisorId) ---
   // این زنجیره کاملاً مستقل از approvalChain/allowedApproverIds خزانه‌داری است و فقط توسط
   // src/utils/salesHierarchy.ts برای دید سلسله‌مراتبی مشتریان استفاده می‌شود.
+  // roleId به‌صورت صریح روی نقش‌های فروش (role_salesperson و ...) ست شده — نه role_purchaser
+  // (که با role:'requestor' fallback می‌گرفت و اشتباهاً manage_vendors می‌داد)؛ تشخیص نقش هرجا
+  // لازم باشد باید از roleId/پرمیشن مؤثر باشد، نه roleTitle.includes(...).
   {
     id: 'user_sales_person_1',
     username: 'sales_hosseini',
@@ -376,6 +593,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '09121230010',
     email: 'hosseini.sales@shavaz.com',
     role: 'requestor',
+    roleId: 'role_salesperson',
     roleTitle: 'فروشنده تلفنی',
     companyId: 'comp_sales',
     costCenterId: 'cc_saadatabad',
@@ -394,6 +612,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '09121230011',
     email: 'karimi.sales@shavaz.com',
     role: 'requestor',
+    roleId: 'role_sales_supervisor',
     roleTitle: 'سرپرست فروش',
     companyId: 'comp_sales',
     costCenterId: 'cc_saadatabad',
@@ -402,8 +621,26 @@ export const DEFAULT_USERS: User[] = [
     customPermissions: ['sales_access'],
     canIssueTasks: true,
     canExecuteTasks: true,
-    salesSupervisorId: 'user_sales_manager_1',
+    salesSupervisorId: 'user_sales_senior_supervisor_1',
     workflowNote: 'سرپرست تیم فروشندگان تلفنی — دید سلسله‌مراتبی روی مشتریان زیرمجموعه'
+  },
+  {
+    id: 'user_sales_senior_supervisor_1',
+    username: 'sales_ghasemi',
+    fullName: 'فرزاد قاسمی (سرپرست ارشد فروش)',
+    phone: '09121230013',
+    email: 'ghasemi.sales@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_senior_sales_supervisor',
+    roleTitle: 'سرپرست ارشد فروش',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_saadatabad',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: true,
+    canExecuteTasks: true,
+    salesSupervisorId: 'user_sales_manager_1',
+    workflowNote: 'سرپرست ارشد فروش — دید کل زیردرخت سرپرستان و فروشندگان زیرمجموعه'
   },
   {
     id: 'user_sales_manager_1',
@@ -412,6 +649,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '09121230012',
     email: 'hashemi.sales@shavaz.com',
     role: 'requestor',
+    roleId: 'role_sales_manager',
     roleTitle: 'مدیر فروش',
     companyId: 'comp_sales',
     costCenterId: 'cc_hq',
@@ -420,7 +658,100 @@ export const DEFAULT_USERS: User[] = [
     customPermissions: ['sales_access'],
     canIssueTasks: true,
     canExecuteTasks: true,
-    workflowNote: 'مدیر فروش — رأس زنجیره‌ی سرپرستی فروش نمونه، دید کامل روی همه‌ی مشتریان زیرمجموعه'
+    salesSupervisorId: 'user_sales_deputy_1',
+    workflowNote: 'مدیر فروش — مدیریت کامل زیردرخت فروش، گزارش‌گیری و زنجیره سرپرستی'
+  },
+  {
+    id: 'user_sales_deputy_1',
+    username: 'sales_moradi',
+    fullName: 'سودابه مرادی (معاونت فروش)',
+    phone: '09121230014',
+    email: 'moradi.sales@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_sales_deputy',
+    roleTitle: 'معاونت فروش',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: true,
+    canExecuteTasks: true,
+    workflowNote: 'معاونت فروش — رأس زنجیره‌ی سرپرستی فروش نمونه'
+  },
+
+  // Demo users for the remaining "definitive" (non-sales-hierarchy) roles — added so every
+  // finalized role has a real, loginable account for permission/menu/page verification, even
+  // though role_data_manager/role_advertising_operator/role_sales_payment_approver stay
+  // 'infrastructure_ready' (no operational page/menu exists for them yet — confirmed no
+  // Sidebar item is gated on their permissions, so logging in as them shows no fake page,
+  // only the same base menu as any requestor-level account).
+  {
+    id: 'user_data_manager_1',
+    username: 'data_kazemi',
+    fullName: 'الهام کاظمی (مدیر داده)',
+    phone: '09121230015',
+    email: 'kazemi.data@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_data_manager',
+    roleTitle: 'مدیر داده',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
+    workflowNote: 'مدیر داده — زیرساخت آماده، ماژول عملیاتی Import/تخصیص Lead هنوز پیاده‌سازی نشده است.'
+  },
+  {
+    id: 'user_advertising_operator_1',
+    username: 'ads_rahimi',
+    fullName: 'نیما رحیمی (اپراتور تبلیغات)',
+    phone: '09121230016',
+    email: 'rahimi.ads@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_advertising_operator',
+    roleTitle: 'اپراتور تبلیغات',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
+    workflowNote: 'اپراتور تبلیغات — زیرساخت آماده، ماژول عملیاتی کمپین/سرنخ هنوز پیاده‌سازی نشده است.'
+  },
+  {
+    id: 'user_sales_payment_approver_1',
+    username: 'sales_pay_tavakoli',
+    fullName: 'مهدی توکلی (مسئول تأیید مالی واریزی فروش)',
+    phone: '09121230017',
+    email: 'tavakoli.salespay@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_sales_payment_approver',
+    roleTitle: 'مسئول تأیید مالی واریزی فروش',
+    companyId: 'comp_sales',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
+    workflowNote: 'مسئول تأیید مالی واریزی فروش — زیرساخت آماده، مستقل از تاییدکننده مالی خدمات پس از فروش و خزانه‌داری، فلوی عملیاتی هنوز پیاده‌سازی نشده است.'
+  },
+  {
+    id: 'user_emergency_payment_officer_1',
+    username: 'emergency_sadeghi',
+    fullName: 'کامران صادقی (مسئول پرداخت فوری)',
+    phone: '09121230018',
+    email: 'sadeghi.emergency@shavaz.com',
+    role: 'requestor',
+    roleId: 'role_emergency_payment_officer',
+    roleTitle: 'مسئول پرداخت فوری',
+    companyId: 'comp_mother',
+    costCenterId: 'cc_hq',
+    password: '123456',
+    isActive: true,
+    canIssueTasks: false,
+    canExecuteTasks: true,
+    workflowNote: 'مسئول اجرای پرداخت فوری — فقط برای درخواست‌های صراحتاً ارجاع‌شده به مسیر پرداخت فوری.'
   }
 ];
 
@@ -666,7 +997,8 @@ export const storage = {
   },
 
   getRoles(): SystemRole[] {
-    return getStoredData(STORAGE_KEYS.ROLES, DEFAULT_ROLES);
+    const stored = getStoredData(STORAGE_KEYS.ROLES, DEFAULT_ROLES);
+    return ensureDefaultRolesMigrated(stored);
   },
   saveRoles(roles: SystemRole[]): void {
     setStoredData(STORAGE_KEYS.ROLES, roles);
@@ -791,13 +1123,24 @@ export const storage = {
     setStoredData(STORAGE_KEYS.CUSTOMERS, customers);
   },
 
+  getImpersonationLog(): ImpersonationLogEntry[] {
+    return getStoredData<ImpersonationLogEntry[]>(STORAGE_KEYS.IMPERSONATION_LOG, []);
+  },
+  saveImpersonationLog(log: ImpersonationLogEntry[]): void {
+    setStoredData(STORAGE_KEYS.IMPERSONATION_LOG, log);
+  },
+
+  getAuditLog(): AuditLogEntry[] {
+    return getStoredData<AuditLogEntry[]>(STORAGE_KEYS.AUDIT_LOG, []);
+  },
+  saveAuditLog(log: AuditLogEntry[]): void {
+    setStoredData(STORAGE_KEYS.AUDIT_LOG, log);
+  },
+
   getCurrentUser(): User | null {
-    const user = getStoredData<User | null>(STORAGE_KEYS.CURRENT_USER, null);
-    if (!user) {
-      // Default auto-login to Reza Bayat (Admin)
-      return DEFAULT_USERS[0];
-    }
-    return user;
+    // No silent auto-login: an absent/invalid session must render the login screen,
+    // never fall back to the super admin. See docs/BUSINESS_RULES.md (Impersonation/Auth).
+    return getStoredData<User | null>(STORAGE_KEYS.CURRENT_USER, null);
   },
   setCurrentUser(user: User | null): void {
     setStoredData(STORAGE_KEYS.CURRENT_USER, user);

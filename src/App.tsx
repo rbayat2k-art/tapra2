@@ -7,6 +7,9 @@ import {
 import { storage } from './utils/storage';
 import { getJalaliNow } from './utils/persianDate';
 import { numberToPersianWords, formatRial } from './utils/numberToWords';
+import { useEffectivePermissions, canAccessNavItem } from './utils/permissions';
+import { canStartImpersonation } from './utils/auth';
+import { logAudit } from './utils/auditLog';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -174,13 +177,52 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
+  // Effective permissions of the REAL logged-in identity (never affected by whichever user is
+  // currently being viewed while impersonating) — the ONLY thing consulted to authorize
+  // starting/continuing Impersonation. Effective permissions of whoever is CURRENTLY being
+  // viewed (impersonated user, or the logged-in user otherwise) drive menu/tab/data/operations.
+  const realActor = impersonatorAdmin || currentUser;
+  const realActorPermissions = useEffectivePermissions(realActor, roles);
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
+
+  const endOpenImpersonationLogEntry = (adminId: string, targetUserId: string) => {
+    const log = storage.getImpersonationLog();
+    const idx = [...log].reverse().findIndex((e) => e.adminId === adminId && e.targetUserId === targetUserId && !e.endedAt);
+    if (idx === -1) return;
+    const realIdx = log.length - 1 - idx;
+    const updated = [...log];
+    updated[realIdx] = { ...updated[realIdx], endedAt: getJalaliNow() };
+    storage.saveImpersonationLog(updated);
+  };
+
   const handleImpersonateUser = (targetUser: User) => {
-    if (!impersonatorAdmin && currentUser?.role === 'admin') {
-      setImpersonatorAdmin(currentUser);
-      localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(currentUser));
+    // Hardened gate: realActor must be a genuine admin (role === 'admin', not merely a
+    // permission grant) AND hold impersonate_users, target must exist/be active, and no
+    // Impersonation session may already be open (fully blocks nested Impersonation). This
+    // check runs on every call regardless of current state, so even a direct call to this
+    // handler (e.g. from devtools) with a non-admin/unauthorized identity is rejected.
+    const gate = canStartImpersonation(realActor, impersonatorAdmin, targetUser, realActorPermissions);
+    if (gate.ok === false) {
+      alert(gate.reason);
+      return;
     }
+
+    setImpersonatorAdmin(realActor);
+    localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(realActor));
     setCurrentUser(targetUser);
     storage.setCurrentUser(targetUser);
+
+    const log = storage.getImpersonationLog();
+    storage.saveImpersonationLog([...log, {
+      id: `imp_${Date.now()}`,
+      adminId: realActor!.id,
+      adminName: realActor!.fullName,
+      targetUserId: targetUser.id,
+      targetUserName: targetUser.fullName,
+      startedAt: getJalaliNow()
+    }]);
+    logAudit({ action: 'impersonation_start', effectiveUser: realActor!, roles, permissionUsed: 'impersonate_users', targetId: targetUser.id, details: `شروع مشاهده به‌جای ${targetUser.fullName}` });
+
     resetTabsToDashboard();
     if (targetUser.role === 'requestor') {
       openTab('my_requests');
@@ -191,6 +233,10 @@ export default function App() {
 
   const handleExitImpersonation = () => {
     if (impersonatorAdmin) {
+      if (currentUser) {
+        endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
+        logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان مشاهده به‌جای ${currentUser.fullName}` });
+      }
       setCurrentUser(impersonatorAdmin);
       storage.setCurrentUser(impersonatorAdmin);
       setImpersonatorAdmin(null);
@@ -199,6 +245,43 @@ export default function App() {
       openTab('admin');
     }
   };
+
+  // Aggressive Tab Guard: whenever the open tab set or the current user's effective
+  // permissions change, ACTIVELY close (not just block opening) any already-open tab the
+  // user is no longer authorized for — defense in depth beyond Sidebar hiding the menu item
+  // and beyond resetTabsToDashboard() on identity change (which only fires at the five
+  // identity-change points, not on every permission/role edit while already logged in).
+  // Mirrors Sidebar.tsx's exact per-tab visibility decision (same canAccessNavItem calls +
+  // the same customPermissions-based ad-hoc checks for admin/roles_permissions/all_communications).
+  useEffect(() => {
+    if (!currentUser) return;
+    const isAdminUser = currentUser.role === 'admin';
+    const tabAccessMap: Record<string, boolean> = {
+      my_requests: canAccessNavItem(currentUser, effectivePermissions, ['create_request']),
+      assigned_tasks: canAccessNavItem(currentUser, effectivePermissions, ['manage_assigned_tasks']),
+      approval_inbox: canAccessNavItem(currentUser, effectivePermissions, ['approve_branch_request', 'approve_treasury', 'execute_payment']),
+      cost_centers: canAccessNavItem(currentUser, effectivePermissions, ['manage_cost_centers']),
+      companies: canAccessNavItem(currentUser, effectivePermissions, ['manage_companies']),
+      archive: canAccessNavItem(currentUser, effectivePermissions, ['view_branch_requests', 'view_all_requests', 'export_archive', 'manage_support_cases', 'financial_approve_support']),
+      vendors: canAccessNavItem(currentUser, effectivePermissions, ['manage_vendors']),
+      vendor_categories: canAccessNavItem(currentUser, effectivePermissions, ['manage_vendors']),
+      customers: canAccessNavItem(currentUser, effectivePermissions, ['sales_access']),
+      workflow: canAccessNavItem(currentUser, effectivePermissions, ['view_analytics']),
+      letters: canAccessNavItem(currentUser, effectivePermissions, ['manage_letters']),
+      support: canAccessNavItem(currentUser, effectivePermissions, ['manage_support_cases', 'financial_approve_support', 'view_support_reports']),
+      admin: isAdminUser || !!currentUser.customPermissions?.includes('manage_users'),
+      roles_permissions: isAdminUser || !!currentUser.customPermissions?.includes('manage_roles'),
+      all_communications: isAdminUser || !!currentUser.customPermissions?.includes('manage_users')
+    };
+    for (const tab of openTabs) {
+      if (tab.id === 'dashboard') continue;
+      const allowed = tabAccessMap[tab.id];
+      if (allowed === false) {
+        closeTab(tab.id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTabs, effectivePermissions, currentUser]);
 
   // Modals
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
@@ -323,11 +406,40 @@ export default function App() {
     setSelectedDetailRequest(updatedReq);
   };
 
-  const handleDeleteRequest = (requestId: string) => {
-    setRequests(prev => prev.filter(r => r.id !== requestId));
+  // Never physically deletes a PaymentRequest — status becomes 'cancelled' and the record
+  // stays in `requests` (and therefore in the archive's "لغوشده‌ها" filter) forever. Physical
+  // removal is out of scope until the cleanup-request/approve flow is fully designed; even a
+  // cleanup approval (see RequestDetailModal.tsx) only sets a flag, never calls this array out.
+  const handleCancelRequest = (requestId: string) => {
+    if (!currentUser) return;
+    setRequests(prev => prev.map(r => {
+      if (r.id !== requestId) return r;
+      const updatedTimeline = [
+        ...r.timeline,
+        {
+          id: `tl_${Date.now()}`,
+          actorId: currentUser.id,
+          actorName: currentUser.fullName,
+          actorRole: currentUser.roleTitle,
+          action: 'cancelled' as const,
+          actionTitle: 'لغو درخواست توسط درخواست‌کننده',
+          timestamp: getJalaliNow(),
+          comment: 'درخواست پیش از هرگونه اقدام تاییدکننده توسط خودِ درخواست‌کننده لغو شد.'
+        }
+      ];
+      return {
+        ...r,
+        status: 'cancelled' as const,
+        cancelledByUserId: currentUser.id,
+        cancelledByName: currentUser.fullName,
+        cancelledAt: getJalaliNow(),
+        updatedAt: getJalaliNow(),
+        timeline: updatedTimeline
+      };
+    }));
     setIsDetailModalOpen(false);
     setSelectedDetailRequest(null);
-    alert('درخواست با موفقیت لغو و از سیستم حذف گردید.');
+    alert('درخواست با موفقیت لغو شد و در آرشیو (بخش لغوشده‌ها) باقی می‌ماند.');
   };
 
   // Search & Navigation
@@ -745,6 +857,15 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onLogout={() => {
+          // Full logout clears BOTH the current (possibly impersonated) session and any
+          // open Impersonation session — a stray impersonatorAdmin must never survive a
+          // real logout, or the next login could see/restore a stale admin identity.
+          if (impersonatorAdmin && currentUser) {
+            endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
+            logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان اجباری مشاهده (Logout کامل) به‌جای ${currentUser.fullName}` });
+          }
+          setImpersonatorAdmin(null);
+          localStorage.removeItem('shavaz_impersonator_admin');
           storage.setCurrentUser(null);
           setCurrentUser(null);
           resetTabsToDashboard();
@@ -769,7 +890,7 @@ export default function App() {
               <ShieldAlert className="w-4 h-4" />
             </span>
             <span>
-              شما هم‌اکنون در حالت شبیه‌سازی دسترسی با حساب کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> هستید.
+              در حال مشاهده سیستم به‌جای کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
             </span>
           </div>
           <button
@@ -940,6 +1061,8 @@ export default function App() {
                     <ApprovalInboxView
                       requests={requests}
                       currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
                       companies={companies}
                       costCenters={costCenters}
                       onSelectRequest={(req) => {
@@ -1049,6 +1172,7 @@ export default function App() {
                       companies={companies}
                       costCenters={costCenters}
                       currentUser={currentUser}
+                      roles={roles}
                       supportCases={supportCases}
                       letters={letters}
                       vendors={vendors}
@@ -1124,6 +1248,9 @@ export default function App() {
                       requests={requests}
                       roles={roles}
                       currentUser={currentUser}
+                      realActor={realActor}
+                      impersonatorAdmin={impersonatorAdmin}
+                      realActorPermissions={realActorPermissions}
                       onUpdateUsers={setUsers}
                       onUpdateCompanies={setCompanies}
                       onUpdateCostCenters={setCostCenters}
@@ -1156,8 +1283,11 @@ export default function App() {
         onClose={() => setIsDetailModalOpen(false)}
         currentUser={currentUser}
         users={users}
+        roles={roles}
+        effectivePermissions={effectivePermissions}
+        impersonatorAdmin={impersonatorAdmin}
         onUpdateRequest={handleUpdateRequest}
-        onDeleteRequest={handleDeleteRequest}
+        onDeleteRequest={handleCancelRequest}
         onOpenPrintModal={(req) => {
           setSelectedPrintRequest(req);
           setIsPrintModalOpen(true);

@@ -26,12 +26,18 @@ export const RequestTableView: React.FC<RequestTableViewProps> = ({
         return { label: 'در انتظار تایید', bg: 'bg-amber-500/15 text-amber-300 border-amber-500/30', icon: Clock };
       case 'returned':
         return { label: 'عودت داده شده', bg: 'bg-orange-500/15 text-orange-300 border-orange-500/30', icon: RefreshCw };
+      case 'approved_awaiting_payment_assignment':
+        return { label: 'آماده ارجاع پرداخت', bg: 'bg-sky-500/15 text-sky-300 border-sky-500/30', icon: ArrowLeftRight };
       case 'approved_pending_payment':
         return { label: 'تایید شده (انتظار واریز)', bg: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30', icon: CreditCard };
+      case 'emergency_pending_payment':
+        return { label: 'پرداخت فوری (در انتظار واریز)', bg: 'bg-orange-600/20 text-orange-300 border-orange-600/40', icon: CreditCard };
       case 'paid':
         return { label: 'واریز شد', bg: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', icon: CheckCircle2 };
       case 'completed':
         return { label: 'اتمام کار', bg: 'bg-slate-700 text-slate-300 border-slate-600', icon: CheckCircle2 };
+      case 'cancelled':
+        return { label: 'لغو شده', bg: 'bg-slate-700/60 text-slate-400 border-slate-600', icon: XCircle };
       case 'rejected':
         return { label: 'رد شده', bg: 'bg-rose-500/15 text-rose-300 border-rose-500/30', icon: XCircle };
       default:

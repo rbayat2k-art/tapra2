@@ -260,3 +260,27 @@
 
 **Impact:**
 `stable` اکنون شامل هر سه فیچر است: ناوبری چندتبی شبیه مرورگر + ویجت پرکاربردترین منوها، مدل چندنقشی کاربران (`getEffectiveUserPermissions`)، و ماژول فروش مشتری با قفل مالکیت پویا. تست دستی پس از merge (لاگین ادمین + شبیه‌سازی دو کاربر نمونه فروش) نشان داد داشبورد، سایدبار (شامل آیتم «مشتریان» و گروه «کاربران»)، و باز شدن/سوییچ تب‌ها بدون خطا کار می‌کنند. `npm run lint` (`tsc --noEmit`) بعد از هر مرحله (هر دو merge + رفع conflict + به‌روزرسانی مستندات) بدون خطا پاس شد. هیچ‌کدام از ۹ کاربر نمونه (۶ خزانه‌داری + ۳ فروش) و هیچ‌کدام از خط‌قرمزها (`isDualRole`, `approvalChain`, `allowedApproverIds`, rename اینترفیس) لمس نشدند.
+
+### Date: 2026-08-06
+
+**Decision:**
+بازسازی امنیتی/RBAC روی برنچ جدید `fix/multi-role-permissions-v2` (ساخته‌شده از `origin/stable`، **نه** merge/rebase روی `feature/multi-role-permissions` قدیمی چون آن شاخه از مبنای قدیمی `e48b282` ساخته شده بود و merge کورکورانه‌اش چندتبی و مستندات فروش جدید `stable` را regress می‌کرد). قبل از هر تغییری، `backup/multi-role-permissions-3cd5d87-20260806` (Branch) و `backup-3cd5d87-pre-rebuild` (Tag) از سرنخت آخرین وضعیت `feature/multi-role-permissions` (`3cd5d87130f813be3c4891cd84a7865b1083073c`) ساخته و به `origin` push شدند.
+
+روی این شاخه‌ی جدید، موارد زیر از صفر (نه cherry-pick) پیاده‌سازی شدند — جزئیات کامل در قانون ۱۶ جدید `AGENTS.md`:
+۱. حذف بک‌دور رمز عبور جهانی و ورود خودکار ادمین (`src/utils/auth.ts`'s `validateLogin`).
+۲. Impersonation امن (`canStartImpersonation`) + `IMPERSONATION_LOG`/`AUDIT_LOG`.
+۳. مدل چندنقشی + `deniedPermissions` (Deny همیشه غالب) در `src/utils/permissions.ts`.
+۴. قلمرو دسترسی واقعی (`roleScopes`/`reportsToUserId` → `computeVisibleUserIds` در `src/utils/orgHierarchy.ts`) — جایگزین شرط‌های قدیمی «هم‌شعبه‌ای» در `ArchiveView.tsx`.
+۵. جداسازی کامل خزانه از `SupportCase` خام (`src/utils/treasurySourceView.ts`) + فیلتر «مرجع صادرکننده».
+۶. فلوی پرداخت v2: تایید نهایی دیگر مسئول پرداخت انتخاب نمی‌کند (`approved_awaiting_payment_assignment`)؛ ارجاع فقط توسط ادمین/دارنده‌ی `refer_for_payment`؛ پرداخت فوری مستقل با منع خودارجاعی؛ حذف تصویر فیش جعلی (`paidWithoutReceipt`).
+۷. بازطراحی ردیف‌های درخواست تجمیعی (اصلاح مبلغ هر ردیف، بازمحاسبه خودکار جمع، مسدودسازی تایید نهایی تا وقتی ردیفی بلاتکلیف است) در `src/utils/batchCalculations.ts`.
+۸. لغو بدون حذف فیزیکی (`RequestStatus: 'cancelled'`).
+۹. ۱۱+ نقش سازمان فروش/مدیر داده/اپراتور تبلیغات/نقش‌های آینده به‌عنوان رکورد واقعی `SystemRole` + Migration idempotent + کاربر Demo برای هر نقش قطعی (شامل مدیر داده، اپراتور تبلیغات، مسئول تأیید مالی فروش، مسئول پرداخت فوری).
+۱۰. نصب `@types/react`/`@types/react-dom` (قبلاً در پروژه نبودند) — کشف شد که `tsc --noEmit` بدون این پکیج‌ها هیچ خطای Prop نادرست/گمشده JSX را نمی‌گرفت؛ چند باگ واقعی preexisting در `stable` با همین کشف پیدا و رفع شدند (فیلدهای غلط `SupportCase`/`Letter`/`Vendor`/`CostCenter` در `ArchiveView.tsx`، تایپ محلی نادرست `AssignedTask` در `AllCommunicationsAuditView.tsx`، `PaymentRequest.approvalHistory` ناموجود در `AdminPanel.tsx`، `User.directBayatPermission` اشتباه به‌جای `allowDirectToTreasury` در `NewRequestModal.tsx`).
+۱۱. کشف و رفع یک باگ دسترسی preexisting: آیتم «جستجوی پیشرفته و خروجی» (Archive) در `Sidebar.tsx` و Tab Guard `App.tsx` هیچ `requires` نداشت — یعنی هر کاربر لاگین‌شده (از جمله نقش‌های فروش) می‌توانست دفترچه‌ی کامل ذینفعان/بودجه شعب را ببیند. اکنون به `view_branch_requests`/`view_all_requests`/`export_archive`/`manage_support_cases`/`financial_approve_support` محدود شد.
+
+**Reason:**
+بررسی مستقل کاربر تایید کرد `3cd5d87` قابل merge امن نیست؛ الزام صریح بود که اصلاحات روی شاخه‌ی جدید مبتنی بر آخرین `stable` انجام شود، بدون تغییر `stable`/شاخه‌ی قدیمی، و بدون هیچ Regression نسبت به قابلیت‌های موجود (چندتبی، مستندات فروش).
+
+**Impact:**
+`npm run lint` (`tsc --noEmit`، اکنون واقعاً Propهای JSX را هم چک می‌کند) و `npm run build` هر دو بدون خطا پاس می‌شوند. تست مرورگر واقعی با کاربران Demo (فروشنده، ادمین) نشان داد: سایدبار فروشنده هیچ آیتم مالی/Archive/دفترچه‌ای ندارد؛ صفحه‌ی «نقش‌ها و دسترسی‌ها» همه‌ی نقش‌ها با بج سطح سازمانی/زیرساخت‌آماده/تعداد کاربر Demo صحیح نشان می‌دهد؛ Impersonation کامل کار می‌کند (شروع، بنر، پایان، بازگشت به تب قبلی ادمین، ثبت صحیح در Audit Log با هویت واقعی). فایل‌های خارج از محدوده تغییر نکردند (`git status` فقط فایل‌های مرتبط با این کار + `package.json`/`package-lock.json` برای `@types/react*` را نشان می‌دهد). Vitest/تست خودکار در این نشست نوشته نشد — طبق آخرین دستور صریح کاربر، تمرکز تایید روی تست مرورگر واقعی با کاربران Demo بود، نه تست واحد خودکار.

@@ -1,37 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  User, DirectMessage, ChatMessage, Letter, PaymentRequest, SupportCase 
+import {
+  User, DirectMessage, ChatMessage, Letter, PaymentRequest, SupportCase, AssignedTask
 } from '../types';
-import { 
-  ShieldAlert, MessageSquare, Mail, CheckSquare, FileText, 
+import {
+  ShieldAlert, MessageSquare, Mail, CheckSquare, FileText,
   Search, Filter, Download, User as UserIcon, Clock, Layers, Eye, RefreshCw, Lock
 } from 'lucide-react';
-
-interface AssignedTask {
-  id: string;
-  taskCode: string;
-  title: string;
-  description: string;
-  assignedByUserId: string;
-  assignedByName: string;
-  assignedByRole: string;
-  assignedToUserId: string;
-  assignedToName: string;
-  assignedToRole: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'returned';
-  createdAt: string;
-  dueDate?: string;
-  priority: 'normal' | 'high' | 'urgent';
-  messages: {
-    id: string;
-    senderId: string;
-    senderName: string;
-    senderRole: string;
-    letterNumber?: string;
-    text: string;
-    createdAt: string;
-  }[];
-}
 
 interface AllCommunicationsAuditViewProps {
   currentUser: User | null;
@@ -110,8 +84,8 @@ export const AllCommunicationsAuditView: React.FC<AllCommunicationsAuditViewProp
         senderName: pm.senderName || 'کاربر',
         senderRole: pm.senderRole,
         recipientName: 'همه‌ی پرسنل',
-        timestamp: pm.timestamp || (pm as any).createdAt || '',
-        content: pm.text || (pm as any).content || '',
+        timestamp: pm.timestamp || '',
+        content: pm.content || '',
       });
     });
 
@@ -158,10 +132,10 @@ export const AllCommunicationsAuditView: React.FC<AllCommunicationsAuditViewProp
         typeLabel: 'دستور کار / task',
         typeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
         title: `دستور کار: ${tsk.title}`,
-        codeOrNumber: tsk.taskCode,
-        senderName: tsk.assignedByName,
-        senderRole: tsk.assignedByRole,
-        recipientName: tsk.assignedToName,
+        codeOrNumber: tsk.taskNumber,
+        senderName: tsk.assignerName,
+        senderRole: tsk.assignerRole,
+        recipientName: tsk.assigneeName,
         timestamp: tsk.createdAt,
         content: tsk.description,
         extraInfo: `اولویت: ${tsk.priority} | وضعیت: ${tsk.status}`
@@ -173,12 +147,12 @@ export const AllCommunicationsAuditView: React.FC<AllCommunicationsAuditViewProp
           type: 'tasks',
           typeLabel: 'مکاتبه دستور کار',
           typeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-          title: `پیام دستور کار ${tsk.taskCode} (${tsk.title})`,
-          codeOrNumber: msg.letterNumber || tsk.taskCode,
+          title: `پیام دستور کار ${tsk.taskNumber} (${tsk.title})`,
+          codeOrNumber: msg.letterNumber || tsk.taskNumber,
           senderName: msg.senderName,
           senderRole: msg.senderRole,
-          timestamp: msg.createdAt,
-          content: msg.text
+          timestamp: msg.timestamp,
+          content: msg.content
         });
       });
     });
@@ -213,8 +187,8 @@ export const AllCommunicationsAuditView: React.FC<AllCommunicationsAuditViewProp
             type: 'support_notes',
             typeLabel: 'یادداشت مالی خدمات/شکایات',
             typeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-            title: `پرونده پشتیبانی ${sc.caseCode} (فاکتور: ${tx.invoiceCode})`,
-            codeOrNumber: sc.caseCode,
+            title: `پرونده پشتیبانی ${sc.trackingCode} (فاکتور: ${tx.invoiceCode})`,
+            codeOrNumber: sc.trackingCode,
             senderName: tx.financialApproverName || 'تاییدکننده مالی',
             timestamp: tx.financialActionAt || sc.createdAt,
             content: tx.financialApproverNote,

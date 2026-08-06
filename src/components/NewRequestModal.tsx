@@ -139,7 +139,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   }
 
   if (configuredApproverIds.length === 0) {
-    if (currentUser?.directBayatPermission) {
+    if (currentUser?.allowDirectToTreasury) {
       const bayatAdmin = users.find(u => u.role === 'admin' || u.fullName.includes('بیات'));
       if (bayatAdmin) configuredApproverIds = [bayatAdmin.id];
     }

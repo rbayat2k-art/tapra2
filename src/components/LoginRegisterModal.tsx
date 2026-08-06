@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, Company, CostCenter } from '../types';
-import { storage, DEFAULT_USERS } from '../utils/storage';
+import { storage } from '../utils/storage';
+import { validateLogin } from '../utils/auth';
 import { 
   Building2, User as UserIcon, Lock, Phone, Mail, 
   ShieldCheck, ArrowLeft, CheckCircle2, UserPlus, LogIn 
@@ -45,40 +46,18 @@ export const LoginRegisterModal: React.FC<LoginRegisterModalProps> = ({
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    
-    const users = storage.getUsers();
-    const cleanUser = username.trim().toLowerCase();
-    const cleanPass = password.trim();
 
-    if (!cleanUser || !cleanPass) {
-      setLoginError('لطفاً نام کاربری و رمز عبور را وارد نمایید.');
+    const users = storage.getUsers();
+    const result = validateLogin(username, password, users);
+
+    if (result.ok === false) {
+      setLoginError(result.error);
       return;
     }
 
-    // Check matching user
-    const foundUser = users.find(
-      u => u.username.toLowerCase() === cleanUser
-    );
-
-    if (foundUser) {
-      // Password check
-      if (foundUser.password && foundUser.password !== cleanPass && cleanPass !== '123456' && cleanPass !== 'admin') {
-        setLoginError('رمز عبور وارد شده نادرست است.');
-        return;
-      }
-
-      // Check if user is active/approved by admin
-      if (foundUser.isActive === false) {
-        setLoginError('حساب کاربری شما هنوز توسط مدیر سیستم تایید و فعال نشده است. لطفاً منتظر بررسی توسط ادمین باشید.');
-        return;
-      }
-
-      storage.setCurrentUser(foundUser);
-      onLoginSuccess(foundUser);
-      if (onClose) onClose();
-    } else {
-      setLoginError('نام کاربری یا رمز عبور اشتباه است.');
-    }
+    storage.setCurrentUser(result.user);
+    onLoginSuccess(result.user);
+    if (onClose) onClose();
   };
 
   const handleRegister = (e: React.FormEvent) => {

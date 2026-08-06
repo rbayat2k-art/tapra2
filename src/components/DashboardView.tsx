@@ -6,7 +6,7 @@ import { TAB_DEFINITIONS } from './TabBar';
 import {
   CreditCard, CheckCircle2, Clock, RefreshCw,
   Building, MapPin, PlusCircle, Archive, ArrowUpRight,
-  TrendingUp, Layers, Users, Sparkles, ShieldCheck
+  TrendingUp, Layers, Users, Sparkles, ShieldCheck, XCircle, Zap
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -34,11 +34,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     if (currentUser.role === 'admin') return true;
 
     if (currentUser.role === 'requestor' && !currentUser.isDualRole) {
-      return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
     }
 
     if (currentUser.role === 'approver' || currentUser.isDualRole) {
-      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
       const isAssigned = r.currentApproverId === currentUser.id;
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
       const isInTimeline = r.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
@@ -46,9 +46,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
 
     if (currentUser.role === 'treasury_executor') {
-      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
       const isAssigned = r.currentApproverId === currentUser.id;
-      const isTreasuryStage = ['approved_pending_payment', 'paid', 'completed'].includes(r.status);
+      const isTreasuryStage = ['approved_awaiting_payment_assignment', 'approved_pending_payment', 'emergency_pending_payment', 'paid', 'completed'].includes(r.status);
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
       return isMyOwn || isAssigned || isTreasuryStage || isMyBranch;
     }
@@ -56,10 +56,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
   });
 
-  const pendingCount = userAccessibleRequests.filter(r => r.status === 'pending_approval' || r.status === 'approved_pending_payment').length;
+  const pendingCount = userAccessibleRequests.filter(r =>
+    r.status === 'pending_approval' || r.status === 'approved_awaiting_payment_assignment' ||
+    r.status === 'approved_pending_payment' || r.status === 'emergency_pending_payment'
+  ).length;
   const paidRequests = userAccessibleRequests.filter(r => r.status === 'paid');
   const totalPaidAmount = paidRequests.reduce((sum, r) => sum + r.amount, 0);
   const returnedCount = userAccessibleRequests.filter(r => r.status === 'returned').length;
+  const cancelledCount = userAccessibleRequests.filter(r => r.status === 'cancelled').length;
+  const emergencyPendingCount = userAccessibleRequests.filter(r => r.status === 'emergency_pending_payment').length;
 
   // "پرکاربردترین منوهای شما" widget data — read this user's per-tab open counts
   // (recorded by App.tsx's openTab -> storage.recordTabUsage) and rank them. Only tab
@@ -161,6 +166,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="text-2xl font-black text-orange-600 dark:text-orange-300">{returnedCount} <span className="text-xs text-slate-400 font-normal">درخواست</span></div>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">علت ایراد در جزئیات ذکر شده است</p>
+        </div>
+
+        {/* Cancelled + Emergency Payment Count */}
+        <div
+          onClick={() => onNavigateTab('archive')}
+          className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">لغوشده / پرداخت فوری</span>
+            <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
+              <XCircle className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-rose-600 dark:text-rose-300 flex items-center gap-2">
+            {cancelledCount}
+            <span className="text-xs text-slate-400 font-normal">لغوشده</span>
+            {emergencyPendingCount > 0 && (
+              <span className="text-xs font-bold text-orange-500 dark:text-orange-300 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" />
+                {emergencyPendingCount} فوری
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">درخواست‌های لغوشده (بایگانی می‌مانند) و در انتظار پرداخت فوری</p>
         </div>
 
         {/* Companies Count */}

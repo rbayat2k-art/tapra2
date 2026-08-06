@@ -48,7 +48,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
   const myBaseRequests = requests.filter(r => {
     if (!currentUser) return false;
     if (currentUser.role === 'admin') return true;
-    return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+    return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
   });
 
   // Split into Open vs Completed

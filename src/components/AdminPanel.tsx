@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, Company, CostCenter, UserRole, PaymentRequest, SystemPermission, SystemRole } from '../types';
 import { storage, DEFAULT_ROLE_ID_MAP } from '../utils/storage';
+import { canStartImpersonation } from '../utils/auth';
 import { CompaniesView } from './CompaniesView';
 import { CostCentersView } from './CostCentersView';
 import { ALL_PERMISSIONS } from './RolesAndPermissionsView';
@@ -37,6 +38,9 @@ interface AdminPanelProps {
   requests: PaymentRequest[];
   roles: SystemRole[];
   currentUser: User | null;
+  realActor?: User | null;
+  impersonatorAdmin?: User | null;
+  realActorPermissions?: SystemPermission[] | null;
   onUpdateUsers: (newUsers: User[]) => void;
   onUpdateCompanies: (newComp: Company[]) => void;
   onUpdateCostCenters: (newCC: CostCenter[]) => void;
@@ -50,6 +54,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   requests,
   roles,
   currentUser,
+  realActor = null,
+  impersonatorAdmin = null,
+  realActorPermissions = null,
   onUpdateUsers,
   onUpdateCompanies,
   onUpdateCostCenters,
@@ -109,6 +116,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [roleAccessOverrides, setRoleAccessOverrides] = useState<{ roleId: string; permissions: SystemPermission[] }[]>([]);
   const [openRolePanels, setOpenRolePanels] = useState<Record<string, boolean>>({});
 
+  // User-specific deny list — subtracted from the union of role permissions at read time
+  // (see getEffectiveUserPermissions). Takes priority over every granted role permission.
+  const [deniedPermissions, setDeniedPermissions] = useState<SystemPermission[]>([]);
+  // General org supervisor chain (independent of salesSupervisorId / approvalChain) — used
+  // only for territory computation (computeVisibleUserIds / 'direct_reports' / 'subtree' scope).
+  const [reportsToUserId, setReportsToUserId] = useState<string>('');
+  // Per-role visibility scope. Default is 'own' when a role has no entry here — company/branch
+  // scope is only ever granted explicitly, never a fallback.
+  const [roleScopes, setRoleScopes] = useState<{ roleId: string; scope: { scopeType: 'own' | 'direct_reports' | 'subtree' | 'company' | 'branch'; companyId?: string; costCenterId?: string } }[]>([]);
+
   // Quick Password Change State
   const [newPasswordValue, setNewPasswordValue] = useState('');
 
@@ -116,6 +133,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     branches: false,
     multiRole: true,
+    territory: false,
     seniorSupervisor: false,
     forward: true,
     chain: true,
@@ -129,6 +147,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setOpenSections({
       branches: true,
       multiRole: true,
+      territory: true,
       seniorSupervisor: true,
       forward: true,
       chain: true,
@@ -139,6 +158,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setOpenSections({
       branches: false,
       multiRole: false,
+      territory: false,
       seniorSupervisor: false,
       forward: false,
       chain: false,
@@ -182,6 +202,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setRoleAccessOverrides((prev) => prev.filter((o) => o.roleId !== rId));
   };
 
+  const toggleDeniedPermission = (perm: SystemPermission) => {
+    setDeniedPermissions((prev) => prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]);
+  };
+
+  const getRoleScope = (rId: string) => roleScopes.find((rs) => rs.roleId === rId)?.scope || { scopeType: 'own' as const };
+
+  const setRoleScopeType = (rId: string, scopeType: 'own' | 'direct_reports' | 'subtree' | 'company' | 'branch') => {
+    setRoleScopes((prev) => {
+      const existing = prev.find((rs) => rs.roleId === rId);
+      const nextScope = { scopeType, companyId: existing?.scope.companyId, costCenterId: existing?.scope.costCenterId };
+      if (existing) return prev.map((rs) => (rs.roleId === rId ? { ...rs, scope: nextScope } : rs));
+      return [...prev, { roleId: rId, scope: nextScope }];
+    });
+  };
+
+  const setRoleScopeTarget = (rId: string, field: 'companyId' | 'costCenterId', value: string) => {
+    setRoleScopes((prev) => {
+      const existing = prev.find((rs) => rs.roleId === rId);
+      const base = existing?.scope || { scopeType: 'own' as const };
+      const nextScope = { ...base, [field]: value || undefined };
+      if (existing) return prev.map((rs) => (rs.roleId === rId ? { ...rs, scope: nextScope } : rs));
+      return [...prev, { roleId: rId, scope: nextScope }];
+    });
+  };
+
   // Live preview of the derived dual-role status for the currently selected role set.
   const derivedIsDualRole = deriveIsDualRoleFromRoles(role, [roleId, ...additionalRoleIds]);
 
@@ -217,6 +262,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAdditionalRoleIds([]);
     setRoleAccessOverrides([]);
     setOpenRolePanels({});
+    setDeniedPermissions([]);
+    setReportsToUserId('');
+    setRoleScopes([]);
     setShowAddUserModal(true);
   };
 
@@ -251,6 +299,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAdditionalRoleIds(u.additionalRoleIds || []);
     setRoleAccessOverrides(u.roleAccessOverrides || []);
     setOpenRolePanels({});
+    setDeniedPermissions(u.deniedPermissions || []);
+    setReportsToUserId(u.reportsToUserId || '');
+    setRoleScopes(u.roleScopes || []);
   };
 
   const handleSaveUser = (e: React.FormEvent) => {
@@ -311,7 +362,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        reportsToUserId: reportsToUserId || undefined,
+        roleScopes
       } : u);
 
       // Only one user may hold the senior treasury supervisor designation at a time
@@ -350,7 +404,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        reportsToUserId: reportsToUserId || undefined,
+        roleScopes
       };
 
       let updated = [...users, newUser];
@@ -399,9 +456,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     // Check user activities & logs across system
     const userRequests = requests.filter(r => 
-      r.requestorId === u.id || 
-      r.currentApproverId === u.id || 
-      r.approvalHistory?.some(h => h.actorId === u.id) ||
+      r.requestorId === u.id ||
+      r.currentApproverId === u.id ||
       r.timeline?.some(t => t.actorName === u.fullName || t.nextActorName === u.fullName)
     );
     const userTasks = storage.getTasks().filter(t => 
@@ -657,8 +713,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Impersonate / Login as User Button (Admin only) */}
-                            {onImpersonateUser && u.id !== currentUser?.id && (
+                            {/* Impersonate / Login as User Button — rendered only when
+                                canStartImpersonation would actually succeed for this target:
+                                real actor must be the true admin (not merely a permission
+                                holder), no nested session already open, target active. */}
+                            {onImpersonateUser && u.id !== currentUser?.id &&
+                              canStartImpersonation(realActor, impersonatorAdmin, u, realActorPermissions).ok && (
                               <button
                                 onClick={() => onImpersonateUser(u)}
                                 className="p-1.5 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg transition"
@@ -1173,6 +1233,125 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Territory & Denied Permissions: general org supervisor (reportsToUserId,
+                  independent of salesSupervisorId/approvalChain), per-role visibility scope
+                  (own by default — company/branch only when explicitly assigned here), and
+                  a user-specific deny list that always wins over granted role permissions. */}
+              <div className="p-3.5 bg-slate-950/90 border border-sky-500/30 rounded-2xl space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('territory')}
+                  className="w-full flex items-center justify-between cursor-pointer text-right"
+                >
+                  <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                    <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="text-xs font-extrabold text-sky-300 truncate">
+                      قلمرو سازمانی و محرومیت‌های دسترسی این کاربر
+                    </span>
+                    {deniedPermissions.length > 0 && (
+                      <span className="text-[10px] font-bold bg-rose-950 text-rose-300 px-2 py-0.5 rounded-full border border-rose-800/60 shrink-0">
+                        {deniedPermissions.length} مجوز محروم
+                      </span>
+                    )}
+                  </div>
+                  {openSections.territory ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+                </button>
+
+                {openSections.territory && (
+                  <div className="pt-2 border-t border-slate-800 space-y-3 animate-fade-in">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        سرپرست سازمانی مستقیم (زنجیره عمومی گزارش‌دهی)
+                      </label>
+                      <select
+                        value={reportsToUserId}
+                        onChange={(e) => setReportsToUserId(e.target.value)}
+                        className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-sky-500"
+                      >
+                        <option value="">بدون سرپرست مشخص</option>
+                        {users.filter(u => u.id !== editingUser?.id).map(u => (
+                          <option key={u.id} value={u.id}>{u.fullName} ({u.roleTitle})</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        فقط برای محاسبه قلمرو دید سازمانی (زیرمجموعه مستقیم / کل زیرشاخه) استفاده می‌شود — مستقل از سلسله‌مراتب فروش و زنجیره تایید مالی.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-slate-400">
+                        قلمرو دید هر نقش فعال این کاربر (پیش‌فرض «فقط خودم» — هیچ نقشی بدون تخصیص صریح، دسترسی گسترده‌تر ندارد):
+                      </p>
+                      {[roleId, ...additionalRoleIds].map((rId) => {
+                        const r = roles.find(rr => rr.id === rId);
+                        if (!r) return null;
+                        const scope = getRoleScope(rId);
+                        return (
+                          <div key={rId} className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 space-y-2">
+                            <span className="text-xs font-bold text-white">{r.name}</span>
+                            <select
+                              value={scope.scopeType}
+                              onChange={(e) => setRoleScopeType(rId, e.target.value as any)}
+                              className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                            >
+                              <option value="own">فقط خودم</option>
+                              <option value="direct_reports">زیرمجموعه مستقیم</option>
+                              <option value="subtree">کل زیرشاخه سازمانی</option>
+                              <option value="company">کل یک شرکت</option>
+                              <option value="branch">یک شعبه / مرکز هزینه</option>
+                            </select>
+                            {scope.scopeType === 'company' && (
+                              <select
+                                value={scope.companyId || ''}
+                                onChange={(e) => setRoleScopeTarget(rId, 'companyId', e.target.value)}
+                                className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                              >
+                                <option value="">انتخاب شرکت...</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            )}
+                            {scope.scopeType === 'branch' && (
+                              <select
+                                value={scope.costCenterId || ''}
+                                onChange={(e) => setRoleScopeTarget(rId, 'costCenterId', e.target.value)}
+                                className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                              >
+                                <option value="">انتخاب شعبه...</option>
+                                {costCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        محرومیت اختصاصی از مجوز (اولویت بالاتر از هر نقش اعطاشده)
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                        {ALL_PERMISSIONS.map((p) => {
+                          const checked = deniedPermissions.includes(p.key);
+                          return (
+                            <label key={p.key} className={`p-2 rounded-lg border text-[10.5px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                              checked ? 'bg-rose-950/50 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleDeniedPermission(p.key)}
+                                className="w-3.5 h-3.5 mt-0.5 text-rose-600 rounded border-slate-700 bg-slate-800 focus:ring-rose-500"
+                              />
+                              <span>{p.title}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}

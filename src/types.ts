@@ -21,7 +21,45 @@ export type SystemPermission =
   | 'financial_approve_support'// تایید مالی مبالغ عودتی پرونده‌های پشتیبانی
   | 'view_support_reports'     // گزارش‌گیری پیشرفته کل پرونده‌های خدمات پس از فروش (ادمین)
   | 'manage_letters'           // دسترسی به سامانه نامه‌نگاری داخلی (ثبت، ارجاع، پاسخ)
-  | 'sales_access';            // دسترسی به ماژول فروش (مشتریان، فاکتور فروش)
+  | 'sales_access'             // دسترسی به ماژول فروش (مشتریان، فاکتور فروش)
+  | 'impersonate_users'        // ورود ادمین به حساب کاربران دیگر (Impersonation) — فقط برای نقش admin واقعی معنا دارد
+  | 'refer_for_payment'        // ارجاع درخواست آماده‌ی پرداخت به یک مسئول پرداخت مشخص
+  | 'refer_for_emergency_payment' // ارجاع یک درخواست به مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی)
+  | 'execute_emergency_payment'   // اجرای پرداخت فوری برای درخواست ارجاع‌شده به مسیر فوری
+  // --- مجوزهای ریزدانه سازمان فروش ---
+  | 'view_own_customers'           // دیدن مشتریانی که خودِ کاربر با آن‌ها کار کرده
+  | 'view_team_customers'          // دیدن مشتریان زیرمجموعه‌ی مستقیم
+  | 'view_descendant_customers'    // دیدن مشتریان کل زیردرخت سازمانی زیرمجموعه
+  | 'search_customer_by_phone'     // جستجوی سراسری مشتری بر اساس شماره تماس
+  | 'create_customer'              // ثبت مشتری جدید
+  | 'edit_customer_basic_info'     // ویرایش اطلاعات پایه مشتری
+  | 'view_customer_contact_fields' // مشاهده شماره تماس‌های مشتری
+  | 'view_customer_address'        // مشاهده آدرس مشتری
+  | 'view_customer_purchase_history'   // مشاهده تاریخچه خرید مشتری
+  | 'view_customer_call_history'       // مشاهده تاریخچه تماس مشتری
+  | 'view_customer_complaint_summary'  // مشاهده خلاصه شکایات مشتری
+  | 'view_customer_complaint_details'  // مشاهده جزئیات کامل شکایات مشتری
+  | 'start_sale_cycle'             // شروع چرخه فروش جدید با مشتری
+  | 'close_sale_cycle'             // بستن چرخه فروش فعال
+  | 'assign_sales_lead'            // ارجاع مستقیم Lead به یک فروشنده/زیرمجموعه (زیرساخت — هنوز بدون صفحه عملیاتی)
+  | 'reassign_sales_lead'          // جابه‌جایی/ارجاع مجدد یک Lead (زیرساخت — هنوز بدون صفحه عملیاتی)
+  | 'drain_salesperson_queue'      // تخلیه صف Lead های یک فروشنده (زیرساخت — هنوز بدون صفحه عملیاتی)
+  | 'view_sales_reports'           // گزارش‌گیری از عملکرد فروش
+  | 'configure_sales_field_visibility' // پیکربندی این‌که کدام فیلدهای مشتری برای چه نقشی نمایان باشد
+  | 'manage_sales_hierarchy'       // ویرایش زنجیره سرپرستی سازمان فروش
+  // --- مجوزهای مدیر داده (زیرساخت آماده، فلو کامل در فاز بعد) ---
+  | 'data_management_access'       // دسترسی پایه به بخش مدیریت داده
+  | 'import_raw_contacts'          // Import بانک داده خام
+  | 'review_import_conflicts'      // بررسی تعارض‌های Import
+  | 'view_raw_contact_pool'        // مشاهده مخزن داده خام
+  | 'configure_lead_assignment'    // پیکربندی موتور تخصیص Lead
+  | 'view_data_reports'            // گزارش‌گیری بانک داده
+  // --- مجوزهای اپراتور تبلیغات (زیرساخت آماده، فلو کامل در فاز بعد) ---
+  | 'advertising_access'           // دسترسی پایه به بخش تبلیغات
+  | 'manage_advertising_campaigns' // ثبت/ویرایش کمپین تبلیغاتی
+  | 'review_incoming_leads'        // بررسی اولیه Lead های ورودی
+  | 'convert_interaction_to_lead'  // تبدیل تعامل ورودی به Lead
+  | 'view_campaign_reports';       // گزارش‌گیری کمپین‌ها
 
 export interface SystemRole {
   id: string;
@@ -31,6 +69,15 @@ export interface SystemRole {
   isSystemRole?: boolean; // System roles cannot be deleted
   permissions: SystemPermission[];
   userCount?: number;
+  // Organizational level within a hierarchy (e.g. sales org: 1=فروشنده ... 5=معاونت فروش) —
+  // display/reporting only, never a source of permission by itself.
+  organizationalLevel?: number;
+  // Which role ids are the "normal" upward reporting targets for a user in this role —
+  // informational for admin UI, not enforced automatically.
+  allowedParentRoleIds?: string[];
+  // 'infrastructure_ready' = role/permissions exist but no operational page/flow yet
+  // (e.g. future logistics/delivery roles) — never grant sensitive permissions to these.
+  implementationStatus?: 'active' | 'infrastructure_ready';
 }
 
 export interface User {
@@ -78,6 +125,59 @@ export interface User {
   // the treasury approvalChain/allowedApproverIds above; used only by src/utils/salesHierarchy.ts
   // to compute which customers a salesperson/supervisor can see.
   salesSupervisorId?: string;
+
+  // Explicit permission denial: subtracted from the union of role/customPermissions in
+  // getEffectiveUserPermissions (src/utils/permissions.ts) — deny always wins over allow.
+  deniedPermissions?: SystemPermission[];
+
+  // General organizational supervisor chain (used for Archive territory visibility via
+  // src/utils/orgHierarchy.ts) — completely independent of salesSupervisorId (sales-only)
+  // and approvalChain/allowedApproverIds (treasury approval routing only). This is who this
+  // user "reports to" for org-hierarchy/territory purposes, nothing else.
+  reportsToUserId?: string;
+
+  // Per-role scope assignment: for a given roleId, how wide this user's data visibility is
+  // under that role (see RoleAssignmentScope). Missing entry for a role = 'own' by default —
+  // never a silent broader fallback. Computed by src/utils/orgHierarchy.ts:computeVisibleUserIds.
+  roleScopes?: { roleId: string; scope: RoleAssignmentScope }[];
+}
+
+// Data-visibility scope attached to a specific role assignment. 'own' is always the default
+// when no explicit scope is set for a role — 'company'/'branch' only ever apply when an
+// admin has explicitly assigned them (never an automatic/implicit fallback).
+export type RoleScopeType = 'own' | 'direct_reports' | 'subtree' | 'company' | 'branch';
+export interface RoleAssignmentScope {
+  scopeType: RoleScopeType;
+  companyId?: string;   // required context when scopeType === 'company'
+  costCenterId?: string; // required context when scopeType === 'branch'
+}
+
+// Impersonation audit trail (Admin → user "login as"). One entry per session: startedAt is
+// set when impersonation begins, endedAt when it ends (exit or full logout).
+export interface ImpersonationLogEntry {
+  id: string;
+  adminId: string;
+  adminName: string;
+  targetUserId: string;
+  targetUserName: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+// Generic audit trail for security/finance-sensitive operations (impersonation lifecycle,
+// normal + emergency payment referral/execution). Intentionally NOT a full app-wide audit
+// log — see docs/BUSINESS_RULES.md for the documented scope boundary.
+export interface AuditLogEntry {
+  id: string;
+  action: string; // e.g. 'impersonation_start', 'payment_referred', 'emergency_payment_executed'
+  effectiveUserId: string;   // who the action appears to be performed by (currentUser at the time)
+  effectiveUserName: string;
+  impersonatorAdminId?: string; // set only if the effectiveUser was being impersonated by an admin
+  impersonatorAdminName?: string;
+  effectiveRoleId?: string; // which of the user's active roles granted the permission used
+  targetId?: string; // e.g. paymentRequest id, target user id
+  details?: string;
+  timestamp: string;
 }
 
 export interface Company {
@@ -355,12 +455,15 @@ export interface SupportCase {
   status: SupportCaseStatus;
 }
 
-export type RequestStatus = 
+export type RequestStatus =
   | 'pending_approval'        // در انتظار تایید
   | 'returned'                // عودت داده شده / نیاز به اصلاح
-  | 'approved_pending_payment'// تایید شده - در انتظار واریز خزانه‌داری
+  | 'approved_awaiting_payment_assignment' // تایید مالی نهایی شد، هنوز به هیچ مسئول پرداختی ارجاع نشده
+  | 'approved_pending_payment'// ارجاع شده به یک مسئول پرداخت مشخص - در انتظار واریز
+  | 'emergency_pending_payment' // ارجاع‌شده به مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی)
   | 'paid'                    // واریز شده (دارای فیش)
   | 'completed'               // اتمام کار
+  | 'cancelled'                // لغو شده توسط درخواست‌کننده (بایگانی می‌ماند، حذف فیزیکی نمی‌شود)
   | 'rejected';               // رد شده
 
 export interface AttachmentFile {
@@ -377,7 +480,9 @@ export interface RequestTimelineStep {
   actorId?: string;
   actorName: string;
   actorRole: string;
-  action: 'submitted' | 'forwarded' | 'returned' | 'rejected' | 'approved' | 'paid' | 'completed' | 'commented' | 'undone';
+  action: 'submitted' | 'forwarded' | 'returned' | 'rejected' | 'approved' | 'paid' | 'completed' | 'commented' | 'undone'
+    | 'referred_for_payment' | 'referred_for_emergency_payment' | 'emergency_paid' | 'cancelled'
+    | 'cleanup_requested' | 'cleanup_approved';
   actionTitle: string;
   comment?: string;
   nextActorName?: string;
@@ -386,9 +491,21 @@ export interface RequestTimelineStep {
   amountCorrectionNote?: string; // set when the approver corrected the request amount during this step (old → new)
 }
 
+export interface RequestBatchItemChangeEntry {
+  field: string;
+  oldValue: string;
+  newValue: string;
+  byUserId: string;
+  byName: string;
+  at: string;
+}
+
 export interface RequestBatchItem {
   id: string;
   title: string;
+  // amount stays as the row's live/current amount for backward compatibility with every
+  // existing sum-over-batchItems call site; originalAmount/currentAmount are the new
+  // audit-trail-friendly names — currentAmount is always kept equal to amount.
   amount: number;
   amountInWords: string;
   destinationName: string;
@@ -398,6 +515,16 @@ export interface RequestBatchItem {
   decidedByName?: string;
   decidedAt?: string;
   rejectionReason?: string;
+
+  // Row-level correction audit trail (Business rule: approver may correct a row's amount
+  // before approving it; every correction is recorded here, never silently overwritten).
+  originalAmount?: number; // set once, at row creation — never changes afterward
+  currentAmount?: number;  // mirrors `amount`; kept for explicit naming in new code paths
+  amountCorrectedByUserId?: string;
+  amountCorrectedByName?: string;
+  amountCorrectedAt?: string;
+  amountCorrectionReason?: string;
+  changeHistory?: RequestBatchItemChangeEntry[];
 }
 
 export interface CostCenterAllocation {
@@ -463,8 +590,42 @@ export interface PaymentRequest {
   sourceSupportTransactionId?: string;
   sourceCustomerName?: string;
 
+  // Generic issuing-unit tracking (complements the support-case-specific quartet above,
+  // does not replace it) — used by the treasury "مرجع صادرکننده" filter and by
+  // src/utils/treasurySourceView.ts to build the minimal treasury-safe view of a request.
+  sourceType?: 'support_refund' | 'sales_invoice' | 'manual';
+  sourceUnitId?: string;
+  sourceUnitName?: string;
+  sourceReferenceId?: string;
+
   // ردیف‌های درخواست تجمیعی (چند فاکتور/ذینفع در یک درخواست)
   batchItems?: RequestBatchItem[];
+
+  // Explicitly recorded when a payment was marked paid with no uploaded receipt image —
+  // never a fake/placeholder image; the UI shows this flag instead of a photo.
+  paidWithoutReceipt?: boolean;
+
+  // --- مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی) ---
+  isEmergencyPayment?: boolean;
+  emergencyReason?: string;
+  emergencyReferredByUserId?: string;
+  emergencyReferredByName?: string;
+  emergencyReferredAt?: string;
+
+  // --- لغو (وضعیت 'cancelled') — هرگز به معنای حذف فیزیکی از آرایه requests نیست ---
+  cancelledByUserId?: string;
+  cancelledByName?: string;
+  cancelledAt?: string;
+
+  // --- درخواست/تایید پاکسازی — فقط پرچم؛ در این فاز هیچ عملیاتی رکورد را فیزیکی حذف نمی‌کند ---
+  cleanupRequested?: boolean;
+  cleanupRequestedByUserId?: string;
+  cleanupRequestedByName?: string;
+  cleanupRequestedAt?: string;
+  cleanupApproved?: boolean;
+  cleanupApprovedByUserId?: string;
+  cleanupApprovedByName?: string;
+  cleanupApprovedAt?: string;
 }
 
 export interface WorkflowStepRule {

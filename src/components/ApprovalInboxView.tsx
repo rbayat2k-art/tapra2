@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { PaymentRequest, User, CostCenter, Company } from '../types';
+import { PaymentRequest, User, CostCenter, Company, SystemRole, SystemPermission } from '../types';
 import { RequestTableView } from './RequestTableView';
 import { formatRial } from '../utils/numberToWords';
+import { hasPermission } from '../utils/permissions';
 import { 
   CheckCircle2, Clock, Search, Filter, 
   ArrowUpDown, Calendar, CheckSquare, CreditCard, XCircle, RefreshCw, Building, MapPin
@@ -28,6 +29,8 @@ const jalaliDateToComparable = (dateStr?: string): number => {
 interface ApprovalInboxViewProps {
   requests: PaymentRequest[];
   currentUser: User | null;
+  roles?: SystemRole[];
+  effectivePermissions?: SystemPermission[] | null;
   costCenters: CostCenter[];
   companies: Company[];
   onSelectRequest: (req: PaymentRequest) => void;
@@ -37,6 +40,7 @@ interface ApprovalInboxViewProps {
 export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
   requests,
   currentUser,
+  effectivePermissions = null,
   costCenters,
   companies,
   onSelectRequest,
@@ -54,11 +58,19 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
   const isAdmin = currentUser.role === 'admin';
   const isTreasury = currentUser.role === 'treasury_executor';
   const isApprover = currentUser.role === 'approver' || currentUser.isDualRole;
+  const canReferForPayment = isAdmin || hasPermission(effectivePermissions, ['refer_for_payment']);
 
   // 1. OPEN / MY ACTIONABLE REQUESTS (درخواست‌های در انتظار اقدام مستقیم من)
   const myActionRequests = useMemo(() => {
     return requests.filter(r => {
-      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned';
+      // approved_awaiting_payment_assignment has no owner yet by design (final approval no
+      // longer auto-picks a payment officer) — it must stay visible to admin/refer_for_payment
+      // holders specifically, never fall through to a users[0]-style fallback or get lost.
+      if (r.status === 'approved_awaiting_payment_assignment') {
+        return canReferForPayment;
+      }
+
+      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'emergency_pending_payment' || r.status === 'returned';
       if (!isOpenStatus) return false;
 
       // Admin sees all open requests in my action tab
@@ -100,12 +112,12 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
 
       return false;
     });
-  }, [requests, currentUser, isAdmin, isTreasury, isApprover]);
+  }, [requests, currentUser, isAdmin, isTreasury, isApprover, canReferForPayment]);
 
   // 2. IN-PROGRESS / TRACKED REQUESTS (درخواست‌های در حال پیگیری - تأییدشده توسط من یا در جریان اقدام سایرین/خزانه‌داری)
   const inProgressRequests = useMemo(() => {
     return requests.filter(r => {
-      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned';
+      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_awaiting_payment_assignment' || r.status === 'approved_pending_payment' || r.status === 'emergency_pending_payment' || r.status === 'returned';
       if (!isOpenStatus) return false;
 
       if (isAdmin) return true;
@@ -115,7 +127,7 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
       if (isMyDirectTurn) return false;
 
       // Check if user created it, acted in timeline (e.g. approved it), or belongs to user's branch
-      const isMyCreated = r.requestorId === currentUser.id || r.createdById === currentUser.id || r.requestorName === currentUser.fullName;
+      const isMyCreated = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
       const userHasActed = r.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
 
@@ -138,7 +150,7 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
       if (userHasActed) return true;
 
       // User was creator or assigned approver
-      if (r.requestorId === currentUser.id || r.createdById === currentUser.id || r.currentApproverId === currentUser.id) return true;
+      if (r.requestorId === currentUser.id || r.currentApproverId === currentUser.id) return true;
 
       // Branch authorization check
       if (currentUser.allowedCostCenterIds && currentUser.allowedCostCenterIds.length > 0) {

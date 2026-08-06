@@ -1,9 +1,18 @@
 import React, { useState } from 'react';
 import { SystemRole, SystemPermission, User } from '../types';
-import { 
-  ShieldCheck, ShieldPlus, KeyRound, Users, Edit2, 
-  Trash2, CheckCircle2, Lock, Sparkles, Check, X, ShieldAlert 
+import { DEFAULT_ROLE_ID_MAP } from '../utils/storage';
+import {
+  ShieldCheck, ShieldPlus, KeyRound, Users, Edit2,
+  Trash2, CheckCircle2, Lock, Sparkles, Check, X, ShieldAlert
 } from 'lucide-react';
+
+// A user counts toward a role if it's their explicit roleId, an additionalRoleIds entry, or
+// (for accounts predating the multi-role model) the DEFAULT_ROLE_ID_MAP fallback for their
+// base UserRole — never a fragile roleTitle string match.
+const userHasRole = (u: User, roleId: string): boolean =>
+  u.roleId === roleId ||
+  (u.additionalRoleIds || []).includes(roleId) ||
+  (!u.roleId && DEFAULT_ROLE_ID_MAP[u.role] === roleId);
 
 interface RolesAndPermissionsViewProps {
   roles: SystemRole[];
@@ -43,8 +52,72 @@ export const ALL_PERMISSIONS: { key: SystemPermission; title: string; category: 
   { key: 'export_archive', title: 'خروجی اکسل و گزارش‌گیری پیشرفته', category: 'گزارشات و بایگانی', description: 'دانلود خروجی جامع اکسل و پرینت فرم‌های پرداخت' },
   { key: 'export_bank_batch', title: 'خروجی فایل پرداخت گروهی بانکی', category: 'گزارشات و بایگانی', description: 'تولید فایل دسته‌ای پایا/ساتنا جهت ارسال به سامانه بانکی' },
   { key: 'view_analytics', title: 'مشاهده نمودارها و داشبورد مدیریتی', category: 'گزارشات و بایگانی', description: 'تحلیل آمار و مانده اعتبارات خزانه‌داری' },
-  { key: 'manage_assigned_tasks', title: 'مدیریت و دسترسی به کارهای محوله و دستورات اداری', category: 'دستورات اداری و کارهای محوله', description: 'امکان ارجاع کار بین کاربران، چت، ارسال نامه و تاییدیه انجام' }
+  { key: 'manage_assigned_tasks', title: 'مدیریت و دسترسی به کارهای محوله و دستورات اداری', category: 'دستورات اداری و کارهای محوله', description: 'امکان ارجاع کار بین کاربران، چت، ارسال نامه و تاییدیه انجام' },
+
+  // Security & Impersonation
+  { key: 'impersonate_users', title: 'ورود به حساب سایر کاربران (Impersonation)', category: 'امنیت و Impersonation', description: 'فقط برای هویت واقعی ادمین معنا دارد؛ نشست تودرتو مجاز نیست و در Audit Log ثبت می‌شود' },
+
+  // Payment referral (normal + emergency)
+  { key: 'refer_for_payment', title: 'ارجاع درخواست آماده به یک مسئول پرداخت مشخص', category: 'تایید و واریز مالی', description: 'پس از تایید نهایی، انتخاب صریح مسئول پرداخت (بدون انتخاب خودکار)' },
+  { key: 'refer_for_emergency_payment', title: 'ارجاع به مسیر پرداخت فوری', category: 'تایید و واریز مالی', description: 'ارجاع به فرد دیگر با ذکر دلیل اجباری؛ خودارجاعی ممنوع' },
+  { key: 'execute_emergency_payment', title: 'اجرای پرداخت فوری', category: 'تایید و واریز مالی', description: 'فقط توسط فردی که پرداخت فوری صراحتاً به او ارجاع شده است' },
+
+  // Sales organization — customer-facing
+  { key: 'sales_access', title: 'دسترسی پایه به ماژول فروش', category: 'سازمان فروش — مشتریان', description: 'ورود به بخش مشتریان و فاکتور فروش' },
+  { key: 'view_own_customers', title: 'مشاهده مشتریان خودم', category: 'سازمان فروش — مشتریان', description: 'مشتریانی که خودِ کاربر با آن‌ها کار کرده' },
+  { key: 'view_team_customers', title: 'مشاهده مشتریان زیرمجموعه مستقیم', category: 'سازمان فروش — مشتریان', description: 'دید سرپرست روی فروشندگان تحت نظارت مستقیم' },
+  { key: 'view_descendant_customers', title: 'مشاهده مشتریان کل زیردرخت سازمانی', category: 'سازمان فروش — مشتریان', description: 'دید کامل زیرشاخه سازمانی فروش' },
+  { key: 'search_customer_by_phone', title: 'جستجوی سراسری مشتری با شماره تماس', category: 'سازمان فروش — مشتریان', description: 'جستجوی مشتری در کل بانک مشتریان با شماره تماس' },
+  { key: 'create_customer', title: 'ثبت مشتری جدید', category: 'سازمان فروش — مشتریان', description: 'ایجاد رکورد مشتری جدید' },
+  { key: 'edit_customer_basic_info', title: 'ویرایش اطلاعات پایه مشتری', category: 'سازمان فروش — مشتریان', description: 'ویرایش نام، آدرس و اطلاعات پایه' },
+  { key: 'view_customer_contact_fields', title: 'مشاهده شماره تماس مشتری', category: 'سازمان فروش — مشتریان', description: 'دسترسی به فیلدهای تماس مشتری' },
+  { key: 'view_customer_address', title: 'مشاهده آدرس مشتری', category: 'سازمان فروش — مشتریان', description: 'دسترسی به آدرس ثبت‌شده مشتری' },
+  { key: 'view_customer_purchase_history', title: 'مشاهده تاریخچه خرید مشتری', category: 'سازمان فروش — مشتریان', description: 'دسترسی به سوابق خرید مشتری' },
+  { key: 'view_customer_call_history', title: 'مشاهده تاریخچه تماس مشتری', category: 'سازمان فروش — مشتریان', description: 'دسترسی به سوابق تماس مشتری' },
+  { key: 'view_customer_complaint_summary', title: 'مشاهده خلاصه شکایات مشتری', category: 'سازمان فروش — مشتریان', description: 'خلاصه شکایات ثبت‌شده برای مشتری' },
+  { key: 'view_customer_complaint_details', title: 'مشاهده جزئیات کامل شکایات مشتری', category: 'سازمان فروش — مشتریان', description: 'دسترسی کامل به متن و جزئیات شکایات' },
+  { key: 'start_sale_cycle', title: 'شروع چرخه فروش جدید', category: 'سازمان فروش — مشتریان', description: 'آغاز چرخه فروش با مشتری (قفل مالکیت پویا)' },
+  { key: 'close_sale_cycle', title: 'بستن چرخه فروش فعال', category: 'سازمان فروش — مشتریان', description: 'اتمام و بستن چرخه فروش جاری' },
+
+  // Sales organization — management / infrastructure-ready
+  { key: 'assign_sales_lead', title: 'ارجاع مستقیم Lead (زیرساخت آماده)', category: 'سازمان فروش — مدیریت', description: 'هنوز بدون صفحه عملیاتی — فقط زیرساخت مجوز' },
+  { key: 'reassign_sales_lead', title: 'ارجاع مجدد Lead (زیرساخت آماده)', category: 'سازمان فروش — مدیریت', description: 'هنوز بدون صفحه عملیاتی — فقط زیرساخت مجوز' },
+  { key: 'drain_salesperson_queue', title: 'تخلیه صف Lead فروشنده (زیرساخت آماده)', category: 'سازمان فروش — مدیریت', description: 'هنوز بدون صفحه عملیاتی — فقط زیرساخت مجوز' },
+  { key: 'view_sales_reports', title: 'گزارش‌گیری عملکرد فروش', category: 'سازمان فروش — مدیریت', description: 'گزارش عملکرد سازمان فروش' },
+  { key: 'configure_sales_field_visibility', title: 'پیکربندی نمایش فیلدهای مشتری بر اساس نقش', category: 'سازمان فروش — مدیریت', description: 'تعیین این‌که کدام فیلد مشتری برای کدام نقش نمایان باشد' },
+  { key: 'manage_sales_hierarchy', title: 'مدیریت زنجیره سرپرستی سازمان فروش', category: 'سازمان فروش — مدیریت', description: 'ویرایش زنجیره سرپرستی فروشندگان و سرپرستان' },
+
+  // Data manager — infrastructure-ready, no operational page yet
+  { key: 'data_management_access', title: 'دسترسی پایه به مدیریت داده (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'import_raw_contacts', title: 'Import بانک داده خام (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'review_import_conflicts', title: 'بررسی تعارض‌های Import (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'view_raw_contact_pool', title: 'مشاهده مخزن داده خام (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'configure_lead_assignment', title: 'پیکربندی موتور تخصیص Lead (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'view_data_reports', title: 'گزارش‌گیری بانک داده (زیرساخت آماده)', category: 'مدیر داده (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+
+  // Advertising operator — infrastructure-ready, no operational page yet
+  { key: 'advertising_access', title: 'دسترسی پایه به بخش تبلیغات (زیرساخت آماده)', category: 'اپراتور تبلیغات (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'manage_advertising_campaigns', title: 'ثبت/ویرایش کمپین تبلیغاتی (زیرساخت آماده)', category: 'اپراتور تبلیغات (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'review_incoming_leads', title: 'بررسی اولیه Lead های ورودی (زیرساخت آماده)', category: 'اپراتور تبلیغات (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'convert_interaction_to_lead', title: 'تبدیل تعامل ورودی به Lead (زیرساخت آماده)', category: 'اپراتور تبلیغات (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' },
+  { key: 'view_campaign_reports', title: 'گزارش‌گیری کمپین‌ها (زیرساخت آماده)', category: 'اپراتور تبلیغات (زیرساخت آماده)', description: 'صفحه عملیاتی هنوز پیاده‌سازی نشده است' }
 ];
+
+const PERMISSION_CATEGORIES = [
+  'عملیات درخواست‌ها', 'تایید و واریز مالی', 'مدیریت و پیکربندی',
+  'خدمات پس از فروش و شکایات', 'نامه‌نگاری داخلی (دبیرخانه)', 'گزارشات و بایگانی',
+  'دستورات اداری و کارهای محوله', 'امنیت و Impersonation',
+  'سازمان فروش — مشتریان', 'سازمان فروش — مدیریت',
+  'مدیر داده (زیرساخت آماده)', 'اپراتور تبلیغات (زیرساخت آماده)'
+];
+
+const ORG_LEVEL_LABELS: Record<number, string> = {
+  1: 'سطح ۱ — فروشنده',
+  2: 'سطح ۲ — سرپرست',
+  3: 'سطح ۳ — سرپرست ارشد',
+  4: 'سطح ۴ — مدیر فروش',
+  5: 'سطح ۵ — معاونت فروش'
+};
 
 export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = ({
   roles,
@@ -106,10 +179,12 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
       onUpdateRoles([...roles, newRole]);
       alert(`نقش جدید "${newRole.name}" با موفقیت ایجاد شد.`);
     } else if (selectedRoleForEdit) {
+      // System role id/code are never editable from the UI, even if the readOnly input were
+      // bypassed — the handler itself re-enforces this, not just the disabled field.
       const updated = roles.map(r => r.id === selectedRoleForEdit.id ? {
         ...r,
         name: roleName.trim(),
-        code: roleCode.trim().toUpperCase(),
+        code: r.isSystemRole ? r.code : (roleCode.trim().toUpperCase() || r.code),
         description: roleDesc.trim(),
         permissions: selectedPermissions
       } : r);
@@ -128,7 +203,11 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
     }
 
     const roleObj = roles.find(r => r.id === roleId);
-    const assignedUsers = users.filter(u => u.roleId === roleId || u.role === roleObj?.code?.toLowerCase());
+    const assignedUsers = users.filter(u =>
+      u.roleId === roleId ||
+      u.role === roleObj?.code?.toLowerCase() ||
+      (u.additionalRoleIds || []).includes(roleId)
+    );
 
     if (assignedUsers.length > 0) {
       alert(`امکان حذف نقش "${roleNameStr}" وجود ندارد.\n\nتعداد ${assignedUsers.length} کاربر در سیستم دارای این نقش شغلی می‌باشند. برای حذف نقش، ابتدا نقش کاربران مربوطه را تغییر دهید.`);
@@ -177,8 +256,8 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
       {/* Roles Grid Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {roles.map((r) => {
-          const userCount = users.filter(u => u.roleId === r.id || u.roleTitle === r.name).length;
-          
+          const userCount = users.filter(u => userHasRole(u, r.id)).length;
+
           return (
             <div key={r.id} className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-4 hover:border-indigo-500/40 transition group">
               <div className="flex items-start justify-between gap-2">
@@ -194,11 +273,23 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
                   </div>
                 </div>
 
-                {r.isSystemRole && (
-                  <span className="text-[9px] bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold shrink-0">
-                    سیستمی
-                  </span>
-                )}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  {r.isSystemRole && (
+                    <span className="text-[9px] bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold">
+                      سیستمی
+                    </span>
+                  )}
+                  {r.implementationStatus === 'infrastructure_ready' && (
+                    <span className="text-[9px] bg-slate-700/40 text-slate-300 px-2 py-0.5 rounded-full border border-slate-600/40 font-bold whitespace-nowrap">
+                      زیرساخت آماده — در انتظار پیاده‌سازی
+                    </span>
+                  )}
+                  {r.organizationalLevel !== undefined && (
+                    <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-bold whitespace-nowrap">
+                      {ORG_LEVEL_LABELS[r.organizationalLevel] || `سطح سازمانی ${r.organizationalLevel}`}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <p className="text-xs text-slate-400 min-h-[36px] line-clamp-2">
@@ -355,14 +446,19 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    کد اختصاری سیستمی
+                    کد اختصاری سیستمی {selectedRoleForEdit?.isSystemRole && <span className="text-[10px] text-slate-500 font-normal">(نقش سیستمی — غیرقابل ویرایش)</span>}
                   </label>
                   <input
                     type="text"
                     value={roleCode}
                     onChange={(e) => setRoleCode(e.target.value)}
+                    readOnly={!!selectedRoleForEdit?.isSystemRole}
                     placeholder="STORE_SUPERVISOR"
-                    className="w-full bg-slate-800 text-indigo-200 text-xs rounded-xl px-3 py-2 border border-slate-700 font-mono text-left focus:outline-none focus:border-indigo-500"
+                    className={`w-full text-xs rounded-xl px-3 py-2 border font-mono text-left focus:outline-none ${
+                      selectedRoleForEdit?.isSystemRole
+                        ? 'bg-slate-950 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : 'bg-slate-800 text-indigo-200 border-slate-700 focus:border-indigo-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -386,7 +482,7 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
                   انتخاب دسترسی‌ها و اختیارات این نقش:
                 </label>
 
-                {['عملیات درخواست‌ها', 'تایید و واریز مالی', 'مدیریت و پیکربندی', 'خدمات پس از فروش و شکایات', 'نامه‌نگاری داخلی (دبیرخانه)', 'گزارشات و بایگانی', 'دستورات اداری و کارهای محوله'].map(cat => {
+                {PERMISSION_CATEGORIES.map(cat => {
                   const catPerms = ALL_PERMISSIONS.filter(p => p.category === cat);
                   return (
                     <div key={cat} className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, DirectMessage, SystemRole, SystemPermission, Letter } from '../types';
-import { getEffectiveUserPermissions } from '../utils/permissions';
+import { useEffectivePermissions, canAccessNavItem } from '../utils/permissions';
 import {
   LayoutDashboard, PlusCircle, Inbox, Archive, FileText, Search,
   GitFork, MessageSquare, ShieldCheck, CreditCard, Building, MapPin, KeyRound, Users, CheckSquare,
@@ -47,44 +47,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const isAdmin = currentUser?.role === 'admin';
 
-  const effectivePermissions = useMemo(() => {
-    if (!currentUser) return [] as SystemPermission[];
-    if (isAdmin) return null; // null = unrestricted (admin bypasses all checks)
-    return getEffectiveUserPermissions(currentUser, roles);
-  }, [currentUser, roles, isAdmin]);
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
 
-  const hasAccess = (required?: SystemPermission[]) => {
-    if (!required || required.length === 0) return true;
-    if (isAdmin) return true;
-
-    // Direct explicit toggle check for create_request permission
-    if (required.includes('create_request')) {
-      if (currentUser?.canCreateRequests !== undefined) {
-        if (currentUser.canCreateRequests) return true;
-        if (!currentUser.canCreateRequests) return false;
-      }
-    }
-
-    // Dual-role users (isDualRole) may approve/pay their own escalated requests even
-    // though their base role's permission set doesn't grant approval_inbox access.
-    if (required.includes('approve_branch_request') || required.includes('approve_treasury') || required.includes('execute_payment')) {
-      if (currentUser?.isDualRole === true) return true;
-    }
-
-    // Direct explicit check for task directives permission
-    if (required.includes('manage_assigned_tasks')) {
-      if (isAdmin) return true;
-      const canIssue = currentUser?.canIssueTasks === true;
-      const canExecute = currentUser?.canExecuteTasks === true;
-      const hasCustom = !!currentUser?.customPermissions?.includes('manage_assigned_tasks');
-      const hasTaskAccess = canIssue || canExecute || hasCustom;
-      if (!hasTaskAccess) return false;
-      return true;
-    }
-
-    if (effectivePermissions === null) return true;
-    return required.some((p) => effectivePermissions!.includes(p));
-  };
+  const hasAccess = (required?: SystemPermission[]) => canAccessNavItem(currentUser, effectivePermissions, required);
 
   const navItems: {
     id: string; label: string; icon: any; badge: string | number | null; badgeColor?: string;
@@ -98,7 +63,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'style_settings', label: 'تنظیمات استایل و فونت', icon: Palette, badge: 'جدید', badgeColor: 'bg-emerald-600' },
     { id: 'cost_centers', label: 'شعب فروش و مراکز هزینه', icon: MapPin, badge: null, requires: ['manage_cost_centers'] },
     { id: 'companies', label: 'شرکت‌های tapra', icon: Building, badge: null, requires: ['manage_companies'] },
-    { id: 'archive', label: 'جستجوی پیشرفته و خروجی', icon: Search, badge: 'جامع', badgeColor: 'bg-indigo-600' },
+    // Archive exposes the vendor beneficiary book and cost-center budgets alongside payment
+    // requests — sales-hierarchy roles must NOT see it by default (no vendor ledger/financial
+    // request access unless an admin explicitly grants one of these permissions).
+    { id: 'archive', label: 'جستجوی پیشرفته و خروجی', icon: Search, badge: 'جامع', badgeColor: 'bg-indigo-600', requires: ['view_branch_requests', 'view_all_requests', 'export_archive', 'manage_support_cases', 'financial_approve_support'] },
     { id: 'workflow', label: 'چارت گردش کار (فلو)', icon: GitFork, badge: null, requires: ['view_analytics'] },
     { id: 'messenger', label: 'گفتگوی عمومی خزانه‌داری', icon: MessageSquare, badge: null },
     { id: 'customers', label: 'مشتریان', icon: Contact, badge: null, requires: ['sales_access'] },
@@ -122,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const styleSettingsItem = getVisibleItem('style_settings');
 
   const canSeeVendors = hasAccess(['manage_vendors']);
-  const canSeeVendorCategories = isAdmin || !!currentUser?.customPermissions?.includes('manage_vendors');
+  const canSeeVendorCategories = hasAccess(['manage_vendors']);
   const canSeeSupport = hasAccess(['manage_support_cases', 'financial_approve_support', 'view_support_reports']);
   const canSeeLetters = hasAccess(['manage_letters']);
   const unreadLettersCount = useMemo(() => {
