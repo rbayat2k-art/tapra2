@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { PaymentRequest } from '../types';
 import { formatRial } from '../utils/numberToWords';
-import { 
-  Building, MapPin, Calendar, User as UserIcon, 
-  Paperclip, Eye, CheckCircle2, Clock, XCircle, 
-  RefreshCw, CreditCard, ArrowLeftRight, LayoutList, LayoutGrid, Printer
+import {
+  Building, MapPin, Calendar, User as UserIcon,
+  Paperclip, Eye, CheckCircle2, Clock, XCircle,
+  RefreshCw, CreditCard, ArrowLeftRight, LayoutList, LayoutGrid, Printer, AlertTriangle
 } from 'lucide-react';
 
 interface RequestTableViewProps {
@@ -28,6 +28,8 @@ export const RequestTableView: React.FC<RequestTableViewProps> = ({
         return { label: 'عودت داده شده', bg: 'bg-orange-500/15 text-orange-300 border-orange-500/30', icon: RefreshCw };
       case 'approved_pending_payment':
         return { label: 'تایید شده (انتظار واریز)', bg: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30', icon: CreditCard };
+      case 'emergency_pending_payment':
+        return { label: 'فوری — در انتظار پرداخت فوری', bg: 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse', icon: AlertTriangle };
       case 'paid':
         return { label: 'واریز شد', bg: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', icon: CheckCircle2 };
       case 'completed':

@@ -31,7 +31,9 @@
 - `isSeniorTreasurySupervisor` (boolean, Optional): سرپرست ارشد خزانه‌داری (مقصد نهایی درخواست‌های کاربران دوگانه) — همچنان یک تیک دستی و مستقل از مدل چندنقشی است.
 - `additionalRoleIds` (string[], Optional): نقش‌های سیستمی اضافه‌ای (`SystemRole.id`) که ادمین علاوه بر نقش پایه (`role`/`roleId`) برای همین کاربر فعال کرده است. بخشی از «مدل چندنقشی کاربران» — به `getEffectiveUserPermissions` در `src/utils/permissions.ts` و بخش «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر» در `AdminPanel.tsx` مراجعه کنید.
 - `roleAccessOverrides` (`{ roleId: string; permissions: SystemPermission[] }[]`, Optional): برای یک `roleId` مشخص (نقش پایه یا یکی از `additionalRoleIds`)، لیست پرمیشن‌های آن نقش را **فقط برای همین کاربر** به‌طور کامل جایگزین می‌کند (نه merge؛ replace کامل) — می‌تواند هم پرمیشن‌های آن نقش را محدود کند و هم پرمیشن‌هایی فراتر از پیش‌فرض همان نقش به آن اضافه کند.
-- `salesSupervisorId` (string, Optional): زنجیره‌ی سرپرستی فروش این کاربر (فروشنده ← سرپرست فروش ← مدیر فروش ← ...) — **کاملاً مستقل از `approvalChain`/`allowedApproverIds` خزانه‌داری** و فقط توسط `src/utils/salesHierarchy.ts` برای محاسبه‌ی دید سلسله‌مراتبی مشتریان (`getVisibleCustomerIds`) استفاده می‌شود؛ با گردش کار تایید درخواست پرداخت هیچ ارتباطی ندارد و نباید با آن قاطی شود.
+- `salesSupervisorId` (string, Optional): زنجیره‌ی سرپرستی فروش این کاربر (فروشنده ← سرپرست فروش ← سرپرست ارشد فروش ← مدیر فروش ← معاونت فروش) — **کاملاً مستقل از `approvalChain`/`allowedApproverIds` خزانه‌داری** و فقط توسط `src/utils/salesHierarchy.ts` برای محاسبه‌ی دید سلسله‌مراتبی مشتریان (`getVisibleCustomerIds`) استفاده می‌شود؛ با گردش کار تایید درخواست پرداخت هیچ ارتباطی ندارد و نباید با آن قاطی شود. این فیلد فقط وضعیت *الان* را نشان می‌دهد؛ تاریخچه‌ی رسمی جابه‌جایی‌ها در `SalesOrgAssignmentHistoryEntry` (پایین‌تر) ذخیره می‌شود.
+- `salesRoleTier` (`'salesperson'|'sales_supervisor'|'senior_sales_supervisor'|'sales_manager'|'sales_deputy'`, Optional): برچسب نمایشی سطح سازمان فروش — **هرگز منبع پرمیشن نیست** (منبع واقعی همیشه `roleId`/`getEffectiveUserPermissions` است)؛ فقط برای UI/فیلتر استفاده می‌شود.
+- `deniedPermissions` (SystemPermission[], Optional): محرومیت صریح از پرمیشن — در `getEffectiveUserPermissions` از اجتماع همه نقش‌های فعال/customPermissions **کم می‌شود**؛ Deny همیشه بر Allow اولویت دارد، صرف‌نظر از این‌که کدام نقش آن پرمیشن را داده باشد.
 
 > **یکپارچگی داده نمونه (`DEFAULT_USERS` در `src/utils/storage.ts`)**: مقادیر `allowedCostCenterIds` هر کاربر باید دقیقاً با `id` واقعی موجود در `DEFAULT_COST_CENTERS` مطابقت داشته باشد (مثلاً `cc_mokhberi_1` با آندرلاین، نه `cc_mokhberi1`) و همگی باید به `companyId` همان کاربر یا شرکت‌های در دسترس او تعلق داشته باشند؛ در غیر این صورت آن مرکز هزینه در فیلترهای دسترسی (`ApprovalInboxView`, `ArchiveView`, `CostCentersView`, `DashboardView`, `MyRequestsView`, `NewRequestModal`) هرگز match نمی‌شود و در `AdminPanel.tsx` به‌صورت شناسه خام (raw id) به‌جای نام شعبه نمایش داده می‌شود. در بازبینی داده نمونه کاربران (نگاه کنید به `DECISION_LOG.md`) چند مورد از همین ناسازگاری در `user_admin_reza` و `user_approver_sales` اصلاح شد. هیچ‌کدام از ۶ کاربر نمونه `additionalRoleIds`/`roleAccessOverrides` ندارند (هر دو `undefined`، معادل آرایه خالی)، چون `isDualRole` فعلی همه آن‌ها `false`/`undefined` است و تنها یک نقش دارند؛ `getEffectiveUserPermissions` برای این حالت دقیقاً همان مقدار قبلی (مبتنی‌بر `roleId` تنها) را برمی‌گرداند، پس دسترسی و منوی این کاربران بدون تغییر باقی می‌ماند.
 
@@ -42,7 +44,9 @@
 - `name` (string): نام فارسی نقش
 - `description` (string): توضیحات
 - `isSystemRole` (boolean, Optional): نقش‌های سیستمی غیرقابل حذف
-- `permissions` (SystemPermission[]): لیست پرمیشن‌های مجاز (۲۲ پرمیشن سیستم)
+- `permissions` (SystemPermission[]): لیست پرمیشن‌های مجاز (۴۵ پرمیشن سیستم پس از افزودن مجوزهای ریزدانه فروش/پرداخت فوری)
+
+> **نقش‌های سازمان فروش** (`role_salesperson`, `role_sales_supervisor`, `role_senior_sales_supervisor`, `role_sales_manager`, `role_sales_deputy`): شناسه‌های فنی پایدار، مستقل از `roleTitle` آزاد کاربر — تشخیص نقش هرجا لازم باشد باید از روی `roleId`/پرمیشن مؤثر انجام شود، نه `roleTitle.includes(...)`. عمداً بدون `manage_vendors`/`create_request`/`view_branch_requests` تعریف شده‌اند تا هیچ نقش فروش به‌صورت پیش‌فرض دسترسی مالی/دفترچه ذینفعان نگیرد. نقش `role_emergency_payment_officer` هم مشابه، اما به هیچ کاربر نمونه‌ای assign نشده — فقط ادمین می‌تواند صریحاً بدهد.
 
 ### ج) جدول شرکت‌ها (`Company`)
 - `id` (string, Primary Key)
@@ -101,12 +105,14 @@
 - `beneficiarySheba` (string): شماره شبا ذینفع
 - `beneficiaryBank` (string): نام بانک ذینفع
 - `description` (string): شرح درخواست
-- `status` (`draft` | `pending_approval` | `pending_treasury` | `approved` | `rejected` | `paid` | `returned`)
+- `status` (`pending_approval` | `returned` | `approved_pending_payment` | `emergency_pending_payment` | `paid` | `completed` | `rejected`) — مقدار `emergency_pending_payment` جدید است (مسیر پرداخت فوری)
 - `currentStepIndex` (number): شاخص مرحله فعلی تایید
 - `approvalChain` (string[]): لیست شناسه تاییدکنندگان این درخواست
 - `approvalHistory` (Array): تاریخچه کامل تاییدها، ردها و ارجاعات
 - `createdAt` (string): تاریخ و زمان ثبت
 - `batchItems` (RequestBatchItem[], Optional): ردیف‌های تشکیل‌دهنده درخواست تجمیعی (در صورت ثبت درخواست به‌صورت چند فاکتور/چند ذینفع در یک قالب واحد) — به جدول زیر (ز-۱) مراجعه شود.
+- `paidWithoutReceipt` (boolean, Optional): وقتی درخواست بدون آپلود فیش پرداخت شده — هیچ‌گاه یک تصویر placeholder/Unsplash جایگزین نمی‌شود؛ UI این پرچم را به‌جای عکس نمایش می‌دهد.
+- `isEmergencyPayment` / `emergencyReason` / `emergencyReferredByUserId` / `emergencyReferredByName` / `emergencyReferredAt` (Optional): مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی) — به `docs/BUSINESS_RULES.md` بخش پرداخت فوری مراجعه شود.
 
 ### ز-۱) جدول ردیف‌های درخواست تجمیعی (`RequestBatchItem`)
 هنگام ثبت یک درخواست پرداخت به‌صورت تجمیعی (Batch) — یعنی چند فاکتور/ذینفع در یک درخواست واحد — هر ردیف به‌صورت مستقل در قالب این ساختار داخل آرایه `batchItems` مربوط به `PaymentRequest` ذخیره و می‌تواند جداگانه تایید یا رد شود.
@@ -130,7 +136,7 @@
 - `actorId` (string, Optional, Foreign Key): شناسه کاربر انجام‌دهنده اقدام
 - `actorName` (string): نام انجام‌دهنده اقدام
 - `actorRole` (string): عنوان سمت انجام‌دهنده در زمان اقدام
-- `action` (`submitted` | `forwarded` | `returned` | `rejected` | `approved` | `paid` | `completed` | `commented` | `undone`)
+- `action` (`submitted` | `forwarded` | `returned` | `rejected` | `approved` | `paid` | `completed` | `commented` | `undone` | `referred_for_payment` | `referred_for_emergency_payment` | `emergency_paid`)
 - `actionTitle` (string): عنوان نمایشی اقدام (مثلاً «تایید و ارجاع به مرحله بعد»)
 - `comment` (string, Optional): یادداشت آزاد انجام‌دهنده اقدام
 - `nextActorName` (string, Optional): نام نفر بعدی که پرونده به او ارجاع شده
@@ -170,6 +176,27 @@
 
 > **مالکیت فعلی مشتری بدون فیلد ذخیره‌شده**: `currentActiveSalespersonId` یک فیلد ذخیره‌شده روی `Customer` نیست — همیشه از روی `activityLog` با تابع `getCurrentActiveSalespersonId` در `src/utils/salesHierarchy.ts` محاسبه می‌شود (اولین entry با `status: 'active'`؛ اگر هیچ‌کدام active نبود، `null` یعنی مشتری آزاد است). این طراحی عمدی است تا مالکیت هیچ‌گاه از تاریخچه‌ی واقعی چرخه‌ها out-of-sync نشود. برای قانون کسب‌وکار «قفل مالکیت پویا» به `docs/BUSINESS_RULES.md` مراجعه کنید.
 
+### ك) جدول ثبت Impersonation (`ImpersonationLogEntry`)
+ذخیره در `STORAGE_KEYS.IMPERSONATION_LOG` (`getImpersonationLog`/`saveImpersonationLog`). یک رکورد برای هر نشست Impersonation.
+- `id` (string, Primary Key)
+- `adminId` / `adminName`: هویت واقعی ادمینی که Impersonation را شروع کرده
+- `targetUserId` / `targetUserName`: کاربر مقصد
+- `startedAt` (string): زمان شروع
+- `endedAt` (string, Optional): زمان پایان — با خروج دستی یا Logout کامل ست می‌شود؛ تا آن لحظه رکورد «باز» تلقی می‌شود.
+
+### ل) جدول تاریخچه سازمان فروش (`SalesOrgAssignmentHistoryEntry`)
+ذخیره در `STORAGE_KEYS.SALES_ORG_HISTORY`. تاریخچه‌ی رسمی جابه‌جایی سرپرستی — مستقل از فیلد زنده `User.salesSupervisorId` که فقط وضعیت فعلی را نشان می‌دهد؛ رکوردهای قبلی هیچ‌گاه ویرایش نمی‌شوند (append-only)، پس تاریخچه فروش/پورسانت هرگز با جابه‌جایی سازمانی بعدی تغییر نمی‌کند.
+- `id`, `userId`, `supervisorId` (string | null), `startedAt`, `endedAt?`
+
+### م) جدول Audit Log (`AuditLogEntry`)
+ذخیره در `STORAGE_KEYS.AUDIT_LOG`. **دامنه‌ی محدود و مستند** (نه یک audit log سراسری برای کل سیستم) — فقط: چرخه‌ی کامل Impersonation، و فلوی پرداخت عادی/فوری (ارجاع + اجرا). به `docs/BUSINESS_RULES.md` مراجعه شود.
+- `id`, `action` (string, e.g. `'impersonation_start'`, `'payment_referred'`, `'emergency_payment_executed'`)
+- `effectiveUserId` / `effectiveUserName`: هویتی که عملاً عملیات را انجام داده (در حالت Impersonation، همان کاربر هدف است، نه ادمین)
+- `impersonatorAdminId` / `impersonatorAdminName` (Optional): فقط اگر عملیات در حالت Impersonation انجام شده
+- `effectiveRoleId` (Optional): کدام نقشِ فعالِ کاربر، پرمیشن استفاده‌شده در این عملیات را داده (`getGrantingRoleId`)
+- `targetId` (Optional): شناسه موجودیت هدف (مثلاً `PaymentRequest.id`)
+- `details` (Optional), `timestamp`
+
 ---
 
 ## ۳. روابط بین موجودیت‌ها (Entity Relationships)
@@ -178,3 +205,4 @@
 - هر **حساب بانکی شرکت (`CompanyBankAccount`)** به یک شرکت متصل است.
 - هر **درخواست مالی (`PaymentRequest`)** توسط یک کاربر ثبت شده و به یک مرکز هزینه، یک شرکت و احتمالاً یک تامین‌کننده (`Vendor`) متصل است و توالی تایید آن از طریق `approvalChain` مدیریت می‌شود.
 - هر **مشتری (`Customer`)** ممکن است در طول زمان با چند **کاربر فروشنده (`User`)** مختلف در ارتباط بوده باشد (از طریق `activityLog[].salespersonId`)؛ در هر لحظه حداکثر یک چرخه‌ی فروش `active` می‌تواند وجود داشته باشد (قفل مالکیت پویا). دید سلسله‌مراتبی روی مشتریان از طریق `User.salesSupervisorId` (زنجیره‌ی مستقل از `approvalChain`) محاسبه می‌شود، نه از طریق `companyId`/`costCenterId`.
+- هر **`ImpersonationLogEntry`** دو کاربر را به هم مرتبط می‌کند (`adminId`، `targetUserId`)؛ هر **`AuditLogEntry`** یک کاربر مؤثر (`effectiveUserId`) و در صورت وجود Impersonation، یک ادمین (`impersonatorAdminId`) را ثبت می‌کند — این دو جدول کاملاً مجزا از مدل‌های کسب‌وکاری (درخواست، مشتری و ...) هستند و فقط برای امنیت/رهگیری استفاده می‌شوند.

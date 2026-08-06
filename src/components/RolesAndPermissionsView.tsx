@@ -43,7 +43,37 @@ export const ALL_PERMISSIONS: { key: SystemPermission; title: string; category: 
   { key: 'export_archive', title: 'خروجی اکسل و گزارش‌گیری پیشرفته', category: 'گزارشات و بایگانی', description: 'دانلود خروجی جامع اکسل و پرینت فرم‌های پرداخت' },
   { key: 'export_bank_batch', title: 'خروجی فایل پرداخت گروهی بانکی', category: 'گزارشات و بایگانی', description: 'تولید فایل دسته‌ای پایا/ساتنا جهت ارسال به سامانه بانکی' },
   { key: 'view_analytics', title: 'مشاهده نمودارها و داشبورد مدیریتی', category: 'گزارشات و بایگانی', description: 'تحلیل آمار و مانده اعتبارات خزانه‌داری' },
-  { key: 'manage_assigned_tasks', title: 'مدیریت و دسترسی به کارهای محوله و دستورات اداری', category: 'دستورات اداری و کارهای محوله', description: 'امکان ارجاع کار بین کاربران، چت، ارسال نامه و تاییدیه انجام' }
+  { key: 'manage_assigned_tasks', title: 'مدیریت و دسترسی به کارهای محوله و دستورات اداری', category: 'دستورات اداری و کارهای محوله', description: 'امکان ارجاع کار بین کاربران، چت، ارسال نامه و تاییدیه انجام' },
+
+  // Impersonation
+  { key: 'impersonate_users', title: 'ورود ادمین به حساب کاربران دیگر (Impersonation)', category: 'مدیریت و پیکربندی', description: 'مشاهده سیستم به‌جای یک کاربر دیگر، با ثبت کامل در Audit Log' },
+
+  // Sales module
+  { key: 'sales_access', title: 'دسترسی به ماژول فروش', category: 'ماژول فروش', description: 'دسترسی پایه به بخش مشتریان و فروش' },
+  { key: 'view_own_customers', title: 'مشاهده مشتریان خودم', category: 'ماژول فروش', description: 'دیدن فقط مشتریانی که خودِ کاربر با آن‌ها کار کرده' },
+  { key: 'view_team_customers', title: 'مشاهده مشتریان تیم مستقیم', category: 'ماژول فروش', description: 'دیدن مشتریان زیرمجموعه‌ی مستقیم (یک سطح پایین‌تر)' },
+  { key: 'view_descendant_customers', title: 'مشاهده مشتریان کل زیرمجموعه', category: 'ماژول فروش', description: 'دیدن مشتریان کل زیردرخت سازمانی زیرمجموعه' },
+  { key: 'search_customer_by_phone', title: 'جستجوی سراسری مشتری با شماره تماس', category: 'ماژول فروش', description: 'جستجوی مشتری بر اساس شماره تماس، مستقل از دید سلسله‌مراتبی' },
+  { key: 'create_customer', title: 'ثبت مشتری جدید', category: 'ماژول فروش', description: 'ایجاد رکورد مشتری جدید' },
+  { key: 'edit_customer_basic_info', title: 'ویرایش اطلاعات پایه مشتری', category: 'ماژول فروش', description: 'ویرایش نام، آدرس و اطلاعات پایه مشتری' },
+  { key: 'view_customer_contact_fields', title: 'مشاهده شماره تماس مشتری', category: 'ماژول فروش', description: 'دیدن شماره تماس‌های ثبت‌شده مشتری' },
+  { key: 'view_customer_address', title: 'مشاهده آدرس مشتری', category: 'ماژول فروش', description: 'دیدن آدرس/استان/شهر مشتری' },
+  { key: 'view_customer_purchase_history', title: 'مشاهده تاریخچه خرید مشتری', category: 'ماژول فروش', description: 'دیدن سوابق چرخه‌های فروش مشتری' },
+  { key: 'view_customer_call_history', title: 'مشاهده تاریخچه تماس مشتری', category: 'ماژول فروش', description: 'دیدن سوابق تماس‌های ثبت‌شده با مشتری' },
+  { key: 'view_customer_complaint_summary', title: 'مشاهده خلاصه شکایات مشتری', category: 'ماژول فروش', description: 'دیدن خلاصه‌ی شکایات ثبت‌شده مشتری' },
+  { key: 'view_customer_complaint_details', title: 'مشاهده جزئیات کامل شکایات مشتری', category: 'ماژول فروش', description: 'دسترسی به جزئیات کامل هر شکایت مشتری' },
+  { key: 'start_sale_cycle', title: 'شروع چرخه فروش جدید', category: 'ماژول فروش', description: 'شروع چرخه‌ی فروش با یک مشتری آزاد' },
+  { key: 'close_sale_cycle', title: 'بستن چرخه فروش', category: 'ماژول فروش', description: 'بستن چرخه‌ی فروش فعال خودِ کاربر' },
+  { key: 'assign_sales_lead', title: 'ارجاع مستقیم Lead', category: 'ماژول فروش', description: 'ارجاع مستقیم یک Lead به فروشنده/زیرمجموعه (زیرساخت — هنوز بدون صفحه عملیاتی)' },
+  { key: 'reassign_sales_lead', title: 'جابه‌جایی/ارجاع مجدد Lead', category: 'ماژول فروش', description: 'ارجاع مجدد یک Lead به فرد دیگر (زیرساخت — هنوز بدون صفحه عملیاتی)' },
+  { key: 'drain_salesperson_queue', title: 'تخلیه صف Lead فروشنده', category: 'ماژول فروش', description: 'توزیع مجدد صف Lead های یک فروشنده (زیرساخت — هنوز بدون صفحه عملیاتی)' },
+  { key: 'view_sales_reports', title: 'گزارش‌گیری فروش', category: 'ماژول فروش', description: 'مشاهده گزارش عملکرد فروش' },
+  { key: 'configure_sales_field_visibility', title: 'پیکربندی نمایان‌بودن فیلدهای مشتری', category: 'ماژول فروش', description: 'تعیین این‌که کدام فیلد مشتری برای کدام نقش نمایان باشد' },
+  { key: 'manage_sales_hierarchy', title: 'مدیریت زنجیره سرپرستی فروش', category: 'ماژول فروش', description: 'ویرایش زنجیره‌ی سرپرستی سازمان فروش' },
+
+  // Emergency payment
+  { key: 'refer_for_emergency_payment', title: 'ارجاع به مسیر پرداخت فوری', category: 'پرداخت فوری', description: 'ارجاع یک درخواست به مسیر پرداخت فوری بدون تایید کامل زنجیره عادی، با دلیل اجباری' },
+  { key: 'execute_emergency_payment', title: 'اجرای پرداخت فوری', category: 'پرداخت فوری', description: 'پرداخت درخواستی که به مسیر فوری و به خودِ این کاربر ارجاع شده است' }
 ];
 
 export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = ({
@@ -386,7 +416,7 @@ export const RolesAndPermissionsView: React.FC<RolesAndPermissionsViewProps> = (
                   انتخاب دسترسی‌ها و اختیارات این نقش:
                 </label>
 
-                {['عملیات درخواست‌ها', 'تایید و واریز مالی', 'مدیریت و پیکربندی', 'خدمات پس از فروش و شکایات', 'نامه‌نگاری داخلی (دبیرخانه)', 'گزارشات و بایگانی', 'دستورات اداری و کارهای محوله'].map(cat => {
+                {['عملیات درخواست‌ها', 'تایید و واریز مالی', 'مدیریت و پیکربندی', 'خدمات پس از فروش و شکایات', 'نامه‌نگاری داخلی (دبیرخانه)', 'گزارشات و بایگانی', 'دستورات اداری و کارهای محوله', 'ماژول فروش', 'پرداخت فوری'].map(cat => {
                   const catPerms = ALL_PERMISSIONS.filter(p => p.category === cat);
                   return (
                     <div key={cat} className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">

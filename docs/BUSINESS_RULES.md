@@ -66,9 +66,29 @@
 
 ## ۳. قوانین دسترسی و امنیت (Permissions & Security)
 1. **تفکیک وظایف (Segregation of Duties)**:
-   - کاربران بر اساس ۲۲ پرمیشن سیستمی تفکیک شده‌اند. هیچ کاربری بدون داشتن پرمیشن مربوطه (`manage_users`, `approve_treasury`, `manage_roles`) نمی‌تواند به بخش‌های حساس دسترسی داشته باشد.
+   - کاربران بر اساس ۴۵ پرمیشن سیستمی تفکیک شده‌اند. هیچ کاربری بدون داشتن پرمیشن مربوطه (`manage_users`, `approve_treasury`, `manage_roles`) نمی‌تواند به بخش‌های حساس دسترسی داشته باشد.
 2. **نقش‌های سیستمی غیرقابل حذف**:
    - نقش‌های سیستمی پیش‌فرض (`System Roles`) به عنوان پایه‌های امنیتی سازمان قابل حذف نیستند، اما می‌توان دسترسی‌های سفارشی برای کاربران تعریف کرد.
+3. **ورود امن ادمین به حساب کاربر دیگر (`Impersonation`)**:
+   - این قابلیت **حذف نشده و طراحی عمدی سیستم است** — فقط دارنده‌ی صریح پرمیشن `impersonate_users` مجاز به استفاده است (نه صرفاً `role === 'admin'` به‌صورت هاردکد).
+   - چک مجوز روی **هویت واقعی** انجام می‌شود، نه `currentUser` لحظه‌ای: در `handleImpersonateUser` (`App.tsx`)، `realActor = impersonatorAdmin || currentUser` محاسبه و پرمیشنش چک می‌شود — یعنی حتی اگر تابع مستقیماً (مثلاً از کنسول مرورگر) با یک `currentUser` غیرادمین فراخوانی شود، رد می‌شود؛ و تودرتو شدن Impersonation نمی‌تواند مجوز را از روی هویت جعلی/موقت دوباره استخراج کند.
+   - شروع/پایان هر نشست در `IMPERSONATION_LOG` (`ImpersonationLogEntry`) ثبت می‌شود: `adminId`/`adminName` (هویت واقعی)، `targetUserId`/`targetUserName`، `startedAt`، و `endedAt` هنگام خروج.
+   - در تمام مدت Impersonation یک نوار همیشه‌قابل‌مشاهده («در حال مشاهده سیستم به‌جای کاربر...») بالای صفحه (`sticky`) نمایش داده می‌شود، با دکمه‌ی بازگشت به حساب ادمین که همیشه در همان نوار قابل کلیک است.
+   - **Refresh هویت ادمین را از بین نمی‌برد**: `impersonatorAdmin` از `localStorage` بازخوانی می‌شود (مستقل از fallback ادمین حذف‌شده در `storage.getCurrentUser`).
+   - **Logout کامل** (نه «خروج از شبیه‌سازی») هم نشست کاربر مقصد و هم نشست Impersonation را پاک می‌کند: `impersonatorAdmin` ریست، کلید `localStorage` مربوطه حذف، و رکورد باز `IMPERSONATION_LOG` با `endedAt` بسته می‌شود.
+   - **بدون ورود خودکار به ادمین**: `storage.getCurrentUser()` دیگر در نبود نشست معتبر به `DEFAULT_USERS[0]` (ادمین ارشد) fallback نمی‌کند — نبود/نامعتبر بودن نشست همیشه صفحه‌ی لاگین را نشان می‌دهد، نه ورود خودکار به هیچ حسابی (این یک باگ امنیتی از قبل موجود بود که در همین تغییر رفع شد).
+   - **رمز عبور**: `admin` و `123456` دیگر رمز جهانی (Master Password) نیستند — `LoginRegisterModal.tsx` فقط `foundUser.password === cleanPass` را می‌پذیرد؛ `123456` فقط برای حساب‌هایی کار می‌کند که رمز واقعی ذخیره‌شده‌شان دقیقاً همان است (باگ امنیتی از قبل موجود، رفع شد).
+   - تمام عملیات پرداخت (عادی/فوری، بخش‌های ۸ و ۹ پایین) در حالت Impersonation هم `effectiveUserId` و هم `impersonatorAdminId` را در `AuditLogEntry` ثبت می‌کنند — **دامنه‌ی Audit Log محدود و مستند است**: فقط چرخه‌ی Impersonation + فلوی پرداخت عادی/فوری؛ یک audit log سراسری برای همه‌ی عملیات سیستم (نامه‌ها، کارها، پشتیبانی، ...) در این فاز پیاده‌سازی نشده.
+4. **قفل پیش‌فرض دسترسی مالی برای نقش‌های فروش**:
+   - هیچ نقش فروش (`role_salesperson`, `role_sales_supervisor`, `role_senior_sales_supervisor`, `role_sales_manager`, `role_sales_deputy`) از پایه `manage_vendors`/`create_request`/`view_branch_requests` را ندارد — صرف داشتن `sales_access` هیچ مجوز مالی ایجاد نمی‌کند. ادمین می‌تواند در صورت نیاز یکی از این مجوزها را جداگانه (`roleAccessOverrides` یا `customPermissions`) به یک کاربر یا نقش فروش خاص اضافه کند.
+   - این محدودیت در سه لایه اعمال می‌شود: **منو** (`Sidebar.tsx` → `hasAccess`)، **Tab Guard** (`App.tsx` → `TAB_GUARDS` + `useEffect` که در صورت نبود مجوز، `activeTab` را به `dashboard` برمی‌گرداند — دفاع در برابر تغییر مستقیم/دستکاری‌شده‌ی `activeTab`)، و **handler عملیات** (هر اکشن حساس از `hasPermission(effectivePermissions, ...)` استفاده می‌کند، نه رشته‌ی `role`).
+5. **مدل چندنقشی: اجتماع + Deny (`Multi-Role Union & Explicit Deny`)**:
+   - کاربر می‌تواند هم‌زمان چند نقش فعال داشته باشد (`additionalRoleIds`)؛ مجوز نهایی، **اجتماع** مجوزهای همه‌ی نقش‌های فعال + `customPermissions` است (`getEffectiveUserPermissions`).
+   - `User.deniedPermissions` یک لیست Deny صریح است که در همان تابع، از نتیجه‌ی اجتماع **کم می‌شود** — Deny همیشه بر Allow اولویت دارد، صرف‌نظر از این‌که کدام نقش/override آن پرمیشن را داده باشد.
+   - نقش دوم باید هم‌زمان منو (`Sidebar`)، صفحه (`App.tsx` tab guard)، داده (مثلاً `getVisibleCustomerIds` که بر اساس مجوز مؤثر عمق دید را تعیین می‌کند — `view_own_customers`/`view_team_customers`/`view_descendant_customers`) و عملیات (handlerهایی که از همان `effectivePermissions` استفاده می‌کنند) را فعال کند — نه فقط منو.
+   - **قلمرو داده هرگز به‌صورت ناکنترل‌شده به دسترسی سراسری تبدیل نمی‌شود**: هر پرمیشن یک عمق دید مشخص و محدود دارد (خودم / زیرمجموعه‌ی مستقیم / کل زیردرخت)؛ نقش دوم فقط تا همان مقداری که پرمیشنش اجازه می‌دهد دید را گسترش می‌دهد، نه بیشتر.
+   - نقش پایه (`role`) برای سازگاری داده‌های قدیمی حفظ شده؛ منطق تصمیم‌گیری همیشه بر اساس `getEffectiveUserPermissions` (مجموعه‌ی نقش‌ها) است، نه فقط `role`. تمام فیلدهای جدید (`additionalRoleIds`, `roleAccessOverrides`, `deniedPermissions`) اختیاری‌اند؛ کاربران قدیمی بدون این فیلدها دقیقاً مثل قبل رفتار می‌کنند و `localStorage` کاربران هیچ‌جا پاک/reset نمی‌شود.
+   - ادمین می‌تواند در فرم ویرایش کاربر (`AdminPanel.tsx`) ببیند کدام نقشِ فعالِ کاربر هر پرمیشن مؤثر را داده (`getGrantingRoleId`)؛ `AuditLogEntry.effectiveRoleId` همین اطلاعات را برای عملیات پرداخت هم ثبت می‌کند.
 
 ---
 
@@ -85,7 +105,37 @@
    - مالکیت فعلی (`currentActiveSalespersonId`) هرگز یک فیلد ذخیره‌شده نیست؛ همیشه از روی آخرین وضعیت `activityLog` با `getCurrentActiveSalespersonId` محاسبه می‌شود، تا هیچ‌گاه با واقعیت تاریخچه ناهم‌خوان نشود.
    - جستجوی مشتری بر اساس شماره تماس (`findCustomerByPhone`) عمداً **مستقل از دید سلسله‌مراتبی** است و در کل سیستم انجام می‌شود — این تنها راهی است که یک فروشنده می‌تواند بفهمد شماره‌ی مورد نظرش قبلاً توسط فروشنده‌ی دیگری (حتی خارج از زیرمجموعه‌ی سرپرستی خودش) در حال پیگیری است.
 2. **دید سلسله‌مراتبی فروش (`Sales Hierarchy Visibility`)**:
-   - «لیست مشتریان قابل‌مشاهده» برای یک کاربر (نه جستجوی تک‌شماره) طبق `getVisibleCustomerIds` محدود می‌شود: مشتریانی که خودِ کاربر یا هر یک از زیرمجموعه‌های او در زنجیره‌ی `User.salesSupervisorId` حداقل یک بار در `activityLog`شان حضور داشته‌اند. ادمین همه‌ی مشتریان را می‌بیند.
+   - «لیست مشتریان قابل‌مشاهده» برای یک کاربر (نه جستجوی تک‌شماره) طبق `getVisibleCustomerIds` محدود می‌شود؛ عمق دید بر اساس **مجوز مؤثر** کاربر تعیین می‌شود، نه صرفاً «همیشه کل زیردرخت»:
+     - `view_own_customers` → فقط مشتریانی که خودِ کاربر با آن‌ها کار کرده.
+     - `view_team_customers` → خودِ کاربر + زیرمجموعه‌ی مستقیم (یک سطح پایین‌تر در زنجیره‌ی `salesSupervisorId`).
+     - `view_descendant_customers` → خودِ کاربر + کل زیردرخت سازمانی زیرمجموعه (هر عمق).
+     - ادمین همه‌ی مشتریان را می‌بیند؛ بدون هیچ‌کدام از این سه پرمیشن، کاربر هیچ مشتری‌ای نمی‌بیند (حتی مشتریان خودش).
    - این زنجیره (`salesSupervisorId`) کاملاً مستقل از `approvalChain`/`allowedApproverIds` خزانه‌داری است؛ این دو هرگز نباید با هم قاطی یا جایگزین یکدیگر شوند.
 3. **حداقل اطلاعات ثبت مشتری**:
    - طبق `docs/SALES_ARCHITECTURE_DRAFT.md` بخش ۲۱، تمام فیلدهای پروفایل مشتری (`fullName`, `phone2`, `address`, `province`, `city`, `postalCode`) به‌جز خودِ فرآیند ثبت اختیاری هستند؛ فقط شماره تماس اول (`phone1`) به‌عنوان کلید عملی شناسایی یکتا عمل می‌کند (اگر پر شود).
+4. **نقش‌های پایه سازمان فروش (`Sales Organization Roles`)**:
+   - ۵ نقش با شناسه‌ی فنی پایدار: `role_salesperson` (فروشنده) ← `role_sales_supervisor` (سرپرست فروش) ← `role_senior_sales_supervisor` (سرپرست ارشد فروش) ← `role_sales_manager` (مدیر فروش) ← `role_sales_deputy` (معاونت فروش). شناسه‌ها مستقل از `roleTitle` آزاد کاربرند؛ هیچ‌جای کد نباید نقش را با `roleTitle.includes(...)` تشخیص دهد.
+   - ساختار سلسله‌مراتب همان مدل تک‌والد/چند-فرزند موجود (`User.salesSupervisorId`) است: هر فروشنده یک جایگاه سازمانی اصلی (یک `salesSupervisorId`) دارد؛ هر سطح بالاتر می‌تواند چند نفر از سطح پایین‌تر را زیرمجموعه داشته باشد (چند کاربر می‌توانند به همان `salesSupervisorId` اشاره کنند) — بدون نیاز به مدل درختی جدید.
+   - **جابه‌جایی سازمانی تاریخچه را تغییر نمی‌دهد**: تغییر `User.salesSupervisorId` فقط جایگاه *فعلی* را عوض می‌کند؛ `Customer.activityLog[].salespersonId` (فروش‌های گذشته) و `SalesOrgAssignmentHistoryEntry` (تاریخچه‌ی رسمی سرپرستی) هیچ‌گاه بازنویسی نمی‌شوند — رابطه‌ی فعلی کاربر با مدیرش کاملاً از تاریخچه‌ی سازمانی جداست.
+   - مدیران بالاتر می‌توانند مطابق مجوز (`assign_sales_lead`/`reassign_sales_lead`) یک Lead را مستقیم به هر کاربر در زیردرخت سازمانی خودشان ارجاع دهند؛ `canAssignLeadTo` در `src/utils/salesHierarchy.ts` فقط قلمرو سازمانی را چک می‌کند (هدف در زیردرخت است یا نه)، نه خودِ مجوز.
+   - **مجوزهای Lead هنوز بدون صفحه‌ی عملیاتی**: `assign_sales_lead`, `reassign_sales_lead`, `drain_salesperson_queue` فقط در مدل نقش‌ها/مستندات تعریف شده‌اند (زیرساخت آماده)؛ فلوی کامل Lead، تماس Issabel، پروموشن، فاکتور فروش و MIS در این فاز پیاده‌سازی نشده‌اند.
+
+---
+
+## ۶. پرداخت و ارجاع به مسئول پرداخت (Payment Referral Rules)
+1. **منع پرداخت درخواست تأییدنشده**: `canMarkPaid` در `RequestDetailModal.tsx` اکنون فقط روی `status === 'approved_pending_payment'` فعال است (پیش‌تر به‌اشتباه `pending_approval` را هم مجاز می‌کرد — باگ امنیتی از قبل موجود، رفع شد). مسئول پرداخت فقط درخواستی را می‌تواند پرداخت کند که هم آماده‌ی پرداخت باشد **و** هم فعلاً به خودش ارجاع شده باشد (`currentApproverId === currentUser.id`، همان `isCurrentResponsibleParty` موجود).
+2. **`ApprovalInboxView.tsx`**: fallback نقش‌محور قدیمی («هر `treasury_executor` همه‌ی درخواست‌های `approved_pending_payment`/`pending_approval` را می‌بیند») حذف شد؛ فقط تطبیق دقیق `currentApproverId === currentUser.id` باقی مانده — قانون «ارجاع اختصاصی» که برای بقیه‌ی کارتابل از قبل وجود داشت، اکنون برای مرحله‌ی پرداخت هم به‌طور کامل اعمال می‌شود.
+3. **ارجاع/تغییر مسئول پرداخت توسط ادمین**: فقط ادمین، فقط روی `approved_pending_payment`، می‌تواند مسئول پرداخت را به فرد دیگری تغییر دهد (`handleReferForPayment`) — همان الگوی موجود `handleDelegateExecution` (بازنویسی `currentApproverId`)، با یک اکشن مجزا در `timeline` (`referred_for_payment`) و ثبت در `AuditLogEntry`.
+4. **پرداخت بدون فیش مجاز است**: اگر فایلی آپلود نشود، `paidWithoutReceipt: true` ثبت می‌شود و در UI به‌جای عکس، یک وضعیت شفاف نمایش داده می‌شود — **هیچ‌گاه یک تصویر placeholder یا Unsplash جایگزین فیش واقعی نمی‌شود** (پیش‌تر چنین جایگزینی وجود داشت؛ حذف شد).
+
+---
+
+## ۷. مجوز ویژه پرداخت فوری (Emergency Payment Rules)
+1. **غیرفعال به‌صورت پیش‌فرض**: مسیر پرداخت فوری (بدون تایید کامل زنجیره‌ی عادی) وجود دارد اما هیچ نقش/کاربر نمونه‌ای به‌صورت پیش‌فرض مجوزهای `refer_for_emergency_payment`/`execute_emergency_payment` را ندارد؛ نقش `role_emergency_payment_officer` این دو مجوز را دارد ولی به هیچ کاربر نمونه‌ای assign نشده — فقط ادمین می‌تواند صریحاً به یک نقش/کاربر مشخص بدهد.
+2. **`execute_payment` عادی ≠ `execute_emergency_payment`**: داشتن مجوز پرداخت عادی به‌معنای داشتن پرداخت فوری نیست؛ این دو مجوز کاملاً مستقل‌اند.
+3. **دلیل اجباری**: ارجاع به مسیر فوری (`handleReferForEmergencyPayment`) بدون پر کردن فیلد دلیل رد می‌شود.
+4. **مسیر دو-نفره**: ابتدا شخص دارای `refer_for_emergency_payment` درخواست را به مسیر فوری ارجاع می‌دهد (`status → emergency_pending_payment`, `isEmergencyPayment: true`)؛ سپس فقط شخص دارای `execute_emergency_payment` که درخواست فعلاً به او ارجاع شده (`currentApproverId === currentUser.id`) می‌تواند پرداخت را ثبت کند.
+5. **منع خودارجاعی**: لیست مقصدهای ارجاع فوری (`emergencyPaymentOfficers`) همیشه ارجاع‌دهنده‌ی فعلی را حذف می‌کند — کسی نمی‌تواند خودش را به‌عنوان مقصد ارجاع فوری انتخاب کند، حتی اگر خودش هم `execute_emergency_payment` داشته باشد.
+6. **ثبت کامل در Timeline و Audit Log**: هر دو مرحله (ارجاع و پرداخت) هم در `PaymentRequest.timeline` (اکشن‌های `referred_for_emergency_payment`/`emergency_paid`) و هم در `AuditLogEntry` ثبت می‌شوند — شامل دلیل، ارجاع‌دهنده، پرداخت‌کننده، زمان‌ها و وجود/نبود فیش (`paidWithoutReceipt`).
+7. **برچسب‌گذاری شفاف**: `status === 'emergency_pending_payment'` و `isEmergencyPayment === true` در کارتابل/آرشیو (`RequestTableView.tsx`, `ArchiveView.tsx`) با یک نشان قرمز متمایز («فوری») نمایش داده می‌شوند.
+8. **گزارش ادمین**: `AdminPanel.tsx` یک زیرتب «گزارش پرداخت‌های فوری» دارد که همه‌ی درخواست‌های `isEmergencyPayment` را با دلیل، ارجاع‌دهنده، وضعیت و مبلغ فهرست می‌کند.

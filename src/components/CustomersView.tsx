@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Customer, User } from '../types';
+import { Customer, User, SystemRole } from '../types';
 import { getJalaliNow } from '../utils/persianDate';
+import { useEffectivePermissions } from '../utils/permissions';
 import {
   getVisibleCustomerIds,
   findCustomerByPhone,
@@ -14,6 +15,7 @@ import { Phone, UserPlus, Search, Lock, Clock, CheckCircle2, History, MapPin, Us
 interface CustomersViewProps {
   customers: Customer[];
   users: User[];
+  roles: SystemRole[];
   currentUser: User | null;
   onUpdateCustomers: (customers: Customer[]) => void;
 }
@@ -23,6 +25,7 @@ const emptyForm = { fullName: '', phone2: '', address: '', province: '', city: '
 export const CustomersView: React.FC<CustomersViewProps> = ({
   customers,
   users,
+  roles,
   currentUser,
   onUpdateCustomers
 }) => {
@@ -31,13 +34,15 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [newCustomerForm, setNewCustomerForm] = useState(emptyForm);
 
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
+
   if (!currentUser) return null;
 
   const userNameById = (id: string) => users.find((u) => u.id === id)?.fullName || id;
 
   const selectedCustomer = selectedCustomerId ? customers.find((c) => c.id === selectedCustomerId) || null : null;
 
-  const visibleCustomerIds = getVisibleCustomerIds(currentUser, users, customers);
+  const visibleCustomerIds = getVisibleCustomerIds(currentUser, users, customers, effectivePermissions);
   const visibleCustomers = customers.filter((c) => visibleCustomerIds.includes(c.id));
 
   const handleSearch = () => {

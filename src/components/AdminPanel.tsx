@@ -4,6 +4,7 @@ import { storage, DEFAULT_ROLE_ID_MAP } from '../utils/storage';
 import { CompaniesView } from './CompaniesView';
 import { CostCentersView } from './CostCentersView';
 import { ALL_PERMISSIONS } from './RolesAndPermissionsView';
+import { useEffectivePermissions, hasPermission, getGrantingRoleId, getEffectiveUserPermissions } from '../utils/permissions';
 import {
   ShieldCheck, UserPlus, Key, Phone, Mail,
   Building, Building2, MapPin, CheckCircle2, UserX, Edit2, Plus,
@@ -55,7 +56,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateCostCenters,
   onImpersonateUser
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'cost_centers' | 'companies'>('users');
+  const currentUserPermissions = useEffectivePermissions(currentUser, roles);
+  const canImpersonate = hasPermission(currentUserPermissions, ['impersonate_users']);
+
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'cost_centers' | 'companies' | 'emergency_payments'>('users');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   
   // Modals State
@@ -108,6 +112,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [additionalRoleIds, setAdditionalRoleIds] = useState<string[]>([]);
   const [roleAccessOverrides, setRoleAccessOverrides] = useState<{ roleId: string; permissions: SystemPermission[] }[]>([]);
   const [openRolePanels, setOpenRolePanels] = useState<Record<string, boolean>>({});
+  // Explicit deny — subtracted from the union of all active roles' permissions at read time
+  // (getEffectiveUserPermissions); deny always wins over any allow.
+  const [deniedPermissions, setDeniedPermissions] = useState<SystemPermission[]>([]);
+  // Sales org hierarchy: this user's current supervisor (independent of the treasury
+  // approvalChain/allowedApproverIds below — src/utils/salesHierarchy.ts only).
+  const [salesSupervisorId, setSalesSupervisorId] = useState<string>('');
 
   // Quick Password Change State
   const [newPasswordValue, setNewPasswordValue] = useState('');
@@ -216,6 +226,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCustomPermissions([]);
     setAdditionalRoleIds([]);
     setRoleAccessOverrides([]);
+    setDeniedPermissions([]);
+    setSalesSupervisorId('');
     setOpenRolePanels({});
     setShowAddUserModal(true);
   };
@@ -250,6 +262,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCustomPermissions(u.customPermissions || []);
     setAdditionalRoleIds(u.additionalRoleIds || []);
     setRoleAccessOverrides(u.roleAccessOverrides || []);
+    setDeniedPermissions(u.deniedPermissions || []);
+    setSalesSupervisorId(u.salesSupervisorId || '');
     setOpenRolePanels({});
   };
 
@@ -311,7 +325,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        salesSupervisorId: salesSupervisorId || undefined
       } : u);
 
       // Only one user may hold the senior treasury supervisor designation at a time
@@ -350,7 +366,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        salesSupervisorId: salesSupervisorId || undefined
       };
 
       let updated = [...users, newUser];
@@ -499,7 +517,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <Building className="w-4 h-4 text-indigo-400" />
           <span>شرکت‌های گروه ({companies.length})</span>
         </button>
+
+        <button
+          onClick={() => setActiveSubTab('emergency_payments')}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'emergency_payments' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-800/80 text-slate-400 hover:text-white'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 text-rose-400" />
+          <span>گزارش پرداخت‌های فوری ({requests.filter(r => r.isEmergencyPayment).length})</span>
+        </button>
       </div>
+
+      {/* Emergency Payments Report Sub-Tab */}
+      {activeSubTab === 'emergency_payments' && (
+        <div className="space-y-3">
+          {requests.filter(r => r.isEmergencyPayment).length === 0 ? (
+            <div className="p-6 text-center text-slate-500 text-xs bg-slate-900 border border-slate-800 rounded-2xl">
+              تا کنون هیچ درخواستی به مسیر پرداخت فوری ارجاع نشده است.
+            </div>
+          ) : (
+            requests.filter(r => r.isEmergencyPayment).map((r) => (
+              <div key={r.id} className="p-4 bg-slate-900 border border-rose-500/30 rounded-2xl space-y-1.5 text-xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-extrabold text-white">{r.trackingCode} — {r.title}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    r.status === 'paid' || r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                  }`}>
+                    {r.status === 'paid' || r.status === 'completed' ? 'پرداخت‌شده' : 'در انتظار پرداخت فوری'}
+                  </span>
+                </div>
+                <div className="text-slate-400">ارجاع‌دهنده: {r.emergencyReferredByName || '—'} | زمان ارجاع: {r.emergencyReferredAt || '—'}</div>
+                <div className="text-slate-400">دلیل: {r.emergencyReason || '—'}</div>
+                <div className="text-slate-400">مبلغ: {r.amount?.toLocaleString('fa-IR')} ریال | مسئول پرداخت فعلی: {r.currentApproverName}</div>
+                {r.paidWithoutReceipt && <div className="text-amber-400 font-bold">پرداخت بدون فیش ثبت شده</div>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Users Sub-Tab Content */}
       {activeSubTab === 'users' && (
@@ -657,8 +713,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Impersonate / Login as User Button (Admin only) */}
-                            {onImpersonateUser && u.id !== currentUser?.id && (
+                            {/* Impersonate / Login as User Button — only for holders of impersonate_users */}
+                            {onImpersonateUser && canImpersonate && u.id !== currentUser?.id && (
                               <button
                                 onClick={() => onImpersonateUser(u)}
                                 className="p-1.5 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg transition"
@@ -1176,6 +1232,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Explicit Deny — subtracted from the union of all active roles at read time; deny always wins */}
+              <div className="p-3.5 bg-slate-950/90 border border-rose-500/30 rounded-2xl space-y-2.5">
+                <div className="flex items-center gap-2 text-rose-300 text-xs font-extrabold">
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  <span>محرومیت صریح از پرمیشن (Deny) — اولویت بر همه نقش‌ها دارد</span>
+                </div>
+                <p className="text-[10.5px] text-slate-500 leading-relaxed">
+                  هر پرمیشنی که اینجا تیک بخورد، حتی اگر یکی از نقش‌های فعال این کاربر آن را بدهد، غیرفعال می‌ماند.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                  {ALL_PERMISSIONS.map((p) => {
+                    const checked = deniedPermissions.includes(p.key);
+                    return (
+                      <label key={p.key} className={`p-2 rounded-lg border text-[10.5px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                        checked ? 'bg-rose-950/50 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setDeniedPermissions((prev) => prev.includes(p.key) ? prev.filter((x) => x !== p.key) : [...prev, p.key])}
+                          className="w-3.5 h-3.5 mt-0.5 text-rose-600 rounded border-slate-700 bg-slate-800 focus:ring-rose-500"
+                        />
+                        <span>{p.title}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Read-only preview: which active role currently grants each effective permission
+                  ("ادمین بتواند نقش فعال مورد استفاده را مشاهده کند") */}
+              <div className="p-3.5 bg-slate-950/90 border border-slate-700/60 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-slate-300 text-xs font-extrabold">
+                  <Eye className="w-4 h-4 shrink-0 text-slate-400" />
+                  <span>پیش‌نمایش: کدام نقش هر پرمیشن مؤثر را می‌دهد</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-48 overflow-y-auto pr-1 text-[10.5px]">
+                  {(() => {
+                    const previewRoleIds = Array.from(new Set([roleId, ...additionalRoleIds.filter((id) => id !== roleId)]));
+                    const previewUser = {
+                      role, roleId, additionalRoleIds: previewRoleIds.filter((id) => id !== roleId),
+                      roleAccessOverrides, customPermissions, deniedPermissions
+                    } as User;
+                    const effective = getEffectiveUserPermissions(previewUser, roles);
+                    if (effective.length === 0) return <span className="text-slate-600">هنوز هیچ پرمیشن مؤثری وجود ندارد.</span>;
+                    return effective.map((permKey) => {
+                      const meta = ALL_PERMISSIONS.find((p) => p.key === permKey);
+                      const grantingRoleId = getGrantingRoleId(previewUser, roles, permKey);
+                      const grantingRoleName = grantingRoleId ? roles.find((r) => r.id === grantingRoleId)?.name : 'دسترسی اختصاصی کاربر';
+                      return (
+                        <div key={permKey} className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-slate-900/70 border border-slate-800">
+                          <span className="text-slate-300">{meta?.title || permKey}</span>
+                          <span className="text-emerald-400 font-bold truncate">{grantingRoleName}</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {/* Sales org hierarchy: current supervisor position — independent of approvalChain/allowedApproverIds below */}
+              <div className="p-3.5 bg-slate-950/90 border border-teal-500/30 rounded-2xl space-y-2.5">
+                <div className="flex items-center gap-2 text-teal-300 text-xs font-extrabold">
+                  <UserPlus className="w-4 h-4 shrink-0" />
+                  <span>سرپرست فروش این کاربر (سازمان فروش)</span>
+                </div>
+                <p className="text-[10.5px] text-slate-500 leading-relaxed">
+                  کاملاً مستقل از زنجیره تایید خزانه‌داری (پایین‌تر) — فقط برای دید سلسله‌مراتبی مشتریان ماژول فروش استفاده می‌شود.
+                </p>
+                <select
+                  value={salesSupervisorId}
+                  onChange={(e) => setSalesSupervisorId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
+                >
+                  <option value="">— بدون سرپرست فروش (رأس زنجیره) —</option>
+                  {users.filter((u) => u.id !== editingUser?.id).map((u) => (
+                    <option key={u.id} value={u.id}>{u.fullName}{u.roleTitle ? ` (${u.roleTitle})` : ''}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Workflow & Permission Architecture Section Header */}

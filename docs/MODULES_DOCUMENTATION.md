@@ -83,10 +83,15 @@
 ---
 
 ## ۸. ماژول مدیریت کاربران و دسترسی‌ها (`AdminPanel` & `RolesAndPermissionsView`)
-- **هدف**: کنترل کامل هویت پرسنل، تعریف نقش‌های سیستمی، پرمیشن‌های ۲۰‌گانه (`ALL_PERMISSIONS`)، مسیرهای تایید، و مدل چندنقشی کاربران.
+- **هدف**: کنترل کامل هویت پرسنل، تعریف نقش‌های سیستمی، پرمیشن‌های ۴۵‌گانه (`ALL_PERMISSIONS`)، مسیرهای تایید، و مدل چندنقشی کاربران.
 - **ویژگی‌ها**:
   - مدیریت حساب کاربری، تغییر رمز عبور و وضعیت فعال بودن.
-  - **نقش‌های چندگانه و دسترسی‌های تفکیکی (بخش «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر»)**: جایگزین سه بخش قدیمی (تعیین نقش در ماژول دستورات اداری، دسترسی‌های تکمیلی، تیک دستی نقش دوگانه). ادمین می‌تواند علاوه بر نقش پایه (`role`/`roleId`)، چند نقش سیستمی دیگر هم برای کاربر فعال کند (`additionalRoleIds`)، و برای هر نقش فعال پرمیشن‌هایش را فقط برای همین کاربر محدود یا گسترش دهد (`roleAccessOverrides`، جایگزینی کامل نه merge). پرمیشن مؤثر نهایی با `getEffectiveUserPermissions` (`src/utils/permissions.ts`) محاسبه می‌شود که `Sidebar.tsx` هم برای منوی کناری از همین تابع استفاده می‌کند.
+  - **نقش‌های چندگانه و دسترسی‌های تفکیکی (بخش «نقش‌های چندگانه و دسترسی‌های تفکیکی این کاربر»)**: جایگزین سه بخش قدیمی (تعیین نقش در ماژول دستورات اداری، دسترسی‌های تکمیلی، تیک دستی نقش دوگانه). ادمین می‌تواند علاوه بر نقش پایه (`role`/`roleId`)، چند نقش سیستمی دیگر هم برای کاربر فعال کند (`additionalRoleIds`)، و برای هر نقش فعال پرمیشن‌هایش را فقط برای همین کاربر محدود یا گسترش دهد (`roleAccessOverrides`، جایگزینی کامل نه merge). پرمیشن مؤثر نهایی با `getEffectiveUserPermissions` (`src/utils/permissions.ts`) محاسبه می‌شود که `Sidebar.tsx`/`App.tsx` (tab guard) هم از همین تابع استفاده می‌کنند.
+  - **محرومیت صریح (Deny)**: یک بخش مستقل («محرومیت صریح از پرمیشن») چک‌لیست `deniedPermissions` را ویرایش می‌کند — هر پرمیشن تیک‌خورده اینجا، صرف‌نظر از این‌که کدام نقش آن را بدهد، غیرفعال می‌ماند.
+  - **پیش‌نمایش نقش مؤثر**: یک بخش read-only نشان می‌دهد هر پرمیشن مؤثر فعلی از کدام نقش می‌آید (`getGrantingRoleId`) — پاسخ به «ادمین بتواند نقش فعال مورد استفاده را مشاهده کند».
+  - **سرپرست فروش این کاربر**: انتخابگر ساده (dropdown) برای `User.salesSupervisorId` — مستقل از بخش زنجیره‌ی تایید خزانه‌داری پایین‌تر در همان فرم.
+  - **ورود ادمین به حساب کاربر (Impersonation)**: دکمه فقط برای دارنده‌ی `impersonate_users` نمایش داده می‌شود (`canImpersonate` در `AdminPanel.tsx`)؛ خودِ منطق مجوزدهی و Audit در `App.tsx`/`handleImpersonateUser` است، نه در این کامپوننت.
+  - **گزارش پرداخت‌های فوری**: زیرتب مستقل که همه‌ی `PaymentRequest`های `isEmergencyPayment` را با دلیل، ارجاع‌دهنده، وضعیت و مبلغ فهرست می‌کند.
   - **derive خودکار `isDualRole`**: هنگام ذخیره کاربر، اگر ترکیب نقش‌های فعال هم شامل یک نقش درخواست‌کننده‌مانند (`role_purchaser`/`role='requestor'`) و هم یک نقش تاییدکننده‌مانند (`role_branch_approver`, `role_treasury_manager`, `role='approver'`) باشد، `isDualRole` خودکار `true` می‌شود. دیگر چک‌باکس دستی برایش وجود ندارد؛ یک نشان («نقش دوگانه (خودکار)») مقدار زنده آن را در فرم نمایش می‌دهد.
   - **derive خودکار + قابل‌override دستی `canIssueTasks`/`canExecuteTasks`**: با هر تغییر در نقش‌های انتخابی، این دو مقدار به‌صورت پیشنهادی بازمحاسبه می‌شوند؛ چک‌باکس‌های مستقل هرکدام همچنان در همان بخش برای override دستی توسط ادمین در دسترس‌اند.
   - سرپرست ارشد خزانه‌داری (`isSeniorTreasurySupervisor`) اکنون یک بخش مستقل و کوچک جداگانه است (مستقل از مدل چندنقشی).
@@ -103,6 +108,31 @@
     - شماره موجود و آزاد (`canStartNewSale` صحیح) → نمایش پروفایل و تاریخچه‌ی کامل مشتری + امکان شروع چرخه‌ی فروش جدید.
     - شماره موجود ولی قفل‌شده (چرخه‌ی `active` با فروشنده‌ی دیگر) → پیام شفاف قفل مالکیت (نام فروشنده‌ی مالک فعلی) و عدم امکان ثبت چرخه‌ی جدید برای فروشنده‌ی فعلی.
   - **بستن چرخه‌ی فروش**: دکمه‌ی «بستن چرخه‌ی فروش» در پروفایل مشتری فقط برای فروشنده‌ی مالکِ چرخه‌ی فعال فعال است؛ در این گام صرفاً عملیات دستی/تستی است (`closeSaleCycle`) — منطق واقعی تکمیل بر اساس وضعیت فاکتور در فاز بعدی اضافه می‌شود.
-  - **لیست مشتریان قابل‌مشاهده**: طبق `getVisibleCustomerIds` (زنجیره‌ی `User.salesSupervisorId`) — کاربر فقط مشتریانی را می‌بیند که خودش یا زیرمجموعه‌های سلسله‌مراتبی‌اش با آن‌ها کار کرده‌اند؛ ادمین همه را می‌بیند.
+  - **لیست مشتریان قابل‌مشاهده**: طبق `getVisibleCustomerIds` (زنجیره‌ی `User.salesSupervisorId` + عمق دید بر اساس مجوز مؤثر — `view_own_customers`/`view_team_customers`/`view_descendant_customers`؛ به `docs/BUSINESS_RULES.md` بخش ۵.۲ مراجعه شود)؛ ادمین همه را می‌بیند.
   - داده در کلید مستقل `STORAGE_KEYS.CUSTOMERS` (`src/utils/storage.ts`) ذخیره می‌شود.
-- **نقش‌های مجاز**: کاربرانی با پرمیشن `sales_access` (فروشنده، سرپرست فروش، مدیر فروش — سه کاربر نمونه‌ی جدید در `DEFAULT_USERS`) یا ادمین. آیتم منو («مشتریان») در `Sidebar.tsx` با `requires: ['sales_access']` نمایش داده می‌شود.
+- **نقش‌های مجاز**: کاربرانی با پرمیشن `sales_access` (۵ نقش سازمان فروش — به بخش ۱۰ مراجعه کنید) یا ادمین. آیتم منو («مشتریان») در `Sidebar.tsx` با `requires: ['sales_access']` نمایش داده می‌شود.
+
+---
+
+## ۱۰. زیرساخت کامل سازمان فروش (Sales Organization Roles & Permissions)
+- **هدف**: تعریف نقش‌ها، مجوزهای ریزدانه و قلمرو سازمانی کامل سازمان فروش — بدون پیاده‌سازی فلوی عملیاتی Lead/تماس/پروموشن/فاکتور/MIS (آن‌ها فاز بعدی هستند).
+- **۵ نقش با شناسه‌ی فنی پایدار** (`src/utils/storage.ts`، `DEFAULT_ROLES`): `role_salesperson`, `role_sales_supervisor`, `role_senior_sales_supervisor`, `role_sales_manager`, `role_sales_deputy`. هرکدام `SystemRole` مستقل با `permissions` تجمعی-پلکانی (سطح بالاتر = مجوزهای سطح پایین‌تر + موارد اضافه)؛ **بدون** `manage_vendors`/`create_request`/`view_branch_requests`.
+- **۲۰ مجوز ریزدانه‌ی جدید** در `SystemPermission` (`src/types.ts`) — از `view_own_customers` تا `manage_sales_hierarchy` — همگی در کاتالوگ `ALL_PERMISSIONS` (`RolesAndPermissionsView.tsx`) زیر دسته‌ی «ماژول فروش».
+- **۵ کاربر نمونه‌ی کامل** در `DEFAULT_USERS`: `user_sales_person_1` (فروشنده) ← `user_sales_supervisor_1` (سرپرست) ← `user_sales_senior_supervisor_1` (سرپرست ارشد، جدید) ← `user_sales_manager_1` (مدیر فروش) ← `user_sales_deputy_1` (معاونت فروش، جدید) — یک زنجیره‌ی کامل `salesSupervisorId`. هر ۵ نفر `roleId` صریح به یکی از نقش‌های بالا دارند (نه `role: 'requestor'` با fallback به `role_purchaser`).
+- **قلمرو سازمانی و تاریخچه**: `getSalesSubordinateIds`/`getDirectSalesReportIds` (`src/utils/salesHierarchy.ts`) زیردرخت/زیرمجموعه‌ی مستقیم را از روی `salesSupervisorId` محاسبه می‌کنند؛ `canAssignLeadTo` قلمرو مجاز ارجاع Lead را چک می‌کند. `SalesOrgAssignmentHistoryEntry` (کلید `SALES_ORG_HISTORY`) تاریخچه‌ی رسمی جابه‌جایی سرپرستی را نگه می‌دارد، مستقل از فیلد زنده‌ی `salesSupervisorId`.
+- **قفل دسترسی مالی**: به `docs/BUSINESS_RULES.md` بخش ۳.۴ مراجعه شود — سه لایه (منو/Tab Guard/handler).
+
+---
+
+## ۱۱. پرداخت عادی و پرداخت فوری (Payment Referral & Emergency Payment)
+- **هدف**: بستن شکاف امنیتی «پرداخت درخواست تأییدنشده» و افزودن مسیر پرداخت فوری اختیاری.
+- **`RequestDetailModal.tsx`**:
+  - `canMarkPaid` اصلاح شد (فقط `approved_pending_payment`، نه `pending_approval`).
+  - دکمه‌ی «ارجاع پرداخت» (فقط ادمین، روی `approved_pending_payment`) مسئول پرداخت را تغییر می‌دهد؛ اکشن `referred_for_payment` در `timeline`.
+  - دکمه‌ی «ارجاع به مسیر فوری» (فقط دارنده‌ی `refer_for_emergency_payment`) با دلیل اجباری و انتخاب مسئول پرداخت فوری (منهای خودِ ارجاع‌دهنده) → `status: 'emergency_pending_payment'`.
+  - دکمه‌ی «ثبت پرداخت فوری» (فقط دارنده‌ی `execute_emergency_payment` که درخواست فعلاً به او ارجاع شده) → `status: 'paid'`، اکشن `emergency_paid`.
+  - فیش واریز دیگر هیچ‌گاه با یک تصویر Unsplash جایگزین نمی‌شود؛ نبود فایل → `paidWithoutReceipt: true` و نمایش وضعیت شفاف به‌جای عکس.
+- **`ApprovalInboxView.tsx`**: fallback نقش‌محور قدیمی برای `treasury_executor` حذف شد؛ فقط ارجاع اختصاصی (`currentApproverId`) باقی مانده.
+- **`RequestTableView.tsx`/`ArchiveView.tsx`**: بج «فوری» برای `emergency_pending_payment`/`isEmergencyPayment`.
+- **`AdminPanel.tsx`**: زیرتب «گزارش پرداخت‌های فوری».
+- **نقش‌های مجاز**: `refer_for_emergency_payment`/`execute_emergency_payment` فقط از طریق `role_emergency_payment_officer` (که به هیچ کاربر نمونه‌ای assign نشده) یا اعطای دستی ادمین در دسترس‌اند.

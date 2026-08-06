@@ -54,8 +54,9 @@
     │   └── ... (سایر مودال‌ها و ویوها)
     └── utils/
         ├── storage.ts          # مدیریت حالت سراسری، LocalStorage و دیتای اولیه
-        ├── permissions.ts      # محاسبه پرمیشن مؤثر کاربر در مدل چندنقشی (getEffectiveUserPermissions)
-        ├── salesHierarchy.ts   # قفل مالکیت پویا و دید سلسله‌مراتبی مشتریان ماژول فروش
+        ├── permissions.ts      # پرمیشن مؤثر چندنقشی + Deny (getEffectiveUserPermissions)، canAccessNavItem، useEffectivePermissions
+        ├── auditLog.ts         # logAudit() — ثبت Audit Log برای Impersonation و فلوی پرداخت عادی/فوری
+        ├── salesHierarchy.ts   # قفل مالکیت پویا و دید سلسله‌مراتبی مشتریان + قلمرو Lead ماژول فروش
         ├── persianDate.ts      # توابع تبدیل و مدیریت تاریخ شمسی
         ├── numberToWords.ts    # تبدیل اعداد مالی به حروف فارسی
         └── bankFormats.ts      # اعتبارسنجی شماره شبا و حساب‌های بانکی
@@ -64,8 +65,9 @@
 ## ۲. مسئولیت هر پوشه و فایل (Responsibilities)
 - **`src/types.ts`**: مرجع واحد و مرکزی تمام تایپ‌ها، مدل‌ها، پرمیشن‌ها (`SystemPermission`) و نقش‌های سیستم.
 - **`src/utils/storage.ts`**: مدیریت دیتای اولیه غنی (کاربران، درخواست‌ها، شرکت‌ها، مراکز هزینه، نامه‌ها، تامین‌کنندگان) و هماهنگ‌سازی با `localStorage`.
-- **`src/utils/permissions.ts`**: تابع `getEffectiveUserPermissions(user, roles)` که در مدل چندنقشی کاربران (`User.additionalRoleIds` + `User.roleAccessOverrides`)، پرمیشن مؤثر نهایی یک کاربر را از روی نقش پایه + نقش‌های اضافه + بازنویسی‌های اختصاصی + `customPermissions` محاسبه می‌کند؛ توسط `Sidebar.tsx` برای ساخت منو استفاده می‌شود.
-- **`src/utils/salesHierarchy.ts`**: `getVisibleCustomerIds`, `findCustomerByPhone`, `canStartNewSale`, `getCurrentActiveSalespersonId`, `startNewSaleCycle`, `closeSaleCycle` — منطق قفل مالکیت پویا و دید سلسله‌مراتبی مشتریان ماژول فروش، بر پایه‌ی `User.salesSupervisorId` (مستقل از `approvalChain` خزانه‌داری).
+- **`src/utils/permissions.ts`**: `getEffectiveUserPermissions(user, roles)` (اتحاد نقش‌های فعال + `customPermissions`، منهای `deniedPermissions`)، `getGrantingRoleId` (کدام نقش یک پرمیشن را داده)، `canAccessNavItem` (منبع واحد قوانین ویژه‌ی دسترسی — `canCreateRequests`, `isDualRole`, `manage_assigned_tasks` — که هم `Sidebar.tsx` هم `App.tsx` tab guard از آن استفاده می‌کنند)، `hasPermission`، و هوک `useEffectivePermissions`.
+- **`src/utils/auditLog.ts`**: `logAudit()` — دامنه‌ی محدود و مستند (چرخه‌ی Impersonation + فلوی پرداخت عادی/فوری)، همیشه `effectiveUserId` و در صورت Impersonation `impersonatorAdminId` را ثبت می‌کند.
+- **`src/utils/salesHierarchy.ts`**: `getVisibleCustomerIds` (دید مشتریان بر اساس مجوز مؤثر + زنجیره‌ی `salesSupervisorId`)، `getSalesSubordinateIds`/`getDirectSalesReportIds` (پیمایش زیردرخت/زیرمجموعه مستقیم)، `canAssignLeadTo`، `findCustomerByPhone`, `canStartNewSale`, `getCurrentActiveSalespersonId`, `startNewSaleCycle`, `closeSaleCycle` — همه مستقل از `approvalChain` خزانه‌داری.
 - **`src/components/`**: حاوی ویوهای اصلی (Views) و مودال‌های تعاملی (Modals) که بر اساس وظیفه کسب‌وکاری جداسازی شده‌اند.
 - **`src/utils/`**: توابع کمکی محاسباتی، تبدیل اعداد به حروف، اعتبارسنجی بانکی، تقویم و محاسبه دسترسی.
 

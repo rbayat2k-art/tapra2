@@ -450,13 +450,19 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                       {req.requestorName}
                     </td>
                     <td className="p-3.5">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
-                        req.status === 'paid' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                        req.status === 'pending_approval' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                        'bg-slate-800 text-slate-300'
-                      }`}>
-                        {req.status === 'paid' ? 'واریز شده' : req.status === 'pending_approval' ? 'در انتظار' : req.status}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                          req.status === 'paid' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                          req.status === 'pending_approval' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                          req.status === 'emergency_pending_payment' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                          'bg-slate-800 text-slate-300'
+                        }`}>
+                          {req.status === 'paid' ? 'واریز شده' : req.status === 'pending_approval' ? 'در انتظار' : req.status === 'emergency_pending_payment' ? 'در انتظار پرداخت فوری' : req.status}
+                        </span>
+                        {req.isEmergencyPayment && (
+                          <span className="px-2 py-0.5 rounded-lg text-[9px] font-extrabold bg-rose-600 text-white">فوری</span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3.5">
                       {req.paymentReceiptAttachment ? (

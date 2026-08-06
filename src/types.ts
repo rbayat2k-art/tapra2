@@ -21,7 +21,32 @@ export type SystemPermission =
   | 'financial_approve_support'// تایید مالی مبالغ عودتی پرونده‌های پشتیبانی
   | 'view_support_reports'     // گزارش‌گیری پیشرفته کل پرونده‌های خدمات پس از فروش (ادمین)
   | 'manage_letters'           // دسترسی به سامانه نامه‌نگاری داخلی (ثبت، ارجاع، پاسخ)
-  | 'sales_access';            // دسترسی به ماژول فروش (مشتریان، فاکتور فروش)
+  | 'sales_access'             // دسترسی به ماژول فروش (مشتریان، فاکتور فروش)
+  | 'impersonate_users'        // ورود ادمین به حساب کاربران دیگر (Impersonation)
+  // --- مجوزهای ریزدانه سازمان فروش ---
+  | 'view_own_customers'           // دیدن مشتریانی که خودِ کاربر با آن‌ها کار کرده
+  | 'view_team_customers'          // دیدن مشتریان زیرمجموعه‌ی مستقیم (یک سطح پایین‌تر)
+  | 'view_descendant_customers'    // دیدن مشتریان کل زیردرخت سازمانی زیرمجموعه
+  | 'search_customer_by_phone'     // جستجوی سراسری مشتری بر اساس شماره تماس
+  | 'create_customer'              // ثبت مشتری جدید
+  | 'edit_customer_basic_info'     // ویرایش اطلاعات پایه مشتری
+  | 'view_customer_contact_fields' // مشاهده شماره تماس‌های مشتری
+  | 'view_customer_address'        // مشاهده آدرس مشتری
+  | 'view_customer_purchase_history'   // مشاهده تاریخچه خرید مشتری
+  | 'view_customer_call_history'       // مشاهده تاریخچه تماس مشتری
+  | 'view_customer_complaint_summary'  // مشاهده خلاصه شکایات مشتری
+  | 'view_customer_complaint_details'  // مشاهده جزئیات کامل شکایات مشتری
+  | 'start_sale_cycle'             // شروع چرخه فروش جدید با مشتری
+  | 'close_sale_cycle'             // بستن چرخه فروش فعال
+  | 'assign_sales_lead'            // ارجاع مستقیم Lead به یک فروشنده/زیرمجموعه
+  | 'reassign_sales_lead'          // جابه‌جایی/ارجاع مجدد یک Lead
+  | 'drain_salesperson_queue'      // تخلیه صف Lead های یک فروشنده (مثلاً هنگام خروج او)
+  | 'view_sales_reports'           // گزارش‌گیری از عملکرد فروش
+  | 'configure_sales_field_visibility' // پیکربندی این‌که کدام فیلدهای مشتری برای چه نقشی نمایان باشد
+  | 'manage_sales_hierarchy'       // ویرایش زنجیره سرپرستی سازمان فروش
+  // --- مجوزهای پرداخت فوری ---
+  | 'refer_for_emergency_payment'  // ارجاع یک درخواست به مسیر پرداخت فوری (بدون تایید قبلی)
+  | 'execute_emergency_payment';   // اجرای پرداخت فوری برای درخواست ارجاع‌شده به مسیر فوری
 
 export interface SystemRole {
   id: string;
@@ -78,6 +103,53 @@ export interface User {
   // the treasury approvalChain/allowedApproverIds above; used only by src/utils/salesHierarchy.ts
   // to compute which customers a salesperson/supervisor can see.
   salesSupervisorId?: string;
+  // Display-only tier label for the sales org chart UI — NEVER used as a permission source
+  // (that's always roleId/getEffectiveUserPermissions); purely cosmetic/filtering sugar.
+  salesRoleTier?: 'salesperson' | 'sales_supervisor' | 'senior_sales_supervisor' | 'sales_manager' | 'sales_deputy';
+
+  // Explicit permission denial: subtracted from the union of role/customPermissions in
+  // getEffectiveUserPermissions (src/utils/permissions.ts) — deny always wins over allow.
+  deniedPermissions?: SystemPermission[];
+}
+
+// Impersonation audit trail (Admin → user "login as"). One entry per session:
+// startedAt is set when impersonation begins, endedAt when it ends (exit or full logout).
+export interface ImpersonationLogEntry {
+  id: string;
+  adminId: string;
+  adminName: string;
+  targetUserId: string;
+  targetUserName: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+// Formal history of sales-org supervisor reassignments — independent of the live
+// User.salesSupervisorId field (which only reflects the CURRENT position). Past entries
+// are never mutated when a user's supervisor changes, so historical sales/commission
+// attribution stays intact regardless of later org moves.
+export interface SalesOrgAssignmentHistoryEntry {
+  id: string;
+  userId: string;
+  supervisorId: string | null;
+  startedAt: string;
+  endedAt?: string;
+}
+
+// Generic audit trail for security/finance-sensitive operations (impersonation lifecycle,
+// normal + emergency payment referral/execution). Intentionally NOT a full app-wide audit
+// log — see docs/BUSINESS_RULES.md for the documented scope boundary.
+export interface AuditLogEntry {
+  id: string;
+  action: string; // e.g. 'impersonation_start', 'payment_referred', 'emergency_payment_executed'
+  effectiveUserId: string;   // who the action appears to be performed by (currentUser at the time)
+  effectiveUserName: string;
+  impersonatorAdminId?: string; // set only if the effectiveUser was being impersonated by an admin
+  impersonatorAdminName?: string;
+  effectiveRoleId?: string; // which of the user's active roles granted the permission used
+  targetId?: string; // e.g. paymentRequest id, target user id
+  details?: string;
+  timestamp: string;
 }
 
 export interface Company {
@@ -355,10 +427,11 @@ export interface SupportCase {
   status: SupportCaseStatus;
 }
 
-export type RequestStatus = 
+export type RequestStatus =
   | 'pending_approval'        // در انتظار تایید
   | 'returned'                // عودت داده شده / نیاز به اصلاح
   | 'approved_pending_payment'// تایید شده - در انتظار واریز خزانه‌داری
+  | 'emergency_pending_payment' // ارجاع‌شده به مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی)
   | 'paid'                    // واریز شده (دارای فیش)
   | 'completed'               // اتمام کار
   | 'rejected';               // رد شده
@@ -377,7 +450,8 @@ export interface RequestTimelineStep {
   actorId?: string;
   actorName: string;
   actorRole: string;
-  action: 'submitted' | 'forwarded' | 'returned' | 'rejected' | 'approved' | 'paid' | 'completed' | 'commented' | 'undone';
+  action: 'submitted' | 'forwarded' | 'returned' | 'rejected' | 'approved' | 'paid' | 'completed' | 'commented' | 'undone'
+    | 'referred_for_payment' | 'referred_for_emergency_payment' | 'emergency_paid';
   actionTitle: string;
   comment?: string;
   nextActorName?: string;
@@ -465,6 +539,17 @@ export interface PaymentRequest {
 
   // ردیف‌های درخواست تجمیعی (چند فاکتور/ذینفع در یک درخواست)
   batchItems?: RequestBatchItem[];
+
+  // Explicitly recorded when a payment was marked paid with no uploaded receipt image —
+  // never a fake/placeholder image; the UI shows this flag instead of a photo.
+  paidWithoutReceipt?: boolean;
+
+  // --- مسیر پرداخت فوری (بدون تایید کامل زنجیره عادی) ---
+  isEmergencyPayment?: boolean;
+  emergencyReason?: string;
+  emergencyReferredByUserId?: string;
+  emergencyReferredByName?: string;
+  emergencyReferredAt?: string;
 }
 
 export interface WorkflowStepRule {

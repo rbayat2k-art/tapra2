@@ -77,8 +77,30 @@
 این اصل مکمل خط قرمزهای موجود (isDualRole، approvalChain، allowedApproverIds، rename نکردن اینترفیس‌ها) است و باید در طراحی هر فیچر جدید رعایت شود.
 
 13. **ماژول فروش: مشتری با قفل مالکیت پویا و دید سلسله‌مراتبی (`Customer` — گام اول)**:
-    - `User.salesSupervisorId` (زنجیره‌ی سرپرستی فروش: فروشنده ← سرپرست فروش ← مدیر فروش) **کاملاً مستقل** از `approvalChain`/`allowedApproverIds` خزانه‌داری است. این دو زنجیره هرگز نباید با هم قاطی، merge یا جایگزین یکدیگر شوند؛ هر منطقی که دید سلسله‌مراتبی فروش می‌خواهد باید از `getVisibleCustomerIds` در `src/utils/salesHierarchy.ts` استفاده کند، نه از `approvalChain`.
+    - `User.salesSupervisorId` (زنجیره‌ی سرپرستی فروش: فروشنده ← سرپرست فروش ← سرپرست ارشد فروش ← مدیر فروش ← معاونت فروش) **کاملاً مستقل** از `approvalChain`/`allowedApproverIds` خزانه‌داری است. این دو زنجیره هرگز نباید با هم قاطی، merge یا جایگزین یکدیگر شوند؛ هر منطقی که دید سلسله‌مراتبی فروش می‌خواهد باید از `getVisibleCustomerIds` در `src/utils/salesHierarchy.ts` استفاده کند، نه از `approvalChain`.
     - قفل مالکیت پویا: تا وقتی یک مشتری چرخه‌ی فروش `active` دارد (`Customer.activityLog`)، هیچ فروشنده‌ی دیگری نباید بتواند چرخه‌ی فروش جدیدی برایش ثبت کند (`canStartNewSale` باید قبل از هر `startNewSaleCycle` چک شود). `currentActiveSalespersonId` هرگز نباید به‌عنوان فیلد ذخیره‌شده اضافه شود؛ همیشه باید از روی `activityLog` با `getCurrentActiveSalespersonId` محاسبه شود.
-    - جستجوی مشتری بر اساس شماره تماس (`findCustomerByPhone`) باید سراسری (مستقل از دید سلسله‌مراتبی) بماند؛ فقط «لیست مشتریان قابل‌مشاهده» (`getVisibleCustomerIds`) باید بر اساس زنجیره‌ی `salesSupervisorId` محدود شود. این دو مسیر دسترسی را با هم قاطی نکنید.
-    - `SystemPermission` جدید `sales_access` فقط باید از طریق `customPermissions`/رجیستری پرمیشن‌ها اعمال شود؛ برای این گام اول نیازی به افزودن مقدار جدید به `UserRole` نیست (سه کاربر نمونه‌ی فروش همگی `role: 'requestor'` با `customPermissions: ['sales_access']` هستند).
+    - جستجوی مشتری بر اساس شماره تماس (`findCustomerByPhone`) باید سراسری (مستقل از دید سلسله‌مراتبی) بماند؛ فقط «لیست مشتریان قابل‌مشاهده» (`getVisibleCustomerIds`) باید بر اساس زنجیره‌ی `salesSupervisorId` **و** عمق مجوز مؤثر (`view_own_customers`/`view_team_customers`/`view_descendant_customers`) محدود شود. این دو مسیر دسترسی را با هم قاطی نکنید.
+    - `SystemPermission` جدید `sales_access` و ۲۰ مجوز ریزدانه‌ی فروش دیگر از طریق نقش‌های رسمی (`role_salesperson` و ...، به قانون ۱۵ مراجعه کنید) اعمال می‌شوند — دیگر از الگوی `role: 'requestor'` + `customPermissions: ['sales_access']` استفاده نکنید (نمونه‌ی قدیمی بود، اصلاح شد).
     - «تکمیل‌شدن» یک چرخه‌ی فروش در این گام صرفاً دستی/تستی است (`closeSaleCycle`، فقط توسط فروشنده‌ی مالک فعلی)؛ منطق واقعی («فاکتور تکمیل شد» بر اساس وضعیت ردیف‌های کالا/خدمت) در فاز فاکتور فروش اضافه می‌شود — به `docs/SALES_ARCHITECTURE_DRAFT.md` بخش ۱۴ مراجعه کنید.
+
+14. **Impersonation امن (`impersonate_users`)**:
+    - قابلیت ورود ادمین به حساب کاربر دیگر **حذف نمی‌شود** — فقط دارنده‌ی صریح پرمیشن `impersonate_users` مجاز است. چک همیشه روی `realActor = impersonatorAdmin || currentUser` انجام می‌شود (نه `currentUser` لحظه‌ای)، تا حتی فراخوانی مستقیم `handleImpersonateUser` با هویت غیرمجاز رد شود.
+    - هر شروع/پایان Impersonation باید در `IMPERSONATION_LOG` (`ImpersonationLogEntry`) ثبت شود؛ Logout کامل باید هم `currentUser` هم `impersonatorAdmin` (state + `localStorage`) را پاک کند و رکورد باز را ببندد.
+    - `storage.getCurrentUser()` هرگز نباید در نبود نشست معتبر به یک کاربر پیش‌فرض (به‌خصوص ادمین) fallback کند؛ نبود نشست = صفحه‌ی لاگین، نه ورود خودکار. رمز `admin`/`123456` هرگز نباید Master Password باشد — چک رمز همیشه `foundUser.password === cleanPass` است.
+
+15. **نقش‌های سازمان فروش با شناسه‌ی فنی پایدار**:
+    - ۵ نقش (`role_salesperson`, `role_sales_supervisor`, `role_senior_sales_supervisor`, `role_sales_manager`, `role_sales_deputy`) با `id`/`code` پایدار در `DEFAULT_ROLES`. تشخیص نقش هرجا لازم شود باید از `roleId`/پرمیشن مؤثر باشد، **نه** `roleTitle.includes(...)`.
+    - این نقش‌ها عمداً بدون `manage_vendors`/`create_request`/`view_branch_requests` تعریف شده‌اند؛ صرف داشتن `sales_access` هرگز نباید دسترسی مالی ایجاد کند. اگر نقش/کاربر فروش جدیدی اضافه می‌کنید، این سه مجوز را به `permissions` آن اضافه نکنید مگر ادمین صریحاً بخواهد.
+    - سلسله‌مراتب همان مدل تک‌والد/چند-فرزند `salesSupervisorId` است؛ برای «کل زیردرخت» یا «Lead-assignment scope» از `getSalesSubordinateIds`/`canAssignLeadTo` (`src/utils/salesHierarchy.ts`) استفاده کنید، منطق پیمایش را جای دیگر تکرار نکنید.
+    - جابه‌جایی سازمانی (`salesSupervisorId` جدید) هرگز نباید `Customer.activityLog` یا رکوردهای قبلی `SalesOrgAssignmentHistoryEntry` را بازنویسی کند.
+
+16. **قفل دسترسی مالی سه‌لایه + مدل چندنقشی Deny**:
+    - هر گیت دسترسی جدید (منو/تب/عملیات) باید سه لایه را هم‌زمان رعایت کند: `Sidebar.tsx` (`hasAccess`)، `App.tsx` (`TAB_GUARDS` + `useEffect` reset)، و خودِ handler عملیات (`hasPermission(effectivePermissions, ...)`) — هرگز فقط یکی از این سه.
+    - `getEffectiveUserPermissions` = اجتماع پرمیشن‌های نقش‌های فعال + `customPermissions`، **منهای** `deniedPermissions`. Deny همیشه اولویت دارد. هیچ منطق جدیدی نباید مستقیماً `role`/`roleTitle` را چک کند وقتی `SystemPermission` مناسب وجود دارد.
+    - قلمرو داده (مثل دید مشتریان) باید صریحاً بر اساس عمق مجوز محاسبه شود (خودم/زیرمجموعه مستقیم/کل زیردرخت)؛ هرگز «هر مجوز فروش = دید کامل».
+
+17. **پرداخت عادی و پرداخت فوری**:
+    - مسئول پرداخت فقط می‌تواند درخواستی را پرداخت کند که هم `approved_pending_payment` باشد هم فعلاً به خودش ارجاع شده (`currentApproverId === currentUser.id`). هیچ fallback نقش‌محور («هر `treasury_executor` همه را می‌بیند») دوباره اضافه نکنید.
+    - نبود فیش واریز هرگز نباید با یک تصویر placeholder/Unsplash پر شود؛ همیشه `paidWithoutReceipt: true` + نمایش وضعیت شفاف.
+    - پرداخت فوری نیازمند مسیر دو-نفره (`refer_for_emergency_payment` ≠ `execute_emergency_payment`)، دلیل اجباری، و منع خودارجاعی (لیست مقصد ارجاع فوری همیشه ارجاع‌دهنده را حذف می‌کند). هیچ کاربر/نقش نمونه‌ای نباید این دو مجوز را به‌صورت پیش‌فرض داشته باشد.
+    - هر اکشن پرداخت (عادی یا فوری) باید در `AuditLogEntry` (`logAudit`) ثبت شود، شامل `effectiveUserId` و (در صورت Impersonation) `impersonatorAdminId`.

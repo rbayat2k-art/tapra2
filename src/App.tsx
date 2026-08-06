@@ -7,6 +7,8 @@ import {
 import { storage } from './utils/storage';
 import { getJalaliNow } from './utils/persianDate';
 import { numberToPersianWords, formatRial } from './utils/numberToWords';
+import { useEffectivePermissions, hasPermission, canAccessNavItem } from './utils/permissions';
+import { logAudit } from './utils/auditLog';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -121,13 +123,42 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
+  // Effective permissions of the REAL logged-in identity (not affected by whichever user is
+  // currently being viewed while impersonating) — used to gate impersonation itself and any
+  // tab/action guard that must never be fooled by a stale/forged currentUser.
+  const realActor = impersonatorAdmin || currentUser;
+  const realActorPermissions = useEffectivePermissions(realActor, roles);
+  // Effective permissions of whoever is CURRENTLY being viewed (the impersonated user during
+  // impersonation, or the logged-in user otherwise) — used for menu/tab/data/operation guards
+  // so a second active role reliably unlocks all four together.
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
+
   const handleImpersonateUser = (targetUser: User) => {
-    if (!impersonatorAdmin && currentUser?.role === 'admin') {
-      setImpersonatorAdmin(currentUser);
-      localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(currentUser));
+    // Hardened: this check runs on the REAL actor's permissions every single call, regardless
+    // of whether an impersonation session is already open — so even a direct call to this
+    // handler (e.g. from devtools) with a non-admin currentUser is rejected, and nesting
+    // impersonation inside impersonation can't silently re-derive authorization from the
+    // (already-swapped) currentUser.
+    if (!realActor || !hasPermission(realActorPermissions, ['impersonate_users'])) return;
+
+    if (!impersonatorAdmin) {
+      setImpersonatorAdmin(realActor);
+      localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(realActor));
     }
     setCurrentUser(targetUser);
     storage.setCurrentUser(targetUser);
+
+    const log = storage.getImpersonationLog();
+    storage.saveImpersonationLog([...log, {
+      id: `imp_${Date.now()}`,
+      adminId: realActor.id,
+      adminName: realActor.fullName,
+      targetUserId: targetUser.id,
+      targetUserName: targetUser.fullName,
+      startedAt: getJalaliNow()
+    }]);
+    logAudit({ action: 'impersonation_start', effectiveUser: realActor, roles, permissionUsed: 'impersonate_users', targetId: targetUser.id, details: `شروع مشاهده به‌جای ${targetUser.fullName}` });
+
     if (targetUser.role === 'requestor') {
       setActiveTab('my_requests');
     } else {
@@ -135,8 +166,22 @@ export default function App() {
     }
   };
 
+  const endOpenImpersonationLogEntry = (adminId: string, targetUserId: string) => {
+    const log = storage.getImpersonationLog();
+    const idx = [...log].reverse().findIndex((e) => e.adminId === adminId && e.targetUserId === targetUserId && !e.endedAt);
+    if (idx === -1) return;
+    const realIdx = log.length - 1 - idx;
+    const updated = [...log];
+    updated[realIdx] = { ...updated[realIdx], endedAt: getJalaliNow() };
+    storage.saveImpersonationLog(updated);
+  };
+
   const handleExitImpersonation = () => {
     if (impersonatorAdmin) {
+      if (currentUser) {
+        endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
+        logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان مشاهده به‌جای ${currentUser.fullName}` });
+      }
       setCurrentUser(impersonatorAdmin);
       storage.setCurrentUser(impersonatorAdmin);
       setImpersonatorAdmin(null);
@@ -144,6 +189,41 @@ export default function App() {
       setActiveTab('admin');
     }
   };
+
+  // Tab render guard — defense in depth beyond Sidebar hiding the menu item. Mirrors
+  // Sidebar.tsx's exact per-tab visibility decision (same canAccessNavItem calls + the same
+  // customPermissions-based ad-hoc checks for admin/roles_permissions/all_communications) so
+  // a tab can never render its data/operations just because activeTab was set some other way
+  // (stale state, a future deep link, etc.) while the Sidebar item stays hidden.
+  const isAdminUser = currentUser?.role === 'admin';
+  const canSeeAdminUsersTab = isAdminUser || !!currentUser?.customPermissions?.includes('manage_users');
+  const canSeeRolesTab = isAdminUser || !!currentUser?.customPermissions?.includes('manage_roles');
+  const canSeeAllCommunicationsTab = isAdminUser || !!currentUser?.customPermissions?.includes('manage_users');
+  const TAB_GUARDS: Record<string, boolean> = {
+    my_requests: canAccessNavItem(currentUser, effectivePermissions, ['create_request']),
+    assigned_tasks: canAccessNavItem(currentUser, effectivePermissions, ['manage_assigned_tasks']),
+    approval_inbox: canAccessNavItem(currentUser, effectivePermissions, ['approve_branch_request', 'approve_treasury', 'execute_payment']),
+    cost_centers: canAccessNavItem(currentUser, effectivePermissions, ['manage_cost_centers']),
+    companies: canAccessNavItem(currentUser, effectivePermissions, ['manage_companies']),
+    vendors: canAccessNavItem(currentUser, effectivePermissions, ['manage_vendors']),
+    vendor_categories: canAccessNavItem(currentUser, effectivePermissions, ['manage_vendors']),
+    customers: canAccessNavItem(currentUser, effectivePermissions, ['sales_access']),
+    workflow: canAccessNavItem(currentUser, effectivePermissions, ['view_analytics']),
+    letters: canAccessNavItem(currentUser, effectivePermissions, ['manage_letters']),
+    support: canAccessNavItem(currentUser, effectivePermissions, ['manage_support_cases', 'financial_approve_support', 'view_support_reports']),
+    admin: canSeeAdminUsersTab,
+    roles_permissions: canSeeRolesTab,
+    all_communications: canSeeAllCommunicationsTab
+  };
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const guard = TAB_GUARDS[activeTab];
+    if (guard === false) {
+      setActiveTab('dashboard');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentUser, effectivePermissions]);
 
   // Modals
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
@@ -636,7 +716,7 @@ export default function App() {
     if (!currentUser) return false;
     // Admins see all pending requests
     if (currentUser.role === 'admin') {
-      return r.status === 'pending_approval' || r.status === 'approved_pending_payment';
+      return r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'emergency_pending_payment';
     }
     // Requestors do not process pending approval inbox
     if (currentUser.role === 'requestor') {
@@ -651,7 +731,7 @@ export default function App() {
     }
     // Treasury Executors see requests approved and waiting for payment execution
     if (currentUser.role === 'treasury_executor') {
-      return r.status === 'approved_pending_payment' || r.status === 'pending_approval';
+      return r.status === 'approved_pending_payment' || r.status === 'pending_approval' || r.status === 'emergency_pending_payment';
     }
     return false;
   });
@@ -689,6 +769,15 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onLogout={() => {
+          // Full logout clears BOTH the current (possibly impersonated) session and any
+          // open impersonation session — a stray impersonatorAdmin must never survive a
+          // real logout, or the next login could see/restore a stale admin identity.
+          if (impersonatorAdmin && currentUser) {
+            endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
+            logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان اجباری مشاهده (Logout کامل) به‌جای ${currentUser.fullName}` });
+          }
+          setImpersonatorAdmin(null);
+          localStorage.removeItem('shavaz_impersonator_admin');
           storage.setCurrentUser(null);
           setCurrentUser(null);
         }}
@@ -712,7 +801,7 @@ export default function App() {
               <ShieldAlert className="w-4 h-4" />
             </span>
             <span>
-              شما هم‌اکنون در حالت شبیه‌سازی دسترسی با حساب کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> هستید.
+              در حال مشاهده سیستم به‌جای کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
             </span>
           </div>
           <button
@@ -922,6 +1011,7 @@ export default function App() {
             <CustomersView
               customers={customers}
               users={users}
+              roles={roles}
               currentUser={currentUser}
               onUpdateCustomers={setCustomers}
             />
@@ -1085,6 +1175,8 @@ export default function App() {
         onClose={() => setIsDetailModalOpen(false)}
         currentUser={currentUser}
         users={users}
+        roles={roles}
+        impersonatorAdmin={impersonatorAdmin}
         onUpdateRequest={handleUpdateRequest}
         onDeleteRequest={handleDeleteRequest}
         onOpenPrintModal={(req) => {

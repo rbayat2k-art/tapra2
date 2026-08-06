@@ -58,7 +58,7 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
   // 1. OPEN / MY ACTIONABLE REQUESTS (درخواست‌های در انتظار اقدام مستقیم من)
   const myActionRequests = useMemo(() => {
     return requests.filter(r => {
-      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned';
+      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned' || r.status === 'emergency_pending_payment';
       if (!isOpenStatus) return false;
 
       // Admin sees all open requests in my action tab
@@ -76,16 +76,12 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
       // If assigned specifically to this user
       if (r.currentApproverId === currentUser.id) return true;
 
-      // Treasury Executors handle payment execution for approved requests or pending approval in their branches
-      if (isTreasury) {
-        if (r.status === 'approved_pending_payment') return true;
-        if (r.status === 'pending_approval') {
-          if (currentUser.allowedCostCenterIds && currentUser.allowedCostCenterIds.length > 0) {
-            return currentUser.allowedCostCenterIds.includes(r.costCenterId);
-          }
-          return true;
-        }
-      }
+      // NOTE: payment execution (approved_pending_payment) intentionally has NO role-based
+      // fallback here — a treasury executor may ONLY see/pay a request that is specifically
+      // referred to them (currentApproverId === currentUser.id, handled above). The old
+      // broad "any treasury_executor sees all approved_pending_payment/pending_approval"
+      // fallback was removed: it bypassed the specific-referral rule whenever
+      // currentApproverId happened to be unset. See docs/BUSINESS_RULES.md.
 
       // Approvers handle requests in their assigned cost centers/branches
       if (isApprover && r.status === 'pending_approval') {
@@ -105,7 +101,7 @@ export const ApprovalInboxView: React.FC<ApprovalInboxViewProps> = ({
   // 2. IN-PROGRESS / TRACKED REQUESTS (درخواست‌های در حال پیگیری - تأییدشده توسط من یا در جریان اقدام سایرین/خزانه‌داری)
   const inProgressRequests = useMemo(() => {
     return requests.filter(r => {
-      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned';
+      const isOpenStatus = r.status === 'pending_approval' || r.status === 'approved_pending_payment' || r.status === 'returned' || r.status === 'emergency_pending_payment';
       if (!isOpenStatus) return false;
 
       if (isAdmin) return true;

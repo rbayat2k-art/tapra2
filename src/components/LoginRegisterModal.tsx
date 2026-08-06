@@ -61,8 +61,9 @@ export const LoginRegisterModal: React.FC<LoginRegisterModalProps> = ({
     );
 
     if (foundUser) {
-      // Password check
-      if (foundUser.password && foundUser.password !== cleanPass && cleanPass !== '123456' && cleanPass !== 'admin') {
+      // Password check — strict match only. No universal bypass password: '123456' only
+      // works for accounts whose actual stored password is '123456', same for any other value.
+      if (foundUser.password && foundUser.password !== cleanPass) {
         setLoginError('رمز عبور وارد شده نادرست است.');
         return;
       }

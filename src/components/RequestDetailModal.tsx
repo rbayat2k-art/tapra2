@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { PaymentRequest, User, RequestStatus, AttachmentFile, RequestBatchItem } from '../types';
+import { PaymentRequest, User, RequestStatus, AttachmentFile, RequestBatchItem, SystemRole } from '../types';
 import { formatRial, numberToPersianWords } from '../utils/numberToWords';
 import { getJalaliNow } from '../utils/persianDate';
+import { useEffectivePermissions, hasPermission, getEffectiveUserPermissions } from '../utils/permissions';
+import { logAudit } from '../utils/auditLog';
 import { 
   X, CheckCircle2, Clock, RefreshCw, RotateCcw, XCircle, 
   Send, Upload, Printer, Building, MapPin, 
@@ -16,6 +18,8 @@ interface RequestDetailModalProps {
   onClose: () => void;
   currentUser: User | null;
   users: User[];
+  roles: SystemRole[];
+  impersonatorAdmin?: User | null;
   onUpdateRequest: (updatedReq: PaymentRequest) => void;
   onDeleteRequest?: (requestId: string) => void;
   onOpenPrintModal: (req: PaymentRequest) => void;
@@ -27,10 +31,13 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   onClose,
   currentUser,
   users,
+  roles,
+  impersonatorAdmin,
   onUpdateRequest,
   onDeleteRequest,
   onOpenPrintModal
 }) => {
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
   const [commentText, setCommentText] = useState('');
   const [selectedForwardUserId, setSelectedForwardUserId] = useState(users[0]?.id || '');
   const [returnReason, setReturnReason] = useState('');
@@ -71,6 +78,15 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   const [showCancellationInput, setShowCancellationInput] = useState(false);
   const [cancellationReasonInput, setCancellationReasonInput] = useState('');
   const [selectedDelegatedUserId, setSelectedDelegatedUserId] = useState<string>('');
+
+  // Normal payment-officer referral/reassignment (admin only)
+  const [showPaymentReferralInput, setShowPaymentReferralInput] = useState(false);
+  const [selectedPaymentOfficerId, setSelectedPaymentOfficerId] = useState<string>('');
+
+  // Emergency payment referral/execution state
+  const [showEmergencyReferralInput, setShowEmergencyReferralInput] = useState(false);
+  const [emergencyReasonInput, setEmergencyReasonInput] = useState('');
+  const [selectedEmergencyOfficerId, setSelectedEmergencyOfficerId] = useState<string>('');
 
   // Users this approver is allowed to forward/approve requests to. Falls back to
   // everyone except themself if the admin hasn't configured a restricted list yet.
@@ -126,9 +142,30 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
   const canApproveAndForward = !isSubmitting && (isApproverRole || isAdminRole) && isCurrentResponsibleParty && request.status === 'pending_approval';
   const canFinalApproveTreasury = !isSubmitting && (isAdminRole || isTreasuryExecRole) && isCurrentResponsibleParty && request.status === 'pending_approval';
-  const canMarkPaid = !isSubmitting && (isTreasuryExecRole || isAdminRole) && isCurrentResponsibleParty && (request.status === 'approved_pending_payment' || request.status === 'pending_approval' || request.status === 'paid');
+  // Fixed: a payment officer may ONLY pay a request that is already fully approved
+  // (approved_pending_payment) AND currently referred to them specifically — never a
+  // still-pending_approval request. See docs/BUSINESS_RULES.md.
+  const canMarkPaid = !isSubmitting && (isTreasuryExecRole || isAdminRole) && isCurrentResponsibleParty && request.status === 'approved_pending_payment';
   const canReturnOrReject = !isSubmitting && (isApproverRole || isAdminRole || isTreasuryExecRole) && isCurrentResponsibleParty && (request.status === 'pending_approval' || request.status === 'approved_pending_payment');
   const canDelegateExecution = !isSubmitting && (isAdminRole || currentUser?.roleTitle?.includes('مدیر ارشد')) && (request.status === 'approved_pending_payment' || request.status === 'pending_approval');
+
+  // Admin-only: reassign/refer an already-approved request to a different payment officer
+  // (the "پس از هماهنگی" case in the normal flow) — reuses currentApproverId, same pattern
+  // as canDelegateExecution above, but a distinct action/timeline entry for clarity + audit.
+  const canReferForPayment = !isSubmitting && isAdminRole && request.status === 'approved_pending_payment';
+  const paymentOfficers = users.filter((u) => hasPermission(getEffectiveUserPermissions(u, roles), ['execute_payment']));
+
+  // Emergency payment path — bypasses normal approval entirely, requires explicit referral
+  // by someone with refer_for_emergency_payment to someone with execute_emergency_payment.
+  const canReferForEmergencyPayment = !isSubmitting && !request.isEmergencyPayment &&
+    (request.status === 'pending_approval' || request.status === 'approved_pending_payment') &&
+    hasPermission(effectivePermissions, ['refer_for_emergency_payment']);
+  const canExecuteEmergencyPayment = !isSubmitting && request.status === 'emergency_pending_payment' &&
+    isCurrentResponsibleParty && hasPermission(effectivePermissions, ['execute_emergency_payment']);
+  // Self-referral is blocked structurally: the referrer never appears in their own target list.
+  const emergencyPaymentOfficers = users.filter((u) =>
+    u.id !== currentUser?.id && hasPermission(getEffectiveUserPermissions(u, roles), ['execute_emergency_payment'])
+  );
 
   // Consolidated / Batch Request Row-Level Approval
   const hasBatchItems = !!request.batchItems && request.batchItems.length > 0;
@@ -510,21 +547,14 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     const actorName = currentUser?.fullName || 'امیرحسین رضایی';
     const actorRole = currentUser?.roleTitle || 'کارمند اجرا';
 
+    // No receipt uploaded -> paidWithoutReceipt=true, NEVER a fake/placeholder image.
     let receiptAttachment: AttachmentFile | undefined = request.paymentReceiptAttachment;
+    const paidWithoutReceipt = !receiptFile && !receiptAttachment;
     if (receiptFile) {
       receiptAttachment = {
         id: `att_rcpt_${Date.now()}`,
         name: receiptFileName || 'عکس_فیش_واریزی_بانک.jpg',
         url: receiptFile,
-        type: 'image/jpeg',
-        size: 1024000,
-        uploadedAt: getJalaliNow()
-      };
-    } else {
-      receiptAttachment = {
-        id: `att_rcpt_${Date.now()}`,
-        name: 'فیش_واریز_پایا.jpg',
-        url: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=800&q=80',
         type: 'image/jpeg',
         size: 1024000,
         uploadedAt: getJalaliNow()
@@ -539,9 +569,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
         actorName,
         actorRole,
         action: 'paid' as const,
-        actionTitle: 'واریز بانکی انجام شد و فیش آپلود گردید',
+        actionTitle: paidWithoutReceipt ? 'واریز بانکی انجام شد (بدون فیش)' : 'واریز بانکی انجام شد و فیش آپلود گردید',
         timestamp: getJalaliNow(),
-        comment: commentText.trim() || 'عملیات واریز وجه انجام و تصویر فیش واریز در سیستم بایگانی شد.'
+        comment: commentText.trim() || (paidWithoutReceipt ? 'عملیات واریز وجه بدون فیش ثبت شد.' : 'عملیات واریز وجه انجام و تصویر فیش واریز در سیستم بایگانی شد.')
       }
     ];
 
@@ -549,14 +579,158 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
       ...request,
       status: 'paid',
       paymentReceiptAttachment: receiptAttachment,
+      paidWithoutReceipt,
       updatedAt: getJalaliNow(),
       timeline: updatedTimeline
     };
 
     onUpdateRequest(updated);
+    if (currentUser) {
+      logAudit({ action: 'payment_executed', effectiveUser: currentUser, impersonatorAdmin: impersonatorAdmin || undefined, roles, permissionUsed: 'execute_payment', targetId: request.id, details: `پرداخت ${request.trackingCode}${paidWithoutReceipt ? ' (بدون فیش)' : ''}` });
+    }
     setCommentText('');
     setIsSubmitting(false);
-    alert('تایید واریز وجه و بایگانی فیش با موفقیت انجام شد!');
+    alert(paidWithoutReceipt ? 'پرداخت بدون فیش با موفقیت ثبت شد.' : 'تایید واریز وجه و بایگانی فیش با موفقیت انجام شد!');
+  };
+
+  // Admin refers/reassigns an already-approved request to a different payment officer.
+  const handleReferForPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    const target = paymentOfficers.find((u) => u.id === selectedPaymentOfficerId);
+    if (!target) {
+      alert('لطفاً مسئول پرداخت مقصد را انتخاب کنید.');
+      return;
+    }
+    setIsSubmitting(true);
+    const updatedTimeline = [
+      ...request.timeline,
+      {
+        id: `tl_${Date.now()}`,
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'referred_for_payment' as const,
+        actionTitle: 'ارجاع/تغییر مسئول پرداخت',
+        nextActorName: target.fullName,
+        timestamp: getJalaliNow(),
+        comment: commentText.trim() || `درخواست برای پرداخت به ${target.fullName} ارجاع داده شد.`
+      }
+    ];
+    const updated: PaymentRequest = {
+      ...request,
+      currentApproverId: target.id,
+      currentApproverName: target.fullName,
+      currentApproverPhone: target.phone,
+      updatedAt: getJalaliNow(),
+      timeline: updatedTimeline
+    };
+    onUpdateRequest(updated);
+    logAudit({ action: 'payment_referred', effectiveUser: currentUser, impersonatorAdmin: impersonatorAdmin || undefined, roles, targetId: request.id, details: `ارجاع پرداخت ${request.trackingCode} به ${target.fullName}` });
+    setCommentText('');
+    setShowPaymentReferralInput(false);
+    setIsSubmitting(false);
+    alert('درخواست برای پرداخت به مسئول جدید ارجاع داده شد.');
+  };
+
+  // Refer a request to the emergency payment path — bypasses normal approval, mandatory reason.
+  const handleReferForEmergencyPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    if (!emergencyReasonInput.trim()) {
+      alert('ذکر دلیل ارجاع به مسیر پرداخت فوری اجباری است.');
+      return;
+    }
+    const target = emergencyPaymentOfficers.find((u) => u.id === selectedEmergencyOfficerId);
+    if (!target) {
+      alert('لطفاً مسئول پرداخت فوری مقصد را انتخاب کنید.');
+      return;
+    }
+    setIsSubmitting(true);
+    const now = getJalaliNow();
+    const updatedTimeline = [
+      ...request.timeline,
+      {
+        id: `tl_${Date.now()}`,
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'referred_for_emergency_payment' as const,
+        actionTitle: 'ارجاع به مسیر پرداخت فوری',
+        nextActorName: target.fullName,
+        timestamp: now,
+        comment: `دلیل: ${emergencyReasonInput.trim()}`
+      }
+    ];
+    const updated: PaymentRequest = {
+      ...request,
+      status: 'emergency_pending_payment',
+      isEmergencyPayment: true,
+      emergencyReason: emergencyReasonInput.trim(),
+      emergencyReferredByUserId: currentUser.id,
+      emergencyReferredByName: currentUser.fullName,
+      emergencyReferredAt: now,
+      currentApproverId: target.id,
+      currentApproverName: target.fullName,
+      currentApproverPhone: target.phone,
+      updatedAt: now,
+      timeline: updatedTimeline
+    };
+    onUpdateRequest(updated);
+    logAudit({
+      action: 'emergency_payment_referred', effectiveUser: currentUser, impersonatorAdmin: impersonatorAdmin || undefined,
+      roles, permissionUsed: 'refer_for_emergency_payment', targetId: request.id,
+      details: `ارجاع فوری ${request.trackingCode} به ${target.fullName} — دلیل: ${emergencyReasonInput.trim()}`
+    });
+    setEmergencyReasonInput('');
+    setShowEmergencyReferralInput(false);
+    setIsSubmitting(false);
+    alert('درخواست به مسیر پرداخت فوری ارجاع داده شد.');
+  };
+
+  const handleExecuteEmergencyPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    setIsSubmitting(true);
+    const paidWithoutReceipt = !receiptFile && !request.paymentReceiptAttachment;
+    let receiptAttachment: AttachmentFile | undefined = request.paymentReceiptAttachment;
+    if (receiptFile) {
+      receiptAttachment = {
+        id: `att_rcpt_${Date.now()}`,
+        name: receiptFileName || 'عکس_فیش_واریزی_بانک.jpg',
+        url: receiptFile,
+        type: 'image/jpeg',
+        size: 1024000,
+        uploadedAt: getJalaliNow()
+      };
+    }
+    const updatedTimeline = [
+      ...request.timeline,
+      {
+        id: `tl_${Date.now()}`,
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'emergency_paid' as const,
+        actionTitle: paidWithoutReceipt ? 'پرداخت فوری انجام شد (بدون فیش)' : 'پرداخت فوری انجام شد',
+        timestamp: getJalaliNow(),
+        comment: commentText.trim() || 'پرداخت فوری بدون تایید کامل زنجیره عادی ثبت شد.'
+      }
+    ];
+    const updated: PaymentRequest = {
+      ...request,
+      status: 'paid',
+      paymentReceiptAttachment: receiptAttachment,
+      paidWithoutReceipt,
+      updatedAt: getJalaliNow(),
+      timeline: updatedTimeline
+    };
+    onUpdateRequest(updated);
+    logAudit({
+      action: 'emergency_payment_executed', effectiveUser: currentUser, impersonatorAdmin: impersonatorAdmin || undefined,
+      roles, permissionUsed: 'execute_emergency_payment', targetId: request.id,
+      details: `پرداخت فوری ${request.trackingCode}${paidWithoutReceipt ? ' (بدون فیش)' : ''}`
+    });
+    setCommentText('');
+    setIsSubmitting(false);
+    alert('پرداخت فوری با موفقیت ثبت شد.');
   };
 
   const handleReturnForCorrection = () => {
@@ -1444,11 +1618,16 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                     </a>
                   </div>
                 </div>
+              ) : request.paidWithoutReceipt ? (
+                <div className="p-4 bg-amber-950/30 border border-amber-500/40 rounded-xl text-center text-amber-300 text-xs font-bold flex flex-col items-center gap-1">
+                  <AlertCircle className="w-6 h-6 text-amber-400" />
+                  <span>پرداخت بدون فیش ثبت شد.</span>
+                </div>
               ) : (
                 <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-center text-slate-400 text-xs">
                   <Clock className="w-6 h-6 mx-auto text-slate-500 mb-1" />
                   <span>هنوز فیش واریزی ثبت نشده است.</span>
-                  
+
                   {/* Upload Receipt Button for Treasury */}
                   <div className="mt-3">
                     <label htmlFor="receipt-upload-input" className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-xl cursor-pointer inline-flex items-center gap-1 transition shadow">
@@ -1726,6 +1905,72 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                     </div>
                   )}
 
+                  {/* Refer/Reassign Payment Officer (Admin only) */}
+                  {canReferForPayment && (
+                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-sky-300 block">
+                          ارجاع/تغییر مسئول پرداخت
+                        </span>
+                        <p className="text-[9.5px] text-slate-400 mt-1 leading-tight">
+                          ارجاع این درخواست به یک مسئول پرداخت دیگر (پس از هماهنگی)
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowPaymentReferralInput(!showPaymentReferralInput)}
+                        disabled={isSubmitting}
+                        className="w-full py-2 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>ارجاع پرداخت</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Refer for Emergency Payment */}
+                  {canReferForEmergencyPayment && (
+                    <div className="p-2.5 bg-slate-900 border border-rose-500/40 rounded-xl space-y-1.5 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-rose-300 block">
+                          ارجاع به مسیر پرداخت فوری
+                        </span>
+                        <p className="text-[9.5px] text-slate-400 mt-1 leading-tight">
+                          بدون تایید کامل زنجیره عادی — نیازمند دلیل و مسئول پرداخت فوری مشخص
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowEmergencyReferralInput(!showEmergencyReferralInput)}
+                        disabled={isSubmitting}
+                        className="w-full py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>ارجاع به مسیر فوری</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Execute Emergency Payment */}
+                  {canExecuteEmergencyPayment && (
+                    <div className="p-2.5 bg-slate-900 border border-rose-500/40 rounded-xl space-y-1.5 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-rose-300 block">
+                          پرداخت فوری
+                        </span>
+                        <p className="text-[9.5px] text-slate-400 mt-1 leading-tight">
+                          دلیل: {request.emergencyReason || '—'} | ارجاع‌دهنده: {request.emergencyReferredByName || '—'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleExecuteEmergencyPayment}
+                        disabled={isSubmitting}
+                        className="w-full py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>ثبت پرداخت فوری</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Return for Correction / Reject */}
                   {canReturnOrReject && (
                     <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5 flex flex-col justify-between">
@@ -1778,6 +2023,73 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                     className="px-3 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg"
                   >
                     رد کامل درخواست
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Payment Officer Referral Input */}
+            {showPaymentReferralInput && (
+              <div className="p-3 bg-sky-950/40 border border-sky-500/40 rounded-xl space-y-2 mt-2">
+                <label className="block text-xs font-bold text-sky-300">
+                  انتخاب مسئول پرداخت مقصد
+                </label>
+                <select
+                  value={selectedPaymentOfficerId}
+                  onChange={(e) => setSelectedPaymentOfficerId(e.target.value)}
+                  className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700"
+                >
+                  <option value="">— انتخاب کنید —</option>
+                  {paymentOfficers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={handleReferForPayment}
+                    className="px-3 py-1.5 bg-sky-600 text-white text-xs font-bold rounded-lg"
+                  >
+                    تایید ارجاع
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Emergency Payment Referral Input */}
+            {showEmergencyReferralInput && (
+              <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl space-y-2 mt-2">
+                <label className="block text-xs font-bold text-rose-300">
+                  دلیل ارجاع به مسیر پرداخت فوری (الزامی)
+                </label>
+                <input
+                  type="text"
+                  value={emergencyReasonInput}
+                  onChange={(e) => setEmergencyReasonInput(e.target.value)}
+                  placeholder="مثلاً: توقف زنجیره تامین، تعهد فوری قراردادی..."
+                  className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700"
+                />
+                <label className="block text-xs font-bold text-rose-300">
+                  مسئول پرداخت فوری مقصد
+                </label>
+                <select
+                  value={selectedEmergencyOfficerId}
+                  onChange={(e) => setSelectedEmergencyOfficerId(e.target.value)}
+                  className="w-full bg-slate-900 text-white text-xs rounded-xl px-3 py-2 border border-slate-700"
+                >
+                  <option value="">— انتخاب کنید —</option>
+                  {emergencyPaymentOfficers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
+                </select>
+                {emergencyPaymentOfficers.length === 0 && (
+                  <p className="text-[10px] text-amber-400">هیچ کاربری مجوز execute_emergency_payment ندارد؛ ابتدا از پنل مدیریت کاربران این مجوز را به فرد موردنظر بدهید.</p>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={handleReferForEmergencyPayment}
+                    className="px-3 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg"
+                  >
+                    تایید ارجاع فوری
                   </button>
                 </div>
               </div>
