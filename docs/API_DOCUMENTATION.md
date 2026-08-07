@@ -1,5 +1,9 @@
 # 🔌 مستندات API و ارتباطات (API & Service Architecture Documentation)
 
+> در نسخهٔ فعلی API عملیاتی وجود ندارد و مسیرهای این سند قرارداد پیشنهادی Backend هستند. پیاده‌سازی UI یا Permission به معنی وجود API نیست.
+
+دامنه‌های API لازم در مراحل بعد: هویت و Merge/Split مشتری، Import انبوه، کاتالوگ، Promotion Version، فاکتور و پرداخت چندمرحله‌ای، تطبیق بانک، اجرای خدمت، پیامک/OTP، پرتال مشتری، Issabel و Audit Log.
+
 ## ۱. ساختار سرویس‌ها و لایه ارتباطی (Architecture)
 این سامانه به صورت پیش‌فرض یک **موقعیت Client-Side Single-Page Application** با لایه ذخیره‌سازی محلی مقاوم (`localStorage`) است. در صورتی که اتصال به سرور backend یا پروکسی‌های ابری (مانند Express API Routes یا پایگاه داده ابری) فعال شود، ساختار اندپوینت‌ها به شکل زیر خواهد بود:
 

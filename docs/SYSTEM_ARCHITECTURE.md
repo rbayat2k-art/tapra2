@@ -1,7 +1,9 @@
 # 🏗️ معماری سیستم (System Architecture)
 
+> این سند معماری Prototype فعلی را شرح می‌دهد، نه معماری مناسب تولید. حجم هدف داده، امنیت، Merge تراکنشی، تطبیق بانکی، پیامک و Issabel به Backend، پایگاه داده، صف پردازش، Object Storage و Audit Log سمت سرور نیاز دارند.
+
 ## ۱. معماری کلی (Overall Architecture)
-این برنامه به صورت یک **Single-Page Application (SPA) تمام‌عیار در سمت کلاینت (Client-Side Architecture)** به همراه لایه مدیریت State متمرکز و سرویس‌های ذخیره‌سازی محلی مقاوم (`localStorage`) پیاده‌سازی شده است. تمام منطق تجاری ERP، موتور تایید درخواست‌ها، سیستم حسابداری و محاسبات ریالی مستقیماً در مرورگر اجرا می‌شوند که باعث سرعت فوق‌العاده بالا و تجربه کاربری بی‌درنگ (Real-time) می‌گردد.
+نمونهٔ فعلی یک **Single-Page Application (SPA) سمت کلاینت** با State متمرکز و `localStorage` است. این وضعیت برای نمایش و آزمون فلوها مناسب است، اما امنیت، مقیاس‌پذیری یا Real-time واقعی سمت سرور را فراهم نمی‌کند.
 
 ## ۲. معماری فرانت‌اند (Frontend Architecture)
 - **Framework**: React 18 با کامپوننت‌های تابعی (Functional Components) و هوک‌های سفارشی (Custom Hooks).

@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Tapra ERP/CRM
 
-# Run and deploy your AI Studio app
+این مخزن نمونهٔ در حال توسعهٔ ERP/CRM شرکت است. نسخهٔ فعلی زیرساخت رابط کاربری، گردش درخواست‌های مالی، نقش‌ها و دسترسی‌های چندگانه، بخشی از خدمات پس از فروش و یک نمای اولیهٔ مشتریان را دارد؛ اما سامانهٔ کامل فروش، کاتالوگ کالا و خدمت، پروموشن، فاکتور فروش، تطبیق بانکی، هماهنگی، فعال‌سازی خدمت و پروفایل یکپارچهٔ مشتری هنوز کامل نشده‌اند.
 
-This contains everything you need to run your app locally.
+> وضعیت «نقش یا مجوز ساخته شده» به معنی آماده بودن پنل و فرایند عملیاتی آن بخش نیست.
 
-View your app in AI Studio: https://ai.studio/apps/f3222c29-9752-483b-869a-981a1cfe79e8
+## اجرای محلی
 
-## Run Locally
+پیش‌نیاز: Node.js
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev
+```
 
+بررسی TypeScript و ساخت نسخهٔ نهایی:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm run lint
+npm run build
+```
+
+## مستندات اصلی
+
+- [نمای کلی و وضعیت واقعی پروژه](docs/PROJECT_OVERVIEW.md)
+- [معماری فروش و تصمیم‌های مرحله‌ای](docs/SALES_ARCHITECTURE_DRAFT.md)
+- [پروفایل مشتری، پروموشن و اجرای خدمات](docs/CUSTOMER_PROFILE_PROMOTION_AND_SERVICE_FULFILLMENT.md)
+- [تحلیل CRM قبلی و فلو سرتاسری فروش](docs/LEGACY_CRM_ANALYSIS_AND_END_TO_END_SALES_FLOW.md)
+- [قوانین کسب‌وکار](docs/BUSINESS_RULES.md)
+- [مدل داده](docs/DATABASE_DOCUMENTATION.md)
+- [ماژول‌ها و وضعیت پیاده‌سازی](docs/MODULES_DOCUMENTATION.md)
+
+این پروژه فعلاً از `localStorage` برای نمونه‌سازی استفاده می‌کند. این معماری برای حجم هدف (از جمله ده‌ها میلیون رکورد مشتری) یا کنترل امنیت سمت سرور مناسب تولید نیست و باید به API، پایگاه داده، صف پردازش و ثبت حسابرسی سمت سرور منتقل شود.

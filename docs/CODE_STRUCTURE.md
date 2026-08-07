@@ -21,7 +21,10 @@
 │   ├── API_DOCUMENTATION.md
 │   ├── BUSINESS_RULES.md
 │   ├── DEVELOPMENT_GUIDE.md
-│   └── AI_CONTEXT.md
+│   ├── AI_CONTEXT.md
+│   ├── SALES_ARCHITECTURE_DRAFT.md
+│   ├── LEGACY_CRM_ANALYSIS_AND_END_TO_END_SALES_FLOW.md
+│   └── CUSTOMER_PROFILE_PROMOTION_AND_SERVICE_FULFILLMENT.md
 └── src/
     ├── App.tsx               # کامپوننت اصلی و ریشه برنامک
     ├── main.tsx              # نقطه ورود React DOM
