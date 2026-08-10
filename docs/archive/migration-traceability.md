@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای traceability مهاجرت، طبقه‌بندی legacy و شواهد حفظ دانش است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/docs-migration@e2a965e` and snapshot commit `bdfd165`
+> Last validated: 2026-08-11 against `agent/docs-migration@a485125` and snapshot commit `bdfd165`
 > Supersedes: none
 > Superseded by: none
 
@@ -254,7 +254,7 @@
 
 ## طبقه‌بندی آینده فایل‌های legacy
 
-این جدول توصیه cleanup آینده است؛ در Step 6 هیچ action روی فایل‌ها اعمال نشده است.
+این جدول توصیه تصویب‌شده Step 6 است. وضعیت اجرای آن در بخش Step 7 پایین ثبت شده است.
 
 | Legacy document | Future action | چرا دانش امن است |
 |---|---|---|
@@ -292,6 +292,17 @@
 | endpointهای `/api/*` | نبود server entrypoint/route/client در scope بررسی‌شده | [API status](../architecture/api-status.md)، [API draft](../future/api-contract-draft.md) | API legacy endpointهای فرضی فهرست می‌کند | `PRESERVED_FUTURE` | deprecated redirect؛ هیچ endpoint CURRENT نشود. |
 | checksum Sales Draft | raw SHA-256 هر دو فایل و Git blobها یکسان | همین سند و Snapshot manifest | گزارش Step 5 mismatch را مطرح کرد | `PRESERVED_HISTORICAL` | manifest تغییر نکند؛ validator فقط raw bytes را hash کند. |
 
-## نتیجه آمادگی cleanup
+## نتیجه Step 6 برای cleanup
 
-از نظر integrity و پوشش دانش، آماده‌سازی metadata/redirect و archive در یک Step مستقل امن است. حذف فیزیکی هنوز توصیه نمی‌شود: `SALES_ARCHITECTURE_DRAFT.md` باید archive شود، Snapshot immutable بماند و `RETIRE_LATER` فقط پس از validation redirectها و حداقل یک چرخه review انجام شود.
+Step 6 نتیجه گرفت که آماده‌سازی metadata/redirect و archive از نظر integrity و پوشش دانش امن است، اما حذف فیزیکی مجاز نیست. این نتیجه مبنای اجرای کنترل‌شده Step 7 شد.
+
+## اجرای Step 7
+
+- root `README.md` و `AGENTS.md` با action `KEEP` باقی ماندند؛ README به entry کوتاه authorityها تبدیل شد.
+- ده مسیر `DEPRECATED_REDIRECT` به compatibility document کوتاه با `Status: DEPRECATED` تبدیل شدند.
+- متن تاریخی Sales Draft با SHA-256 ثبت‌شده به‌صورت byte-identical در [archive دائمی فروش](sales/README.md) حفظ شد و مسیر قبلی آن redirect شد.
+- `CODE_STRUCTURE.md` حذف یا بازنشسته نشد؛ فقط banner انتقالی `RETIRE_LATER` و replacementهای نهایی دریافت کرد.
+- Snapshot pre-migration دست‌نخورده باقی ماند.
+- هیچ application code، package/config یا runtime behavior تغییر نکرد.
+
+پس از Step 7، cleanup کنترل‌شده redirect/archive اجرا شده است. حذف فیزیکی همچنان خارج از scope است و `CODE_STRUCTURE.md` تنها مورد `RETIRE_LATER` باقی‌مانده است.

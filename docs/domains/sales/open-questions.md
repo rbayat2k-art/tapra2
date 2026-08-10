@@ -3,7 +3,7 @@
 > Status: DRAFT
 > Source of truth: این سند برای تصمیم‌های حل‌نشده فروش است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `docs/SALES_ARCHITECTURE_DRAFT.md`
+> Last validated: 2026-08-11 against the Sales Draft archive
 > Supersedes: none
 > Superseded by: none
 

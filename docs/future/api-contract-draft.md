@@ -3,7 +3,7 @@
 > Status: DRAFT
 > Source of truth: این سند برای قرارداد مفهومی و غیرپیاده‌سازی‌شده API آینده است.
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `stable@cea6514` and `docs/API_DOCUMENTATION.md`
+> Last validated: 2026-08-11 against `stable@cea6514` and the pre-migration API snapshot
 > Supersedes: none
 > Superseded by: none
 
@@ -19,7 +19,7 @@
 
 ## endpointهای کاندیدای legacy
 
-این فهرست دانش `docs/API_DOCUMENTATION.md` را حفظ می‌کند، اما approval یا implementation را ادعا نمی‌کند.
+این فهرست دانش نسخه pre-migration از `API_DOCUMENTATION.md` را حفظ می‌کند، اما approval یا implementation را ادعا نمی‌کند.
 
 | Method و path پیشنهادی | Use case | وضعیت طراحی |
 |---|---|---|

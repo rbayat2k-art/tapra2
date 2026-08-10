@@ -36,4 +36,4 @@
 - مسیر «مشتریان» برای `sales_access` نمایش داده می‌شود و admin در UI bypass دارد.
 - کاربران نمونه فروش، `User.role: 'requestor'` و `customPermissions: ['sales_access']` دارند؛ `UserRole` مخصوص فروش اضافه نشده است.
 
-طراحی ادامه فروش در [approved design](approved-design.md) و ابهام‌های آن در [open questions](open-questions.md) است. منبع تاریخی کامل در [legacy sales draft](../../SALES_ARCHITECTURE_DRAFT.md) و Snapshot باقی می‌ماند.
+طراحی ادامه فروش در [approved design](approved-design.md) و ابهام‌های آن در [open questions](open-questions.md) است. منبع تاریخی کامل در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot باقی می‌ماند.

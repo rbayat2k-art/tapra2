@@ -3,11 +3,11 @@
 > Status: APPROVED-FUTURE
 > Source of truth: این سند برای تصمیم‌های پذیرفته‌شده فروش که هنوز پیاده‌سازی نشده‌اند است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `docs/SALES_ARCHITECTURE_DRAFT.md` and historical decisions
+> Last validated: 2026-08-11 against the Sales Draft archive and historical decisions
 > Supersedes: none
 > Superseded by: none
 
-این سند رفتار CURRENT نیست. تنها قابلیت فعلی فروش در [current customer](current-customer.md) ثبت شده است. متن طراحی اولیه بدون حذف در [legacy sales draft](../../SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
+این سند رفتار CURRENT نیست. تنها قابلیت فعلی فروش در [current customer](current-customer.md) ثبت شده است. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
 
 ## اصول سراسری
 

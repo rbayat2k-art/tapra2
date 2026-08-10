@@ -1,41 +1,13 @@
-# 🤖 زمینه تخصصی برای دستیاران هوش مصنوعی آینده (AI Context & Assistant Guidelines)
+# AI Context — مسیر سازگاری legacy
 
-این سند به عنوان مرجع کلیدی برای هر دستیار هوش مصنوعی یا توسعه‌دهنده‌ای که در آینده روی این پروژه کار می‌کند، تدوین شده است.
+> Status: DEPRECATED
+> Source of truth: `AGENTS.md` و `docs/ai/start-here.md`
+> Owner: Documentation Architecture
+> Last validated: 2026-08-11
+> Supersedes: none
+> Superseded by: `AGENTS.md`, `docs/ai/start-here.md`
 
----
+این مسیر فقط برای compatibility/history نگهداری می‌شود. عامل‌های AI باید از [Start Here](ai/start-here.md)، [AGENTS.md](../AGENTS.md) و [documentation index](README.md) شروع کنند.
 
-## ۱. ماهیت پروژه (What This Project Does)
-این سامانه یک **سیستم جامع ERP و اتوماسیون مالی، خزانه‌داری، نامه‌نگاری اداری و مدیریت خدمات پس از فروش** است که با React, TypeScript, و Tailwind CSS پیاده‌سازی شده و به صورت تک‌صفحه‌ای (`SPA`) با لایه ذخیره‌سازی محلی پیشرفته کار می‌کند.
-
----
-
-## ۲. تکنولوژی استک (Technology Stack)
-- **Frontend**: React 18 / 19, TypeScript 5.8, Tailwind CSS v4, Lucide React Icons, Recharts, React Multi Date Picker.
-- **State & Storage**: مدیریت State ری‌آکت همراه با `localStorage` (`src/utils/storage.ts`).
-- **Build Tool**: Vite 6.
-
----
-
-## ۳. قوانین معماری و توسعه (Architecture Rules)
-1. **ماژولار بودن کامپوننت‌ها**: از قرار دادن تمام منطق در یک فایل پرهیز کنید. ویوها در `src/components/` و مدل‌ها در `src/types.ts` ایزوله شده‌اند.
-2. **رعایت تایپ‌اسکریپت**: هرگز از تایپ‌های `any` استفاده نکنید. تمام داده‌ها باید دارای اینترفیس مشخص در `src/types.ts` باشند.
-3. **پشتیبانی از زبان فارسی و راست‌چین (RTL)**: تمام متن‌های رابط کاربری، پیام‌ها و برچسب‌ها باید به زبان فارسی روان و استاندارد اداری باشند و ساختار ظاهری با کلاس‌های Tailwind (`text-right`, `dir="rtl"`) سازگار باشد.
-
----
-
-## ۴. خطوط قرمز (Things AI Must Never Change)
-- **حذف سیستم نقش دوگانه و مسیر تایید**: ساختار `isDualRole`, `approvalChain`, و `allowedApproverIds` هسته اصلی اتوماسیون مالی است و نباید بدون درخواست صریح کاربر دستکاری یا حذف شود.
-- **تغییر نام‌های کلیدی مدل‌ها**: نام اینترفیس‌ها در `src/types.ts` مرجع تمام کامپوننت‌هاست. تغییر نام بدون بازبینی سراسری ممنوع است.
-
----
-
-## ۵. تصمیمات مهم معماری (Important Decisions)
-- عدم استفاده از بک‌اند سنگین سنتی در فاز کلاینت، به‌کارگیری ذخیره‌سازی محلی پیشرفته با نمونه‌داده‌های اولیه بسیار غنی برای تست فوری تمام نقش‌ها و سناریوهای سازمانی.
-- استفاده از تقویم شمسی دقیق بومی‌سازی شده برای محیط اداری ایران.
-
----
-
-## ۶. نقشه راه آینده (Future Roadmap)
-- اتصال پایگاه داده ابری واقعی (مانند PostgreSQL یا Firestore) در صورت نیاز سازمان.
-- افزودن اعلان‌های لحظه‌ای وب‌سوکت برای کارتابل مدیران.
-- توسعه گزارش‌ساز پویا با قابلیت خروجی پیشرفته PDF.
+- [Migration traceability](archive/migration-traceability.md)
+- [Pre-migration copy](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/docs/AI_CONTEXT.md)

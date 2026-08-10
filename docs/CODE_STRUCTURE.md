@@ -1,5 +1,10 @@
 # 📁 ساختار کد و سازماندهی فایل‌ها (Code Structure & Organization)
 
+> Migration classification: RETIRE_LATER
+> Authority replacements: [current system](architecture/current-system.md) و [module catalog](product/module-catalog.md)
+
+این محتوای legacy در Step 7 فقط برای review انتقالی نگهداری شده و authoritative نیست. بازنشستگی فیزیکی آن به تأیید جداگانه نیاز دارد.
+
 ## ۱. ساختار پوشه‌ها (Directory Tree)
 ساختار پروژه به صورت ماژولار و تمیز در دایرکتوری اصلی سازماندهی شده است:
 

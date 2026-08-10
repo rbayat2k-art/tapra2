@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/docs-migration@a485125`
 > Supersedes: none
 > Superseded by: none
 
@@ -69,25 +69,25 @@
 | تاریخچه تصمیمات | [decisions/DECISION_LOG.md](decisions/DECISION_LOG.md) | `HISTORICAL` |
 | مسیریابی AI | [ai/start-here.md](ai/start-here.md) | `CURRENT` |
 
-اسناد legacy پایین حذف یا بازنشسته نشده‌اند و تا پایان migration برای traceability باقی می‌مانند.
+مسیرهای legacy پایین حذف نشده‌اند. در Step 7 به redirectهای سازگاری تبدیل یا به archive دائمی منتقل شده‌اند و authority فعال محسوب نمی‌شوند.
 
-## فهرست مستندات موجود
+## Compatibility و history
 
-| فایل | نقش فعلی | اقدام پیشنهادی آینده |
+| فایل | نقش فعلی | وضعیت Step 7 |
 |---|---|---|
-| [README.md](../README.md) | entry استاندارد repository؛ هنوز legacy و ناقص | `KEEP` |
+| [README.md](../README.md) | entry کوتاه repository | `KEEP / CURRENT` |
 | [AGENTS.md](../AGENTS.md) | ورودی کوتاه و authority دستورالعمل AI/developer | `KEEP` |
-| [DECISION_LOG.md](../DECISION_LOG.md) | نسخه legacy تاریخچه؛ مرجع فعال در `docs/decisions/DECISION_LOG.md` است | `DEPRECATED_REDIRECT` |
-| [AI_CONTEXT.md](AI_CONTEXT.md) | context قدیمی و مخلوط AI | `DEPRECATED_REDIRECT` |
-| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | endpointهای فرضی legacy | `DEPRECATED_REDIRECT` |
-| [BUSINESS_RULES.md](BUSINESS_RULES.md) | قواعد مخلوط و دارای چند تعارض با code فعلی | `DEPRECATED_REDIRECT` |
-| [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | tree دستی و مستعد drift | `RETIRE_LATER` |
-| [DATABASE_DOCUMENTATION.md](DATABASE_DOCUMENTATION.md) | جزئیات legacy مدل و persistence | `DEPRECATED_REDIRECT` |
-| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | راهنمای توسعه legacy | `DEPRECATED_REDIRECT` |
-| [MODULES_DOCUMENTATION.md](MODULES_DOCUMENTATION.md) | فهرست ماژول legacy | `DEPRECATED_REDIRECT` |
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | overview دارای ادعاهای قدیمی | `DEPRECATED_REDIRECT` |
-| [SALES_ARCHITECTURE_DRAFT.md](SALES_ARCHITECTURE_DRAFT.md) | منبع تاریخی طراحی فروش | `ARCHIVE` |
-| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | معماری legacy | `DEPRECATED_REDIRECT` |
+| [DECISION_LOG.md](../DECISION_LOG.md) | مسیر سازگاری برای Decision Log authoritative | `DEPRECATED_REDIRECT — APPLIED` |
+| [AI_CONTEXT.md](AI_CONTEXT.md) | مسیر سازگاری برای AI routing جدید | `DEPRECATED_REDIRECT — APPLIED` |
+| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | مسیر سازگاری برای API status/DRAFT | `DEPRECATED_REDIRECT — APPLIED` |
+| [BUSINESS_RULES.md](BUSINESS_RULES.md) | مسیر سازگاری برای authorityهای domain | `DEPRECATED_REDIRECT — APPLIED` |
+| [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | محتوای انتقالی غیرauthoritative | `RETIRE_LATER — RETAINED` |
+| [DATABASE_DOCUMENTATION.md](DATABASE_DOCUMENTATION.md) | مسیر سازگاری برای data/persistence | `DEPRECATED_REDIRECT — APPLIED` |
+| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | مسیر سازگاری برای development/quality | `DEPRECATED_REDIRECT — APPLIED` |
+| [MODULES_DOCUMENTATION.md](MODULES_DOCUMENTATION.md) | مسیر سازگاری برای module catalog | `DEPRECATED_REDIRECT — APPLIED` |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | مسیر سازگاری برای product overview | `DEPRECATED_REDIRECT — APPLIED` |
+| [SALES_ARCHITECTURE_DRAFT.md](SALES_ARCHITECTURE_DRAFT.md) | redirect به archive و authorityهای Sales | `ARCHIVED + DEPRECATED_REDIRECT` |
+| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | مسیر سازگاری برای current/future architecture | `DEPRECATED_REDIRECT — APPLIED` |
 
 ## Snapshot پیش از مهاجرت
 
@@ -96,6 +96,7 @@
 - [Pre-migration snapshot manifest](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/manifest.md)
 - [Pre-migration snapshot checksums](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/checksums.sha256)
 - [Migration traceability and legacy classification](archive/migration-traceability.md)
+- [Permanent Sales Draft archive](archive/sales/README.md)
 
 Snapshot فقط برای بازیابی و تاریخچه است و نباید به‌عنوان مستندات فعال استفاده شود.
 

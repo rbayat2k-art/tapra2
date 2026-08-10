@@ -26,7 +26,7 @@
 
 ## وضعیت سند قدیمی API
 
-[API_DOCUMENTATION.md](../API_DOCUMENTATION.md) مجموعه‌ای از endpointهای فرضی برای آینده است. آن سند نباید:
+نسخه تاریخی [API_DOCUMENTATION.md در Snapshot](../archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/docs/API_DOCUMENTATION.md) مجموعه‌ای از endpointهای فرضی برای آینده است. آن سند نباید:
 
 - به‌عنوان قرارداد API موجود استفاده شود؛
 - مبنای integration فعلی قرار گیرد؛
