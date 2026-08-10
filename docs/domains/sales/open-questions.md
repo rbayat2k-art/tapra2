@@ -3,7 +3,7 @@
 > Status: DRAFT
 > Source of truth: این سند برای تصمیم‌های حل‌نشده فروش است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against the Sales Draft archive
+> Last validated: 2026-08-11 against confirmed business-discovery decisions and the Sales Draft archive
 > Supersedes: none
 > Superseded by: none
 
@@ -13,7 +13,6 @@
 
 - آیا سطوح بالاتر فروش فقط گزارش می‌بینند یا روی فاکتور اقدام/تأیید اضافه دارند؟
 - جزئیات DTO، state machine و permission کارتابل «تأیید واریزی مشتری» چیست؟
-- محاسبه سود تأمین‌کننده برای هر کالا/دسته اختلاف قیمت است یا درصد و چگونه تنظیم می‌شود؟
 - سیاست کسر/شناسایی مبلغ فاکتور وقتی کالا تحویل شده ولی خدمت باقی است چیست؟
 - reconciliation بانکی، chargeback و اختلاف مبلغ چگونه مدیریت می‌شوند؟
 
@@ -22,7 +21,6 @@
 - قواعد normalization شماره تماس، چند شماره برای یک شخص و شناسایی بدون شماره چیست؟
 - در تعارض داده‌های import، اولویت منبع و workflow بازبینی چیست؟
 - ساختار سابقه خرید legacy و وضعیت شماره نامعتبر، blocked یا do-not-contact چیست؟
-- linkage بین پروفایل‌های چند شرکت چه سطحی از merge، visibility و consent دارد؟
 
 ## Lead و تخصیص
 
@@ -49,7 +47,6 @@
 
 ## Platform و rollout
 
-- آیا CRM یا داده خارجی باید sync/import شود یا system of record از صفر این platform است؟
 - ترتیب delivery فازهای Customer، Lead، Invoice، catalog، fulfillment و settlement چیست؟
 - انتخاب backend/database، tenant isolation و migration از `localStorage` چیست؟
 - معیار پذیرش و تست end-to-end هر نقش در کل flow چیست؟

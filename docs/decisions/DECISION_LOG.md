@@ -269,3 +269,28 @@
 
 **Impact:**
 `stable` اکنون شامل هر سه فیچر است: ناوبری چندتبی شبیه مرورگر + ویجت پرکاربردترین منوها، مدل چندنقشی کاربران (`getEffectiveUserPermissions`)، و ماژول فروش مشتری با قفل مالکیت پویا. تست دستی پس از merge (لاگین ادمین + شبیه‌سازی دو کاربر نمونه فروش) نشان داد داشبورد، سایدبار (شامل آیتم «مشتریان» و گروه «کاربران»)، و باز شدن/سوییچ تب‌ها بدون خطا کار می‌کنند. `npm run lint` (`tsc --noEmit`) بعد از هر مرحله (هر دو merge + رفع conflict + به‌روزرسانی مستندات) بدون خطا پاس شد. هیچ‌کدام از ۹ کاربر نمونه (۶ خزانه‌داری + ۳ فروش) و هیچ‌کدام از خط‌قرمزها (`isDualRole`, `approvalChain`, `allowedApproverIds`, rename اینترفیس) لمس نشدند.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Sales domain formalization decisions after business discovery
+
+**Context:**
+پس از ممیزی دانش Sales، پنج موضوع پایه که برای مدل دامنه و جلوگیری از پرسش تکراری لازم بودند، با تصمیم صریح کسب‌وکار نهایی شدند. این تصمیم‌ها طراحی آینده‌اند و رفتار CURRENT یا implementation موجود را تغییر نمی‌دهند.
+
+**Decision:**
+
+1. `Person/Party`، `Prospect`، `Lead`، `Opportunity`، `Sale` و `Invoice` مفاهیم مستقل دامنه‌اند؛ UI همچنان ساده باقی می‌ماند.
+2. Contract رابطه تجاری، طرف‌های مسئول، Invoice issuer، payment receiver، economic ownership، revenue share و حقوق اشتراک داده را تعیین می‌کند؛ `mother company` مفهوم hard-coded platform نیست.
+3. Pricing به‌صورت Rule-based و با precedence، Discount stacking، margin protection و approval limitهای قابل تنظیم تعریف می‌شود.
+4. هویت Customer می‌تواند سراسری شناخته شود، اما company isolation الزامی است و visibility/sharing فقط با permission، Contract و policy مجاز انجام می‌شود.
+5. Tapra2، `Sales system of record` اصلی است؛ منابع قدیمی و بیرونی از مسیر `Import → Validate → Reconcile → Parallel verification → Retire old CRM` مهاجرت می‌کنند.
+
+**Affected authority documents:**
+
+- `docs/domains/sales/approved-design.md`
+- `docs/domains/sales/open-questions.md`
+
+**Impact:**
+پنج موضوع پایه دیگر open محسوب نمی‌شوند و پرسش‌های موجود مرتبط از فهرست DRAFT حذف شدند؛ جزئیات مالی deferred، state machineها، reconciliation، rollout و تصمیم‌های اجرایی همچنان DRAFT باقی می‌مانند. هیچ application code، package configuration یا runtime behavior تغییر نکرد.
