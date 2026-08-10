@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current product purpose and scope
 > Owner: Product Owner
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `stable@cea6514`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,7 +21,7 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 - موجودیت Customer و نمای فعلی مشتریان؛
 - ناوبری چندتبی و تنظیمات ظاهری کاربر.
 
-این فهرست معرفی سطح بالا است. مرجع جزئیات هر دامنه پس از ایجاد، سند authoritative همان دامنه خواهد بود.
+این فهرست معرفی سطح بالا است. مرجع جزئیات هر حوزه در [فهرست مالکیت مستندات](../README.md) مشخص شده است.
 
 ## مرز اجرایی فعلی
 

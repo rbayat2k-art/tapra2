@@ -73,21 +73,21 @@
 
 ## فهرست مستندات موجود
 
-| فایل | نقش فعلی | وضعیت مشاهده‌شده پیش از مهاجرت |
+| فایل | نقش فعلی | اقدام پیشنهادی آینده |
 |---|---|---|
-| [README.md](../README.md) | معرفی و اجرای محلی | `CURRENT` — ناقص و نیازمند بازنویسی |
-| [AGENTS.md](../AGENTS.md) | ورودی کوتاه و قواعد اجباری AI/developer | `CURRENT` |
-| [DECISION_LOG.md](../DECISION_LOG.md) | نسخه legacy تاریخچه؛ مرجع فعال در `docs/decisions/DECISION_LOG.md` است | `HISTORICAL` |
-| [AI_CONTEXT.md](AI_CONTEXT.md) | زمینه دستیاران هوش مصنوعی | `MIXED` |
-| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | طرح API و backend آینده | `APPROVED-FUTURE / DRAFT` |
-| [BUSINESS_RULES.md](BUSINESS_RULES.md) | قواعد گردش کار، دسترسی و اعتبارسنجی | `MIXED` |
-| [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | نقشه ساختار کد | `CURRENT` — نیازمند اعتبارسنجی |
-| [DATABASE_DOCUMENTATION.md](DATABASE_DOCUMENTATION.md) | مدل داده و persistence فعلی | `CURRENT` — نیازمند اصلاح واژگان |
-| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | راه‌اندازی، build و type checking | `CURRENT` |
-| [MODULES_DOCUMENTATION.md](MODULES_DOCUMENTATION.md) | فهرست ماژول‌ها | `CURRENT` — نیازمند اعتبارسنجی |
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | هدف، دامنه و وضعیت پروژه | `CURRENT` — دارای ادعاهای قدیمی |
-| [SALES_ARCHITECTURE_DRAFT.md](SALES_ARCHITECTURE_DRAFT.md) | تصمیم‌ها و پرسش‌های طراحی فروش | `APPROVED-FUTURE + DRAFT` |
-| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | معماری فعلی SPA | `CURRENT` — نیازمند اعتبارسنجی |
+| [README.md](../README.md) | entry استاندارد repository؛ هنوز legacy و ناقص | `KEEP` |
+| [AGENTS.md](../AGENTS.md) | ورودی کوتاه و authority دستورالعمل AI/developer | `KEEP` |
+| [DECISION_LOG.md](../DECISION_LOG.md) | نسخه legacy تاریخچه؛ مرجع فعال در `docs/decisions/DECISION_LOG.md` است | `DEPRECATED_REDIRECT` |
+| [AI_CONTEXT.md](AI_CONTEXT.md) | context قدیمی و مخلوط AI | `DEPRECATED_REDIRECT` |
+| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | endpointهای فرضی legacy | `DEPRECATED_REDIRECT` |
+| [BUSINESS_RULES.md](BUSINESS_RULES.md) | قواعد مخلوط و دارای چند تعارض با code فعلی | `DEPRECATED_REDIRECT` |
+| [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | tree دستی و مستعد drift | `RETIRE_LATER` |
+| [DATABASE_DOCUMENTATION.md](DATABASE_DOCUMENTATION.md) | جزئیات legacy مدل و persistence | `DEPRECATED_REDIRECT` |
+| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | راهنمای توسعه legacy | `DEPRECATED_REDIRECT` |
+| [MODULES_DOCUMENTATION.md](MODULES_DOCUMENTATION.md) | فهرست ماژول legacy | `DEPRECATED_REDIRECT` |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | overview دارای ادعاهای قدیمی | `DEPRECATED_REDIRECT` |
+| [SALES_ARCHITECTURE_DRAFT.md](SALES_ARCHITECTURE_DRAFT.md) | منبع تاریخی طراحی فروش | `ARCHIVE` |
+| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | معماری legacy | `DEPRECATED_REDIRECT` |
 
 ## Snapshot پیش از مهاجرت
 
@@ -95,6 +95,7 @@
 
 - [Pre-migration snapshot manifest](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/manifest.md)
 - [Pre-migration snapshot checksums](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/checksums.sha256)
+- [Migration traceability and legacy classification](archive/migration-traceability.md)
 
 Snapshot فقط برای بازیابی و تاریخچه است و نباید به‌عنوان مستندات فعال استفاده شود.
 
