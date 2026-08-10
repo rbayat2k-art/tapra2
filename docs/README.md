@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `stable@cea6514`
 > Supersedes: none
 > Superseded by: none
 
@@ -11,7 +11,7 @@
 
 ## هشدار مهاجرت
 
-معماری مستندات در Phase 3 در حال مهاجرت به مدل `single source of truth` است. تا پیش از تکمیل مرحله تعیین مالکیت، وجود یک فایل در این فهرست به معنی مرجع نهایی بودن تمام محتوای آن نیست.
+معماری مستندات در Phase 3 در حال مهاجرت به مدل `single source of truth` است. authorityهای برنامه‌ریزی‌شده اکنون ایجاد شده‌اند، اما اسناد legacy تا مراحل بعد برای traceability در جای خود باقی می‌مانند؛ وجود آن‌ها به معنی مرجع فعال بودن نیست.
 
 برای تشخیص وضعیت اطلاعات:
 
@@ -34,23 +34,40 @@
 | Persistence فعلی | [data/persistence.md](data/persistence.md) |
 | راه‌اندازی محیط توسعه | [engineering/development.md](engineering/development.md) |
 | وضعیت quality و test | [engineering/quality.md](engineering/quality.md) |
-| قواعد و محدودیت‌های عامل هوش مصنوعی | [AGENTS.md](../AGENTS.md) |
-| تاریخچه تصمیمات | [DECISION_LOG.md](../DECISION_LOG.md) |
-| قواعد کسب‌وکار legacy | [BUSINESS_RULES.md](BUSINESS_RULES.md) |
-| طراحی آینده فروش | [SALES_ARCHITECTURE_DRAFT.md](SALES_ARCHITECTURE_DRAFT.md) |
-| طرح مفهومی API آینده | [API_DOCUMENTATION.md](API_DOCUMENTATION.md) |
+| فهرست ماژول‌های فعلی | [product/module-catalog.md](product/module-catalog.md) |
+| واژه‌های دامنه | [glossary.md](glossary.md) |
+| قواعد مالی و دسترسی | [finance rules](domains/finance/business-rules.md)، [roles](domains/finance/roles-and-permissions.md) |
+| قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) |
+| فروش فعلی و آینده | [current customer](domains/sales/current-customer.md)، [approved design](domains/sales/approved-design.md)، [open questions](domains/sales/open-questions.md) |
+| امنیت و حریم خصوصی | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) |
+| معماری و API آینده | [future platform](architecture/future-platform.md)، [API draft](future/api-contract-draft.md) |
+| مسیر کوتاه AI | [ai/start-here.md](ai/start-here.md) و [AGENTS.md](../AGENTS.md) |
+| تاریخچه تصمیمات authoritative | [decisions/DECISION_LOG.md](decisions/DECISION_LOG.md) |
 
 ## اسناد authoritative فعال
 
-| موضوع | مرجع CURRENT |
-|---|---|
-| هدف و دامنه محصول | [product/overview.md](product/overview.md) |
-| معماری و tech stack | [architecture/current-system.md](architecture/current-system.md) |
-| وضعیت API | [architecture/api-status.md](architecture/api-status.md) |
-| مدل داده | [data/current-data-model.md](data/current-data-model.md) |
-| Persistence | [data/persistence.md](data/persistence.md) |
-| Development workflow | [engineering/development.md](engineering/development.md) |
-| Quality status | [engineering/quality.md](engineering/quality.md) |
+| موضوع | مرجع authoritative | Status |
+|---|---|---|
+| هدف و دامنه محصول | [product/overview.md](product/overview.md) | `CURRENT` |
+| فهرست ماژول‌ها | [product/module-catalog.md](product/module-catalog.md) | `CURRENT` |
+| واژه‌نامه | [glossary.md](glossary.md) | `CURRENT` |
+| معماری و tech stack | [architecture/current-system.md](architecture/current-system.md) | `CURRENT` |
+| وضعیت API | [architecture/api-status.md](architecture/api-status.md) | `CURRENT` |
+| مدل داده | [data/current-data-model.md](data/current-data-model.md) | `CURRENT` |
+| Persistence | [data/persistence.md](data/persistence.md) | `CURRENT` |
+| قواعد مالی | [domains/finance/business-rules.md](domains/finance/business-rules.md) | `CURRENT` |
+| نقش و permission | [domains/finance/roles-and-permissions.md](domains/finance/roles-and-permissions.md) | `CURRENT` |
+| قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) | `CURRENT` |
+| مشتری فروش فعلی | [domains/sales/current-customer.md](domains/sales/current-customer.md) | `CURRENT` |
+| Development workflow | [engineering/development.md](engineering/development.md) | `CURRENT` |
+| Quality status | [engineering/quality.md](engineering/quality.md) | `CURRENT` |
+| Security posture | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) | `CURRENT` |
+| معماری آینده | [architecture/future-platform.md](architecture/future-platform.md) | `DRAFT` |
+| API آینده | [future/api-contract-draft.md](future/api-contract-draft.md) | `DRAFT` |
+| طراحی پذیرفته‌شده فروش | [domains/sales/approved-design.md](domains/sales/approved-design.md) | `APPROVED-FUTURE` |
+| پرسش‌های باز فروش | [domains/sales/open-questions.md](domains/sales/open-questions.md) | `DRAFT` |
+| تاریخچه تصمیمات | [decisions/DECISION_LOG.md](decisions/DECISION_LOG.md) | `HISTORICAL` |
+| مسیریابی AI | [ai/start-here.md](ai/start-here.md) | `CURRENT` |
 
 اسناد legacy پایین حذف یا بازنشسته نشده‌اند و تا پایان migration برای traceability باقی می‌مانند.
 
@@ -59,8 +76,8 @@
 | فایل | نقش فعلی | وضعیت مشاهده‌شده پیش از مهاجرت |
 |---|---|---|
 | [README.md](../README.md) | معرفی و اجرای محلی | `CURRENT` — ناقص و نیازمند بازنویسی |
-| [AGENTS.md](../AGENTS.md) | قواعد AI، قواعد دامنه و محدودیت‌های پیاده‌سازی | `MIXED` |
-| [DECISION_LOG.md](../DECISION_LOG.md) | تاریخچه تصمیمات | `HISTORICAL` |
+| [AGENTS.md](../AGENTS.md) | ورودی کوتاه و قواعد اجباری AI/developer | `CURRENT` |
+| [DECISION_LOG.md](../DECISION_LOG.md) | نسخه legacy تاریخچه؛ مرجع فعال در `docs/decisions/DECISION_LOG.md` است | `HISTORICAL` |
 | [AI_CONTEXT.md](AI_CONTEXT.md) | زمینه دستیاران هوش مصنوعی | `MIXED` |
 | [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | طرح API و backend آینده | `APPROVED-FUTURE / DRAFT` |
 | [BUSINESS_RULES.md](BUSINESS_RULES.md) | قواعد گردش کار، دسترسی و اعتبارسنجی | `MIXED` |
@@ -111,27 +128,27 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 |---|---|---|---|---|---|
 | ناوبری و مالکیت مستندات | همین فایل | `docs/README.md` | Documentation Architecture | `ACTIVE` | `README.md`, `AGENTS.md`, تمام indexهای دامنه |
 | هدف، دامنه و کاربران پروژه | `docs/product/overview.md` | `docs/product/overview.md` | Product Owner | `ACTIVE` | `README.md`, module catalog, AI instructions |
-| فهرست ماژول‌های پیاده‌سازی‌شده | `docs/MODULES_DOCUMENTATION.md` و `src/components/` | `docs/product/module-catalog.md` | Product Owner | `LEGACY → PLANNED` | product overview, codebase map, AI instructions |
-| واژگان فارسی و English دامنه | پراکنده در اسناد موجود | `docs/glossary.md` | Documentation Architecture | `PLANNED` | تمام اسناد دامنه |
+| فهرست ماژول‌های پیاده‌سازی‌شده | `docs/product/module-catalog.md` با شواهد `src/components/` | `docs/product/module-catalog.md` | Product Owner | `ACTIVE` | product overview, codebase map, AI instructions |
+| واژگان فارسی و English دامنه | `docs/glossary.md` | `docs/glossary.md` | Documentation Architecture | `ACTIVE` | تمام اسناد دامنه |
 | tech stack فعلی | `docs/architecture/current-system.md` با شواهد package و code | `docs/architecture/current-system.md` | Architecture Owner | `ACTIVE` | `README.md`, development guide, AI instructions |
 | معماری فعلی سیستم | `docs/architecture/current-system.md` | `docs/architecture/current-system.md` | Architecture Owner | `ACTIVE` | module catalog, codebase map, data docs |
 | وضعیت API فعلی | `docs/architecture/api-status.md` | `docs/architecture/api-status.md` | Architecture Owner | `ACTIVE` | `README.md`, security, future API contract |
-| معماری آینده platform/backend | `API_DOCUMENTATION.md` و تصمیمات مرتبط، بدون ادعای اجرا | `docs/architecture/future-platform.md` | Architecture Owner | `LEGACY → PLANNED` | future API contract, approved sales design |
+| معماری آینده platform/backend | `docs/architecture/future-platform.md` | `docs/architecture/future-platform.md` | Architecture Owner | `ACTIVE (DRAFT)` | future API contract, approved sales design |
 | مدل داده فعلی | `docs/data/current-data-model.md` با شواهد `src/types.ts` | `docs/data/current-data-model.md` | Data Owner | `ACTIVE` | اسناد دامنه، architecture |
 | persistence فعلی | `docs/data/persistence.md` با شواهد `src/utils/storage.ts` | `docs/data/persistence.md` | Data Owner | `ACTIVE` | architecture, security, development |
-| قواعد مالی و approval workflow | `BUSINESS_RULES.md`, `AGENTS.md` و رفتار کد | `docs/domains/finance/business-rules.md` | Finance Domain Owner | `LEGACY → PLANNED` | module catalog, roles and permissions |
-| نقش‌ها و permissions | `BUSINESS_RULES.md`, `AGENTS.md` و permission utilities | `docs/domains/finance/roles-and-permissions.md` | Access Control Owner | `LEGACY → PLANNED` | finance rules, security, module catalog |
-| قواعد support و complaint | `BUSINESS_RULES.md`, module documentation و رفتار کد | `docs/domains/support/business-rules.md` | Support Domain Owner | `LEGACY → PLANNED` | module catalog, sales documents |
-| رفتار فعلی customer/sales | کد پیاده‌سازی‌شده به‌همراه تصمیمات مرتبط | `docs/domains/sales/current-customer.md` | Sales Domain Owner | `PLANNED` | module catalog, data model |
-| طراحی پذیرفته‌شده آینده sales | `SALES_ARCHITECTURE_DRAFT.md` و `DECISION_LOG.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `LEGACY → PLANNED` | future platform, decisions |
-| پرسش‌های حل‌نشده sales | بخش‌های «موضوع باز» در sales draft | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `LEGACY → PLANNED` | approved sales design |
+| قواعد مالی و approval workflow | `docs/domains/finance/business-rules.md` با شواهد code | `docs/domains/finance/business-rules.md` | Finance Domain Owner | `ACTIVE` | module catalog, roles and permissions |
+| نقش‌ها و permissions | `docs/domains/finance/roles-and-permissions.md` با شواهد permission utilities | `docs/domains/finance/roles-and-permissions.md` | Access Control Owner | `ACTIVE` | finance rules, security, module catalog |
+| قواعد support و complaint | `docs/domains/support/business-rules.md` با شواهد code | `docs/domains/support/business-rules.md` | Support Domain Owner | `ACTIVE` | module catalog, sales documents |
+| رفتار فعلی customer/sales | `docs/domains/sales/current-customer.md` با شواهد code | `docs/domains/sales/current-customer.md` | Sales Domain Owner | `ACTIVE` | module catalog, data model |
+| طراحی پذیرفته‌شده آینده sales | `docs/domains/sales/approved-design.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | future platform, decisions |
+| پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |
 | راه‌اندازی و development workflow | `docs/engineering/development.md` | `docs/engineering/development.md` | Engineering Owner | `ACTIVE` | `README.md`, AI instructions |
 | testing و quality gates | `docs/engineering/quality.md` | `docs/engineering/quality.md` | Engineering Owner | `ACTIVE` | development guide, release guidance |
-| security و privacy | قواعد پراکنده و محدودیت‌های معماری فعلی | `docs/engineering/security-and-privacy.md` | Security Owner | `PLANNED` | persistence, API status, roles and permissions |
-| قرارداد مفهومی API آینده | `docs/API_DOCUMENTATION.md` | `docs/future/api-contract-draft.md` | Architecture Owner | `LEGACY → PLANNED` | API status, future platform |
-| تاریخچه تصمیمات | `DECISION_LOG.md` | `docs/decisions/DECISION_LOG.md` | Architecture Owner | `HISTORICAL → PLANNED` | همه اسنادی که به rationale نیاز دارند |
-| دستورالعمل اجباری AI | `AGENTS.md` و `AI_CONTEXT.md` | `AGENTS.md` | Documentation Architecture | `LEGACY → PLANNED` | `docs/ai/start-here.md`, documentation index |
-| مسیریابی task-based برای AI | `docs/AI_CONTEXT.md` و این index | `docs/ai/start-here.md` | Documentation Architecture | `LEGACY → PLANNED` | `AGENTS.md` |
+| security و privacy | `docs/engineering/security-and-privacy.md` با شواهد code | `docs/engineering/security-and-privacy.md` | Security Owner | `ACTIVE` | persistence, API status, roles and permissions |
+| قرارداد مفهومی API آینده | `docs/future/api-contract-draft.md` | `docs/future/api-contract-draft.md` | Architecture Owner | `ACTIVE (DRAFT)` | API status, future platform |
+| تاریخچه تصمیمات | `docs/decisions/DECISION_LOG.md` | `docs/decisions/DECISION_LOG.md` | Architecture Owner | `ACTIVE (HISTORICAL)` | همه اسنادی که به rationale نیاز دارند |
+| دستورالعمل اجباری AI | `AGENTS.md` | `AGENTS.md` | Documentation Architecture | `ACTIVE` | `docs/ai/start-here.md`, documentation index |
+| مسیریابی task-based برای AI | `docs/ai/start-here.md` | `docs/ai/start-here.md` | Documentation Architecture | `ACTIVE` | `AGENTS.md` |
 
 ## قواعد جلوگیری از مالکیت دوگانه
 
