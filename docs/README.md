@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/docs-migration@a485125`
+> Last validated: 2026-08-11 against `agent/docs-migration@be6908c`
 > Supersedes: none
 > Superseded by: none
 
@@ -28,6 +28,7 @@
 | نیاز | نقطه شروع فعلی |
 |---|---|
 | آشنایی با دامنه فعلی محصول | [product/overview.md](product/overview.md) |
+| اصول cross-domain و جهت آینده محصول | [architecture/product-principles.md](architecture/product-principles.md) |
 | معماری و tech stack فعلی | [architecture/current-system.md](architecture/current-system.md) |
 | وضعیت فعلی API | [architecture/api-status.md](architecture/api-status.md) |
 | مدل داده فعلی | [data/current-data-model.md](data/current-data-model.md) |
@@ -49,6 +50,7 @@
 | موضوع | مرجع authoritative | Status |
 |---|---|---|
 | هدف و دامنه محصول | [product/overview.md](product/overview.md) | `CURRENT` |
+| اصول cross-domain آینده محصول | [architecture/product-principles.md](architecture/product-principles.md) | `APPROVED-FUTURE` |
 | فهرست ماژول‌ها | [product/module-catalog.md](product/module-catalog.md) | `CURRENT` |
 | واژه‌نامه | [glossary.md](glossary.md) | `CURRENT` |
 | معماری و tech stack | [architecture/current-system.md](architecture/current-system.md) | `CURRENT` |
@@ -130,6 +132,7 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 |---|---|---|---|---|---|
 | ناوبری و مالکیت مستندات | همین فایل | `docs/README.md` | Documentation Architecture | `ACTIVE` | `README.md`, `AGENTS.md`, تمام indexهای دامنه |
 | هدف، دامنه و کاربران پروژه | `docs/product/overview.md` | `docs/product/overview.md` | Product Owner | `ACTIVE` | `README.md`, module catalog, AI instructions |
+| اصول cross-domain آینده محصول | `docs/architecture/product-principles.md` | `docs/architecture/product-principles.md` | Product Architecture Owner | `ACTIVE (APPROVED-FUTURE)` | product overview, future platform, اسناد future دامنه‌ها، AI instructions |
 | فهرست ماژول‌های پیاده‌سازی‌شده | `docs/product/module-catalog.md` با شواهد `src/components/` | `docs/product/module-catalog.md` | Product Owner | `ACTIVE` | product overview, codebase map, AI instructions |
 | واژگان فارسی و English دامنه | `docs/glossary.md` | `docs/glossary.md` | Documentation Architecture | `ACTIVE` | تمام اسناد دامنه |
 | tech stack فعلی | `docs/architecture/current-system.md` با شواهد package و code | `docs/architecture/current-system.md` | Architecture Owner | `ACTIVE` | `README.md`, development guide, AI instructions |

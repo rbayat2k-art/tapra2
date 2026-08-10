@@ -294,3 +294,21 @@
 
 **Impact:**
 پنج موضوع پایه دیگر open محسوب نمی‌شوند و پرسش‌های موجود مرتبط از فهرست DRAFT حذف شدند؛ جزئیات مالی deferred، state machineها، reconciliation، rollout و تصمیم‌های اجرایی همچنان DRAFT باقی می‌مانند. هیچ application code، package configuration یا runtime behavior تغییر نکرد.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Tapra2 cross-domain product principles after Sales formalization
+
+**Context:**
+Formalization دامنه Sales چند اصل مشترک درباره multi-company، identity، workflow، system of record، AI، UX و audit را روشن کرد که فقط متعلق به Sales نیستند. پراکنده‌ماندن این اصول در اسناد domain باعث تکرار سؤال و ناسازگاری طراحی domainهای آینده می‌شد.
+
+**Decision:**
+سند authoritative جدید `docs/architecture/product-principles.md` با وضعیت `APPROVED-FUTURE` ایجاد شد تا Vision و اصول cross-domain آینده Tapra2 را بدون تکرار قواعد جزئی domainها نگهداری کند. Sales همچنان authority جزئیات خود را در `docs/domains/sales/approved-design.md` حفظ می‌کند.
+
+**Reason:**
+عامل‌های AI، توسعه‌دهندگان و معماران آینده باید پیش از طراحی domain جدید بدانند Tapra2 به‌سمت platform منعطف چندشرکتی `ERP / Automation / AI` حرکت می‌کند و اصول data isolation، Contract/permission-based sharing، workflow versioning، policy-governed AI، UI ساده و history غیرقابل‌تخریب قبلاً پذیرفته شده‌اند.
+
+**Impact:**
+مالکیت اصول cross-domain در documentation index ثبت شد. این تصمیم implementation، معماری runtime، application code، package configuration یا رفتار CURRENT را تغییر نمی‌دهد.
