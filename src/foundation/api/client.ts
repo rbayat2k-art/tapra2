@@ -5,6 +5,8 @@ import type {
   FoundationCustomer,
   FoundationCustomerProfile,
   FoundationSession,
+  CustomerImportAction,
+  CustomerImportJob,
 } from './contracts';
 
 export class FoundationApiError extends Error {
@@ -22,7 +24,7 @@ export class FoundationApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}, csrfToken?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('accept', 'application/json');
-  if (init.body) headers.set('content-type', 'application/json');
+  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
   if (csrfToken) headers.set('x-csrf-token', csrfToken);
 
   const response = await fetch(`/api/v1${path}`, { ...init, headers, credentials: 'include' });
@@ -79,5 +81,30 @@ export const foundationApi = {
   unmergeCustomers: (operationId: string, reason: string, csrfToken: string) => request<{ canonicalCustomer: FoundationCustomerProfile; restoredCustomer: FoundationCustomerProfile }>(`/customers/merges/${operationId}/unmerge`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
+  }, csrfToken),
+  listCustomerImports: () => request<{ imports: CustomerImportJob[] }>('/customer-imports'),
+  readCustomerImport: (jobId: string) => request<{ import: CustomerImportJob }>(`/customer-imports/${jobId}`),
+  stageCustomerImport: (file: File, csv: string, sourceName: string, csrfToken: string) => request<{ import: CustomerImportJob }>('/customer-imports', {
+    method: 'POST',
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'idempotency-key': crypto.randomUUID(),
+      'x-file-name': file.name,
+      'x-import-source': encodeURIComponent(sourceName),
+    },
+    body: csv,
+  }, csrfToken),
+  applySafeCustomerImportDecisions: (jobId: string, csrfToken: string) => request<{ import: CustomerImportJob }>(`/customer-imports/${jobId}/apply-safe-decisions`, {
+    method: 'POST', body: JSON.stringify({}),
+  }, csrfToken),
+  decideCustomerImportRecord: (
+    jobId: string, recordId: string,
+    decision: { action: CustomerImportAction; targetCustomerId?: string; targetRecordId?: string },
+    csrfToken: string,
+  ) => request<{ import: CustomerImportJob }>(`/customer-imports/${jobId}/records/${recordId}/decision`, {
+    method: 'PUT', body: JSON.stringify(decision),
+  }, csrfToken),
+  approveCustomerImport: (jobId: string, csrfToken: string) => request<{ import: CustomerImportJob }>(`/customer-imports/${jobId}/approve`, {
+    method: 'POST', body: JSON.stringify({}),
   }, csrfToken),
 };

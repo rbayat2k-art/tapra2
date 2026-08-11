@@ -40,6 +40,14 @@ function safeFileName(request: Request): string {
   return value;
 }
 
+function importSource(request: Request): string {
+  try {
+    return z.string().trim().min(1).max(200).parse(decodeURIComponent(request.header('x-import-source') ?? 'Customer CSV import'));
+  } catch {
+    throw new AppError(400, 'customer_import_source_invalid', 'Import source is invalid.');
+  }
+}
+
 export function customerImportRoutes(): Router {
   const router = Router();
   router.use(requireAuthentication, requireActiveContext);
@@ -64,7 +72,7 @@ export function customerImportRoutes(): Router {
         {
           csv: request.body,
           fileName: safeFileName(request),
-          sourceName: z.string().trim().min(1).max(200).parse(request.header('x-import-source') ?? 'Customer CSV import'),
+          sourceName: importSource(request),
           idempotencyKey: idempotencyKey(request),
           correlationId: response.locals.correlationId as string,
         },
