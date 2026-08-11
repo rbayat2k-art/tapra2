@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -25,6 +25,14 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/customers/duplicates/check` | تشخیص قطعی `EXACT_MATCH` و هشدار نام یکسان `POSSIBLE_DUPLICATE` بدون merge خودکار |
 | `POST` | `/api/v1/customers/merge` | merge کنترل‌شده، deterministic و reversible؛ نیازمند `customer.merge` و `Idempotency-Key` |
 | `POST` | `/api/v1/customers/merges/:operationId/unmerge` | بازگردانی merge و بازیابی profile مستقل؛ نیازمند `customer.merge` |
+| `GET` | `/api/v1/customer-imports` | فهرست ImportJobهای context فعال |
+| `GET` | `/api/v1/customer-imports/:jobId` | جزئیات staging، classification، candidate و تصمیم‌ها |
+| `POST` | `/api/v1/customer-imports` | دریافت محدود `text/csv` و ساخت staging؛ نیازمند `customer.import.create` و `Idempotency-Key` |
+| `POST` | `/api/v1/customer-imports/:jobId/apply-safe-decisions` | ثبت پیشنهادهای deterministic کم‌ریسک؛ نیازمند `customer.import.review` |
+| `PUT` | `/api/v1/customer-imports/:jobId/records/:recordId/decision` | تصمیم صریح reviewer برای یک ردیف |
+| `POST` | `/api/v1/customer-imports/:jobId/approve` | اعمال transaction نهایی و idempotent به Customer 360؛ نیازمند `customer.import.approve` |
+
+قرارداد کامل CURRENT این endpointها در [Customer Import](../domains/sales/customer-import.md) توضیح داده شده است.
 
 ## قراردادهای مشترک
 

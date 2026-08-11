@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل برای دستورالعمل‌های اجباری و مسیر ورود AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -34,6 +34,7 @@
 | نقش و permission | [roles and permissions](docs/domains/finance/roles-and-permissions.md) |
 | پشتیبانی | [support rules](docs/domains/support/business-rules.md) |
 | Customer فعلی | [current customer](docs/domains/sales/current-customer.md) |
+| Customer Import | [customer import](docs/domains/sales/customer-import.md) |
 | فروش آینده | [approved design](docs/domains/sales/approved-design.md) و [open questions](docs/domains/sales/open-questions.md) |
 | معماری، داده و امنیت | [documentation index](docs/README.md) |
 | rationale و تاریخچه | [decision log](docs/decisions/DECISION_LOG.md) |

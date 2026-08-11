@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current system architecture and technology stack
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -44,3 +44,9 @@ Customer 360 در این Sprint فقط foundation هویت است؛ fuzzy matchi
 - [Persistence](../data/persistence.md)
 - [توسعه](../engineering/development.md)
 - [امنیت](../engineering/security-and-privacy.md)
+
+## Customer Import اجراشده
+
+Customer 360 اکنون یک pipeline محدود و server-backed برای UTF-8 CSV دارد. فایل ابتدا در `customer_import_jobs` و `customer_import_records` staging می‌شود؛ normalization، validation و duplicate detection قبل از هر تغییر master انجام می‌شوند. فقط تصمیم‌های نهایی و Approval دارای permission می‌توانند در یک transaction به Customer 360 اعمال شوند. جزئیات authoritative در [Customer Import](../domains/sales/customer-import.md) است.
+
+این pipeline از `xlsx` استفاده نمی‌کند. پردازش `102M`، worker پس‌زمینه، fuzzy/AI resolution و تبدیل purchase history به Invoice هنوز اجرا نشده‌اند.

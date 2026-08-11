@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CustomersView } from '../../components/CustomersView';
 import type { Customer, User } from '../../types';
-import { SaasCustomersView } from './SaasCustomersView';
+import { SaasCustomerWorkspace } from './SaasCustomerWorkspace';
 
 interface CustomerSourceViewProps {
   customers: Customer[];
@@ -18,7 +18,7 @@ export function CustomerSourceView(props: CustomerSourceViewProps) {
         <button onClick={() => setSource('saas')} className={`rounded-lg px-3 py-2 font-bold ${source === 'saas' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}>SaaS / PostgreSQL</button>
         <button onClick={() => setSource('prototype')} className={`rounded-lg px-3 py-2 font-bold ${source === 'prototype' ? 'bg-amber-600 text-white' : 'text-slate-400'}`}>Prototype / localStorage</button>
       </nav>
-      {source === 'saas' ? <SaasCustomersView /> : <CustomersView {...props} />}
+      {source === 'saas' ? <SaasCustomerWorkspace /> : <CustomersView {...props} />}
     </div>
   );
 }

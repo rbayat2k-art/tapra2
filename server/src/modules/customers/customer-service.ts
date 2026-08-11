@@ -15,6 +15,7 @@ export interface SourceInput {
   rawSourceReference?: string;
   confidence?: number;
   verificationStatus?: 'unverified' | 'verified' | 'rejected';
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateCustomerInput {
@@ -103,6 +104,7 @@ interface SourceRow {
   raw_source_reference: string | null;
   confidence: string | null;
   verification_status: string;
+  metadata: Record<string, unknown>;
 }
 
 interface TimelineRow {
@@ -138,6 +140,7 @@ export interface CustomerProfile extends CustomerSummary {
     id: string; originalCustomerId: string; sourceType: string; sourceName: string; sourceReference: string | null;
     importReference: string | null; observedAt: string | null; ingestedAt: string;
     rawSourceReference: string | null; confidence: number | null; verificationStatus: string;
+    metadata: Record<string, unknown>;
   }>;
   timeline: Array<{
     id: string; originalCustomerId: string; eventType: string; summary: string;
@@ -196,7 +199,7 @@ async function loadCustomerProfile(client: PoolClient, customerId: string): Prom
     `, [profileIds]);
   const sources = await client.query<SourceRow>(`
       SELECT id, customer_id, source_type, source_name, source_reference, import_reference,
-        observed_at, ingested_at, raw_source_reference, confidence, verification_status
+        observed_at, ingested_at, raw_source_reference, confidence, verification_status, metadata
       FROM customer_sources WHERE customer_id = ANY($1::uuid[])
       ORDER BY ingested_at, id
     `, [profileIds]);
@@ -230,7 +233,7 @@ async function loadCustomerProfile(client: PoolClient, customerId: string): Prom
       sourceReference: row.source_reference, importReference: row.import_reference,
       observedAt: row.observed_at?.toISOString() ?? null, ingestedAt: row.ingested_at.toISOString(),
       rawSourceReference: row.raw_source_reference, confidence: row.confidence === null ? null : Number(row.confidence),
-      verificationStatus: row.verification_status,
+      verificationStatus: row.verification_status, metadata: row.metadata,
     })),
     timeline: timeline.rows.map((row) => ({
       id: row.id, originalCustomerId: row.customer_id, eventType: row.event_type,
@@ -253,16 +256,108 @@ async function insertSource(
     INSERT INTO customer_sources(
       workspace_id, company_id, customer_id, source_type, source_name, source_reference,
       import_reference, observed_at, raw_source_reference, confidence, verification_status,
-      created_by_user_account_id
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      created_by_user_account_id, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     RETURNING id
   `, [
     scope.workspaceId, scope.companyId, scope.customerId, source?.type ?? 'manual',
     source?.name ?? 'Manual entry', source?.reference ?? null, source?.importReference ?? null,
     source?.observedAt ?? null, source?.rawSourceReference ?? null, source?.confidence ?? null,
-    source?.verificationStatus ?? 'unverified', scope.actorId,
+    source?.verificationStatus ?? 'unverified', scope.actorId, JSON.stringify(source?.metadata ?? {}),
   ]);
   return result.rows[0]!.id;
+}
+
+export interface ImportedCustomerInput extends CreateCustomerInput {
+  importRecordId: string;
+}
+
+/**
+ * Customer-module contract used by approved import transactions. The import
+ * module owns reconciliation; this function alone owns creation of Customer
+ * identity records, provenance, and the Customer timeline.
+ */
+export async function createImportedCustomerWithinTransaction(
+  client: PoolClient,
+  scope: { workspaceId: string; companyId: string; actorId: string },
+  input: ImportedCustomerInput,
+): Promise<string> {
+  const idempotencyKey = `customer-import:${input.importRecordId}`;
+  const created = await client.query<{ id: string }>(`
+    INSERT INTO customers(
+      workspace_id, company_id, full_name, phone_primary, phone_secondary,
+      address, province, city, postal_code, created_by_user_account_id, idempotency_key
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (workspace_id, company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+    DO NOTHING RETURNING id
+  `, [
+    scope.workspaceId, scope.companyId, input.fullName, input.phonePrimary, input.phoneSecondary || null,
+    input.address || null, input.province || null, input.city || null, input.postalCode || null,
+    scope.actorId, idempotencyKey,
+  ]);
+  const customerId = created.rows[0]?.id ?? (await client.query<{ id: string }>(
+    'SELECT id FROM customers WHERE idempotency_key = $1', [idempotencyKey],
+  )).rows[0]?.id;
+  if (!customerId) throw new AppError(409, 'customer_import_create_conflict', 'Imported Customer creation could not be completed.');
+  if (!created.rowCount) return customerId;
+
+  const sourceId = await insertSource(client, {
+    workspaceId: scope.workspaceId, companyId: scope.companyId, customerId, actorId: scope.actorId,
+  }, input.source);
+  await client.query(`
+    INSERT INTO customer_phones(
+      workspace_id, company_id, customer_id, source_id, value, normalized_value,
+      label, is_primary, verification_status, idempotency_key
+    ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'mobile', true, 'unverified', $6)
+  `, [scope.workspaceId, scope.companyId, customerId, sourceId, input.phonePrimary, idempotencyKey]);
+  if (input.phoneSecondary) {
+    await client.query(`
+      INSERT INTO customer_phones(
+        workspace_id, company_id, customer_id, source_id, value, normalized_value,
+        label, is_primary, verification_status, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'secondary', false, 'unverified', $6)
+    `, [scope.workspaceId, scope.companyId, customerId, sourceId, input.phoneSecondary, `${idempotencyKey}:secondary`]);
+  }
+  if (input.address) {
+    await client.query(`
+      INSERT INTO customer_addresses(
+        workspace_id, company_id, customer_id, source_id, province, city, address_text,
+        postal_code, label, is_primary, normalized_search_text, idempotency_key
+      ) VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text, $7::text,
+        $8::text, 'imported', true, lower(trim(concat_ws(' ', $5::text, $6::text, $7::text, $8::text))), $9
+      )
+    `, [
+      scope.workspaceId, scope.companyId, customerId, sourceId, input.province || null,
+      input.city || null, input.address, input.postalCode || null, idempotencyKey,
+    ]);
+  }
+  await appendTimeline(client, {
+    workspaceId: scope.workspaceId, companyId: scope.companyId, customerId, actorId: scope.actorId,
+    eventType: 'customer_imported', summary: 'Customer از فایل تأییدشده ایجاد شد.',
+    metadata: { importRecordId: input.importRecordId, sourceId },
+  });
+  return customerId;
+}
+
+/** Attach an approved import row as provenance to an existing Customer. */
+export async function linkImportedSourceWithinTransaction(
+  client: PoolClient,
+  scope: { workspaceId: string; companyId: string; actorId: string },
+  customerId: string,
+  input: { importRecordId: string; source: SourceInput },
+): Promise<void> {
+  const alreadyLinked = await client.query(
+    'SELECT id FROM customer_sources WHERE customer_id = $1 AND import_reference = $2',
+    [customerId, input.importRecordId],
+  );
+  if (alreadyLinked.rowCount) return;
+  const sourceId = await insertSource(client, { ...scope, customerId }, input.source);
+  await appendTimeline(client, {
+    workspaceId: scope.workspaceId, companyId: scope.companyId, customerId, actorId: scope.actorId,
+    eventType: 'import_data_linked', summary: 'یک ردیف تأییدشده Import به Customer متصل شد.',
+    metadata: { importRecordId: input.importRecordId, sourceId },
+  });
 }
 
 async function appendTimeline(

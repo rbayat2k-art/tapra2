@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -40,3 +40,9 @@
 - field دقیق Prototype از `src/types.ts` خوانده می‌شود.
 - تغییر schema PostgreSQL فقط با migration جدید انجام می‌شود؛ migration اعمال‌شده بازنویسی نمی‌شود.
 - مدل‌های Sales آینده تا زمان implementation در اسناد `APPROVED-FUTURE` یا `DRAFT` می‌مانند.
+
+## Customer Import staging
+
+`customer_import_jobs` و `customer_import_records` مدل staging مستقل از Customer master هستند. هر دو Workspace/Company-scoped، دارای RLS اجباری و دارای reference به actor هستند. Job وضعیت، hash فایل، schema version، شمارنده‌ها و زمان completion را نگه می‌دارد؛ Record نیز raw row، مقدارهای normalized، reasons، candidateها، پیشنهاد، تصمیم reviewer و نتیجه اعمال را حفظ می‌کند.
+
+`customer_sources.metadata` اطلاعات ساخت‌یافته purchase واردشده را بدون ساخت Invoice نگه می‌دارد. رویدادهای `customer_imported` و `import_data_linked` فقط پس از Approval به timeline اضافه می‌شوند. جزئیات رفتار در [Customer Import](../domains/sales/customer-import.md) است.

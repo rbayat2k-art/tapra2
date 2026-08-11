@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -38,3 +38,14 @@
 ## بدهی `xlsx`
 
 dependency قدیمی `xlsx@0.18.5` هنوز برای export در `src/components/ArchiveView.tsx` لازم است و حذف آن در این Sprint می‌توانست Prototype را بشکند. Customer 360 هیچ import یا parsing جدیدی بر پایه آن ندارد. پیش از ساخت import آینده باید آن مسیر با یک library نگهداری‌شده یا pipeline کنترل‌شده CSV/server-side جایگزین و فایل‌ها از نظر اندازه، نوع، formula injection و محتوای مخرب validate شوند.
+
+## مرز امنیتی Customer Import
+
+- Import جدید فقط CSV متنی، حداکثر `512 KiB` و `500` ردیف را می‌پذیرد و هیچ formula را اجرا نمی‌کند.
+- filename به نام امن `.csv` محدود است و مسیر filesystem کاربر پذیرفته نمی‌شود.
+- staging و candidate matching زیر RLS همان Workspace/Company اجرا می‌شوند.
+- مجوزهای create، review و approve مستقل و server-side هستند؛ UI مرز امنیتی محسوب نمی‌شود.
+- داده master فقط پس از تصمیم کامل و Approval transaction-safe تغییر می‌کند.
+- dependency `xlsx@0.18.5` همچنان legacy debt مربوط به export Prototype است؛ Customer Import جدید هیچ استفاده‌ای از آن ندارد و گسترش استفاده آن مجاز نیست.
+
+جزئیات در [Customer Import](../domains/sales/customer-import.md) است.

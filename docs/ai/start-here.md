@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند فقط برای مسیریابی task-based عامل‌های AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -20,6 +20,7 @@
 | درخواست مالی یا approval | [finance rules](../domains/finance/business-rules.md)، [roles](../domains/finance/roles-and-permissions.md) |
 | پشتیبانی/عودت | [support rules](../domains/support/business-rules.md)، [finance rules](../domains/finance/business-rules.md) |
 | مشتری فعلی | [current customer](../domains/sales/current-customer.md) |
+| Customer Import | [customer import](../domains/sales/customer-import.md) |
 | Foundation Backend/Auth/tenant | [current system](../architecture/current-system.md)، [API status](../architecture/api-status.md)، [security](../engineering/security-and-privacy.md) |
 | طراحی آینده فروش | [approved design](../domains/sales/approved-design.md)، [open questions](../domains/sales/open-questions.md) |
 | معماری/API آینده | [future platform](../architecture/future-platform.md)، [API draft](../future/api-contract-draft.md) |

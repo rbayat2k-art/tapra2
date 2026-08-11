@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -29,3 +29,10 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 - migration داده Prototype به PostgreSQL هنوز وجود ندارد.
 - هم‌زیستی دو منبع داده موقت است و UI باید منبع را آشکار نشان دهد.
 - `localStorage` همچنان برای داده حساس واقعی یا enforcement امنیتی مناسب نیست.
+
+## Persistence مربوط به Import
+
+- migrationهای `0005` و `0006` staging، completion counts و structured purchase provenance را بدون حذف Customer 360 موجود اضافه می‌کنند.
+- staging و Approval در PostgreSQL هستند؛ فایل روی filesystem برنامه ذخیره نمی‌شود.
+- Approval همه تغییرات master، provenance، timeline و audit را در transaction tenant-scoped انجام می‌دهد.
+- اجرای مجدد migration با checksum و اجرای مجدد Approval با state/idempotency کنترل می‌شود.

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer و چرخه فروش فعلی است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -50,3 +50,7 @@ fuzzy matching، ارتباط هویت میان Workspaceها، import انبو�
 - کاربران نمونه فروش، `User.role: 'requestor'` و `customPermissions: ['sales_access']` دارند؛ `UserRole` مخصوص فروش اضافه نشده است.
 
 هیچ داده `localStorage` به‌طور خودکار migrate یا حذف نشده است. طراحی ادامه فروش در [approved design](approved-design.md) و ابهام‌های آن در [open questions](open-questions.md) است. منبع تاریخی کامل در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot باقی می‌ماند.
+
+## Customer Import فعلی
+
+مسیر `SaaS / PostgreSQL` اکنون upload محدود CSV، staging، validation، duplicate detection، reconciliation و Approval صریح دارد. staging هیچ Customer اصلی نمی‌سازد و ردیف‌های مبهم auto-merge نمی‌شوند. permissionهای مستقل Import سمت server enforce می‌شوند. منبع authoritative این رفتار [Customer Import](customer-import.md) است.

@@ -8,6 +8,7 @@ import { resetEnvironmentForTests } from '../src/config/env.js';
 import { closePool, withTenantTransaction } from '../src/infrastructure/database/pool.js';
 import { runMigrations } from '../scripts/migrate.js';
 import { seedDatabase } from '../scripts/seed.js';
+import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '../src/modules/customer-imports/csv-parser.js';
 
 interface SessionResponse {
   csrfToken: string;
@@ -389,6 +390,171 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('idempotency-key', randomUUID())
       .send({ addressText: '' })
       .expect(400);
+  });
+
+  it('parses bounded CSV safely and normalizes Persian identity values deterministically', () => {
+    const rows = parseCustomerImportCsv('\uFEFFfull_name,phone,purchase_reference\n"علی رضایی","+98 912 345 6789","سفارش, ۱"');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.purchase_reference).toBe('سفارش, ۱');
+    expect(normalizePhone(rows[0]!.phone)).toBe('09123456789');
+    expect(normalizeIdentityText('  علي   كريمي  ')).toBe('علی کریمی');
+    expect(() => parseCustomerImportCsv('phone\n09120000000')).toThrow();
+    expect(() => parseCustomerImportCsv('full_name,phone\n"broken,09120000000')).toThrow();
+  });
+
+  it('requires import permission and keeps staged data tenant-isolated', async () => {
+    const reader = request.agent(createApp());
+    let readerSession = await login(reader, 'alpha-only@tapra.local', 'TapraAlpha!2026');
+    readerSession = await selectContext(reader, readerSession, 'tapra-alpha');
+    await reader
+      .post('/api/v1/customer-imports')
+      .set('x-csrf-token', readerSession.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .set('x-file-name', 'reader.csv')
+      .set('content-type', 'text/csv')
+      .send('full_name,phone\nReader Import,09128880001')
+      .expect(403);
+
+    const manager = request.agent(createApp());
+    let managerSession = await login(manager, 'demo@tapra.local', 'TapraDemo!2026');
+    managerSession = await selectContext(manager, managerSession, 'tapra-alpha');
+    const staged = await manager
+      .post('/api/v1/customer-imports')
+      .set('x-csrf-token', managerSession.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .set('x-file-name', 'tenant-check.csv')
+      .set('content-type', 'text/csv')
+      .send('full_name,phone\nTenant Import,09128880002\nBeta Seed Phone,09120000002')
+      .expect(201);
+    expect(staged.body.import.counts).toMatchObject({ total: 2, valid: 2, exactMatch: 0 });
+
+    await reader
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/apply-safe-decisions`)
+      .set('x-csrf-token', readerSession.csrfToken)
+      .send({})
+      .expect(403);
+
+    managerSession = await selectContext(manager, managerSession, 'tapra-beta');
+    await manager.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(404);
+  });
+
+  it('stages, reconciles, and idempotently approves Customer imports with provenance and audit history', async () => {
+    const agent = request.agent(createApp());
+    let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
+    session = await selectContext(agent, session, 'tapra-alpha');
+    const possibleName = `Import Possible ${randomUUID()}`;
+    await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: possibleName, phonePrimary: '09127770990' })
+      .expect(201);
+    const before = await agent.get('/api/v1/customers').expect(200);
+
+    const csv = [
+      'full_name,phone,phone_secondary,province,city,address,postal_code,purchase_reference,purchase_date,purchase_amount,source_reference,purchased_item',
+      'Import New Person,09127770001,,Tehran,Tehran,First address,1234567890,ORDER-1,2026-01-10,1250000,legacy-sales,Test service one',
+      'Import New Person,09127770001,,,,,,ORDER-2,2026-02-10,2500000,legacy-sales,Test service two',
+      'Seed Exact Phone,09120000001,,,,,,ORDER-3,2026-03-10,300000,legacy-sales,Test product three',
+      `${possibleName},09127770002,,,,,,ORDER-4,2026-04-10,400000,legacy-sales,Test product four`,
+      'Invalid Import,12,,,,,,ORDER-5,2026-05-10,500000,legacy-sales,Invalid test item',
+      'Invalid Import Date,09127770003,,,,,,ORDER-6,2026-02-30,600000,legacy-sales,Invalid date item',
+      'Invalid Import Amount,09127770004,,,,,,ORDER-7,2026-05-12,not-a-number,legacy-sales,Invalid amount item',
+    ].join('\n');
+    const key = randomUUID();
+    const staged = await agent
+      .post('/api/v1/customer-imports')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', key)
+      .set('x-file-name', 'customer-import-test.csv')
+      .set('x-import-source', 'Automated test fixture')
+      .set('content-type', 'text/csv')
+      .send(csv)
+      .expect(201);
+    expect(staged.body.import.counts).toMatchObject({ total: 7, valid: 1, invalid: 3, exactMatch: 2, possibleDuplicate: 1 });
+    const afterStaging = await agent.get('/api/v1/customers').expect(200);
+    expect(afterStaging.body.customers).toHaveLength(before.body.customers.length);
+
+    const repeated = await agent
+      .post('/api/v1/customer-imports')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', key)
+      .set('x-file-name', 'customer-import-test.csv')
+      .set('x-import-source', 'Automated test fixture')
+      .set('content-type', 'text/csv')
+      .send(csv)
+      .expect(201);
+    expect(repeated.body.import.id).toBe(staged.body.import.id);
+
+    const reviewed = await agent
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/apply-safe-decisions`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({})
+      .expect(200);
+    await agent
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/approve`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({})
+      .expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('customer_import_review_incomplete'));
+
+    const possibleRecord = reviewed.body.import.records.find((record: { classification: string }) => record.classification === 'POSSIBLE_DUPLICATE');
+    await agent
+      .put(`/api/v1/customer-imports/${staged.body.import.id}/records/${possibleRecord.id}/decision`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({ action: 'CREATE_NEW' })
+      .expect(200);
+    const approved = await agent
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/approve`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({})
+      .expect(200);
+    expect(approved.body.import.status).toBe('approved');
+    expect(approved.body.import.counts).toMatchObject({ approved: 4, rejected: 3 });
+    expect(approved.body.import.completedAt).toBeTruthy();
+    const approvedAgain = await agent
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/approve`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({})
+      .expect(200);
+    expect(approvedAgain.body.import.id).toBe(staged.body.import.id);
+
+    const createdRecord = approved.body.import.records.find((record: { rowNumber: number }) => record.rowNumber === 2);
+    const linkedRecord = approved.body.import.records.find((record: { rowNumber: number }) => record.rowNumber === 3);
+    expect(linkedRecord.appliedCustomerId).toBe(createdRecord.appliedCustomerId);
+    const profile = await agent.get(`/api/v1/customers/${createdRecord.appliedCustomerId}`).expect(200);
+    expect(profile.body.customer.sources.filter((source: { importReference: string | null }) => source.importReference)).toHaveLength(2);
+    expect(profile.body.customer.sources.some((source: { metadata: { purchasedItem?: string } }) => source.metadata.purchasedItem === 'Test service one')).toBe(true);
+    expect(profile.body.customer.timeline.map((event: { eventType: string }) => event.eventType)).toEqual(expect.arrayContaining(['customer_imported', 'import_data_linked']));
+    const afterApproval = await agent.get('/api/v1/customers').expect(200);
+    expect(afterApproval.body.customers).toHaveLength(before.body.customers.length + 2);
+
+    await withTenantTransaction({ workspaceId: alphaWorkspaceId, companyId: alphaCompanyId }, async (client) => {
+      const audits = await client.query<{ action: string }>(`
+        SELECT action FROM audit_entries WHERE resource_id = $1 OR resource_id IN (
+          SELECT id FROM customer_import_records WHERE import_job_id = $1
+        )
+      `, [staged.body.import.id]);
+      expect(audits.rows.map((row) => row.action)).toEqual(expect.arrayContaining([
+        'customer_import.staged', 'customer_import.approved', 'customer_import.create_new',
+        'customer_import.link_to_staged', 'customer_import.link_to_existing', 'customer_import.reject',
+      ]));
+    });
+  });
+
+  it('rejects unsafe import file names, malformed rows, and reused keys for different content', async () => {
+    const agent = request.agent(createApp());
+    let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
+    session = await selectContext(agent, session, 'tapra-alpha');
+    const key = randomUUID();
+    const base = agent.post('/api/v1/customer-imports').set('x-csrf-token', session.csrfToken).set('content-type', 'text/csv');
+    await base.set('idempotency-key', randomUUID()).set('x-file-name', '../unsafe.csv').send('full_name,phone\nUnsafe,09120000991').expect(400);
+    await agent.post('/api/v1/customer-imports').set('x-csrf-token', session.csrfToken).set('content-type', 'text/csv')
+      .set('idempotency-key', randomUUID()).set('x-file-name', 'broken.csv').send('full_name,phone\n"broken,09120000992').expect(400);
+    await agent.post('/api/v1/customer-imports').set('x-csrf-token', session.csrfToken).set('content-type', 'text/csv')
+      .set('idempotency-key', key).set('x-file-name', 'first.csv').send('full_name,phone\nFirst,09120000993').expect(201);
+    await agent.post('/api/v1/customer-imports').set('x-csrf-token', session.csrfToken).set('content-type', 'text/csv')
+      .set('idempotency-key', key).set('x-file-name', 'second.csv').send('full_name,phone\nSecond,09120000994').expect(409);
   });
 
   it('retains the Customer after the database pool and application are recreated', async () => {

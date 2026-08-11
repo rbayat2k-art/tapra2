@@ -59,6 +59,7 @@ export interface FoundationCustomerProfile extends FoundationCustomer {
     rawSourceReference: string | null;
     confidence: number | null;
     verificationStatus: string;
+    metadata: Record<string, unknown>;
   }>;
   timeline: Array<{
     id: string;
@@ -93,6 +94,43 @@ export interface CreateFoundationCustomer {
 export interface DuplicateCheckResult {
   match: 'EXACT_MATCH' | 'POSSIBLE_DUPLICATE' | 'NO_MATCH';
   candidates: FoundationCustomer[];
+}
+
+export type CustomerImportClassification = 'VALID' | 'INVALID' | 'EXACT_MATCH' | 'POSSIBLE_DUPLICATE' | 'REVIEW_REQUIRED';
+export type CustomerImportAction = 'CREATE_NEW' | 'LINK_TO_EXISTING' | 'LINK_TO_STAGED' | 'REJECT' | 'KEEP_FOR_REVIEW';
+
+export interface CustomerImportRecord {
+  id: string;
+  rowNumber: number;
+  rawData: Record<string, string>;
+  fullName: string | null;
+  phone: string | null;
+  normalizedPhone: string | null;
+  purchasedItem: string | null;
+  classification: CustomerImportClassification;
+  reasons: string[];
+  candidateCustomerIds: string[];
+  duplicateOfRecordId: string | null;
+  proposedAction: CustomerImportAction;
+  decidedAction: CustomerImportAction | null;
+  targetCustomerId: string | null;
+  targetRecordId: string | null;
+  appliedCustomerId: string | null;
+}
+
+export interface CustomerImportJob {
+  id: string;
+  fileName: string;
+  sourceName: string;
+  fileSha256: string;
+  schemaVersion: string;
+  status: 'staged' | 'in_review' | 'approved' | 'failed';
+  counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number; approved: number; rejected: number };
+  createdAt: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+  records?: CustomerImportRecord[];
+  candidates?: Array<{ id: string; fullName: string; phonePrimary: string }>;
 }
 
 export interface ApiErrorPayload {

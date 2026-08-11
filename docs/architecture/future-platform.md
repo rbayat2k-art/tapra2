@@ -55,6 +55,8 @@ Foundation فعلی مرزهای اولیه Backend، PostgreSQL، Identity، te
 
 ## موارد deferred و غیرمسدودکننده Foundation
 
+pipeline محدود Customer Import اکنون CURRENT است و در [سند authoritative آن](../domains/sales/customer-import.md) توضیح داده می‌شود. scale آینده باید بدون حذف staging/approval شامل object storage امن، streaming/chunking، background worker، checkpoint/resume، batch idempotency و monitoring باشد. `102M` ingestion، fuzzy/AI resolution و mapping تاریخچه خرید به Invoice هنوز DRAFT/deferred هستند.
+
 - انتخاب backend framework، Cloud provider و ابزار deployment.
 - Identity Provider دقیق، MFA، recovery و session library.
 - ترتیب domain-level migration، ابزار import و مدت coexistence.

@@ -41,6 +41,7 @@
 | قواعد مالی و دسترسی | [finance rules](domains/finance/business-rules.md)، [roles](domains/finance/roles-and-permissions.md) |
 | قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) |
 | فروش فعلی و آینده | [current customer](domains/sales/current-customer.md)، [approved design](domains/sales/approved-design.md)، [open questions](domains/sales/open-questions.md) |
+| ورود کنترل‌شده Customer | [domains/sales/customer-import.md](domains/sales/customer-import.md) |
 | امنیت و حریم خصوصی | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) |
 | معماری و API آینده | [future platform](architecture/future-platform.md)، [API draft](future/api-contract-draft.md) |
 | تصمیم‌های پذیرفته‌شده Foundation SaaS | [decisions/adr/README.md](decisions/adr/README.md) |
@@ -63,6 +64,7 @@
 | نقش و permission | [domains/finance/roles-and-permissions.md](domains/finance/roles-and-permissions.md) | `CURRENT` |
 | قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) | `CURRENT` |
 | مشتری فروش فعلی | [domains/sales/current-customer.md](domains/sales/current-customer.md) | `CURRENT` |
+| Customer Import و reconciliation | [domains/sales/customer-import.md](domains/sales/customer-import.md) | `CURRENT` |
 | Development workflow | [engineering/development.md](engineering/development.md) | `CURRENT` |
 | Quality status | [engineering/quality.md](engineering/quality.md) | `CURRENT` |
 | Security posture | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) | `CURRENT` |
@@ -155,6 +157,7 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | نقش‌ها و permissions | `docs/domains/finance/roles-and-permissions.md` با شواهد permission utilities | `docs/domains/finance/roles-and-permissions.md` | Access Control Owner | `ACTIVE` | finance rules, security, module catalog |
 | قواعد support و complaint | `docs/domains/support/business-rules.md` با شواهد code | `docs/domains/support/business-rules.md` | Support Domain Owner | `ACTIVE` | module catalog, sales documents |
 | رفتار فعلی customer/sales | `docs/domains/sales/current-customer.md` با شواهد code | `docs/domains/sales/current-customer.md` | Sales Domain Owner | `ACTIVE` | module catalog, data model |
+| Customer Import، staging و reconciliation فعلی | `docs/domains/sales/customer-import.md` با شواهد code | `docs/domains/sales/customer-import.md` | Sales Domain Owner | `ACTIVE` | current customer, data model, API status, security |
 | طراحی پذیرفته‌شده آینده sales | `docs/domains/sales/approved-design.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | future platform, decisions |
 | پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |
 | راه‌اندازی و development workflow | `docs/engineering/development.md` | `docs/engineering/development.md` | Engineering Owner | `ACTIVE` | `README.md`, AI instructions |
