@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای فهرست ماژول‌های پیاده‌سازی‌شده و مرز مسئولیت آن‌ها است.
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
@@ -13,6 +13,7 @@
 
 | حوزه | Viewهای اصلی | مسئولیت فعلی | قواعد authoritative |
 |---|---|---|---|
+| Foundation SaaS | `FoundationLogin`, `ContextSelector`, `FoundationContextBar` | login سروری، انتخاب Workspace/Company و نمایش context فعال | [current system](../architecture/current-system.md) و [security](../engineering/security-and-privacy.md) |
 | Dashboard | `DashboardView` | خلاصه وضعیت، میان‌برها و منوهای پرکاربرد هر کاربر | [current-system](../architecture/current-system.md) |
 | درخواست مالی | `NewRequestModal`, `MyRequestsView`, `RequestTableView` | ثبت و پیگیری درخواست‌های پرداخت عادی و تجمیعی | [finance business rules](../domains/finance/business-rules.md) |
 | تأیید و پرداخت | `ApprovalInboxView`, `RequestDetailModal`, `BulkPaymentExportModal` | بررسی، ارجاع، عودت، تأیید و ثبت پرداخت | [finance business rules](../domains/finance/business-rules.md) |
@@ -20,7 +21,7 @@
 | ساختار سازمانی | `CompaniesView`, `CostCentersView` | شرکت‌ها، حساب‌های بانکی و مراکز هزینه | [current data model](../data/current-data-model.md) |
 | ذی‌نفعان | `VendorsView`, `VendorCategoriesView` | دفترچه ذی‌نفعان و دسته‌بندی آن‌ها | [current data model](../data/current-data-model.md) |
 | پشتیبانی | `SupportView`, `SupportCaseFormModal`, `SupportCaseDetailModal` | پرونده شکایت/عودت و ارسال ردیف تأییدشده به خزانه | [support business rules](../domains/support/business-rules.md) |
-| مشتریان فروش | `CustomersView` | جست‌وجوی مشتری، چرخه فروش فعلی و دید سلسله‌مراتبی | [current customer](../domains/sales/current-customer.md) |
+| مشتریان | `CustomerSourceView`, `SaasCustomersView`, `CustomersView` | create/read سروری در PostgreSQL و دسترسی جداگانه به چرخه فروش Prototype | [current customer](../domains/sales/current-customer.md) |
 | نامه‌نگاری | `LettersView` و modalهای مرتبط | ثبت، نسخه‌بندی، ارجاع و پیگیری نامه | مدل‌های `Letter` در `src/types.ts` |
 | ارتباطات | `ChatView`, `ColleaguesView`, `AllCommunicationsAuditView` | گفت‌وگوی عمومی، مستقیم و مشاهده مدیریتی ارتباطات | [security and privacy](../engineering/security-and-privacy.md) |
 | مدیریت دسترسی | `AdminPanel`, `RolesAndPermissionsView` | کاربران، نقش‌ها، permissionها و مسیرهای تأیید | [roles and permissions](../domains/finance/roles-and-permissions.md) |
@@ -39,4 +40,4 @@
 
 ## خارج از وضعیت فعلی
 
-Backend اجرایی، API عملیاتی، فاکتور فروش، Lead، انبار و لجستیک هنوز ماژول CURRENT نیستند. وضعیت آن‌ها در [future platform](../architecture/future-platform.md) و اسناد future فروش ثبت می‌شود.
+Backend و API Foundation اکنون CURRENT هستند، اما فاکتور فروش، Lead، انبار، لجستیک، Outbox و endpointهای سایر domainها هنوز CURRENT نیستند. وضعیت آن‌ها در [future platform](../architecture/future-platform.md) و اسناد future فروش ثبت می‌شود.

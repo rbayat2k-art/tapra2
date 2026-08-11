@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against accepted SaaS foundation ADRs and `agent/docs-migration@120e813`
+> Last validated: 2026-08-11 against Foundation implementation through `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
@@ -142,13 +142,13 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | معماری فعلی سیستم | `docs/architecture/current-system.md` | `docs/architecture/current-system.md` | Architecture Owner | `ACTIVE` | module catalog, codebase map, data docs |
 | وضعیت API فعلی | `docs/architecture/api-status.md` | `docs/architecture/api-status.md` | Architecture Owner | `ACTIVE` | `README.md`, security, future API contract |
 | overview و جزئیات حل‌نشده معماری آینده platform/backend | `docs/architecture/future-platform.md` | `docs/architecture/future-platform.md` | Architecture Owner | `ACTIVE (DRAFT)` | future API contract, approved sales design, ADR index |
-| مدل Tenant/Workspace پذیرفته‌شده | `docs/decisions/adr/ADR-001-tenant-workspace-model.md` | `docs/decisions/adr/ADR-001-tenant-workspace-model.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | future platform, product principles, identity design |
-| topology اولیه Backend | `docs/decisions/adr/ADR-002-modular-monolith.md` | `docs/decisions/adr/ADR-002-modular-monolith.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | future platform, development guidance |
-| Database و tenancy enforcement آینده | `docs/decisions/adr/ADR-003-postgresql-tenancy.md` | `docs/decisions/adr/ADR-003-postgresql-tenancy.md` | Data Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | future platform, future data design, migration plan |
-| Identity/session/authorization آینده | `docs/decisions/adr/ADR-004-identity-session-authorization.md` | `docs/decisions/adr/ADR-004-identity-session-authorization.md` | Security Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | future platform, security, future API contract |
-| Audit، Outbox و reliability آینده | `docs/decisions/adr/ADR-005-audit-outbox-reliability.md` | `docs/decisions/adr/ADR-005-audit-outbox-reliability.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | future platform, domain designs, integration design |
-| راهبرد مهاجرت Prototype | `docs/decisions/adr/ADR-006-prototype-migration.md` | `docs/decisions/adr/ADR-006-prototype-migration.md` | Data Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | persistence, future platform, migration artifacts |
-| مرزهای Data/AI/Security آینده | `docs/decisions/adr/ADR-007-data-ai-security-boundaries.md` | `docs/decisions/adr/ADR-007-data-ai-security-boundaries.md` | Security Architecture Owner | `ACTIVE (ADR ACCEPTED؛ not CURRENT)` | security, product principles, AI guidance |
+| مدل Tenant/Workspace پذیرفته‌شده | `docs/decisions/adr/ADR-001-tenant-workspace-model.md` | `docs/decisions/adr/ADR-001-tenant-workspace-model.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | future platform, product principles, identity design |
+| topology اولیه Backend | `docs/decisions/adr/ADR-002-modular-monolith.md` | `docs/decisions/adr/ADR-002-modular-monolith.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | future platform, development guidance |
+| Database و tenancy enforcement | `docs/decisions/adr/ADR-003-postgresql-tenancy.md` | `docs/decisions/adr/ADR-003-postgresql-tenancy.md` | Data Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | future platform, future data design, migration plan |
+| Identity/session/authorization | `docs/decisions/adr/ADR-004-identity-session-authorization.md` | `docs/decisions/adr/ADR-004-identity-session-authorization.md` | Security Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | future platform, security, future API contract |
+| Audit، Outbox و reliability | `docs/decisions/adr/ADR-005-audit-outbox-reliability.md` | `docs/decisions/adr/ADR-005-audit-outbox-reliability.md` | Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | future platform, domain designs, integration design |
+| راهبرد مهاجرت Prototype | `docs/decisions/adr/ADR-006-prototype-migration.md` | `docs/decisions/adr/ADR-006-prototype-migration.md` | Data Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | persistence, future platform, migration artifacts |
+| مرزهای Data/AI/Security | `docs/decisions/adr/ADR-007-data-ai-security-boundaries.md` | `docs/decisions/adr/ADR-007-data-ai-security-boundaries.md` | Security Architecture Owner | `ACTIVE (ADR ACCEPTED؛ implementation در CURRENT authorities)` | security, product principles, AI guidance |
 | مدل داده فعلی | `docs/data/current-data-model.md` با شواهد `src/types.ts` | `docs/data/current-data-model.md` | Data Owner | `ACTIVE` | اسناد دامنه، architecture |
 | persistence فعلی | `docs/data/persistence.md` با شواهد `src/utils/storage.ts` | `docs/data/persistence.md` | Data Owner | `ACTIVE` | architecture, security, development |
 | قواعد مالی و approval workflow | `docs/domains/finance/business-rules.md` با شواهد code | `docs/domains/finance/business-rules.md` | Finance Domain Owner | `ACTIVE` | module catalog, roles and permissions |

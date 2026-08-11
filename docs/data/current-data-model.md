@@ -3,48 +3,33 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-این سند مرجع مفهومی مدل داده اجراشده است. تعریف دقیق fieldها و TypeScript contractها در [src/types.ts](../../src/types.ts) قرار دارد و هنگام تغییر مدل باید هم‌زمان با این سند بررسی شود.
+در دوره migration دو مدل داده اجراشده هم‌زمان وجود دارند و نباید با هم یکی فرض شوند.
 
-## ماهیت مدل
+## مدل server-backed Foundation
 
-مدل فعلی مجموعه‌ای از TypeScript interface و type است؛ database schema، SQL table یا server-side relation نیست. ارتباط موجودیت‌ها با string IDها و referenceهای منطقی داخل داده‌های مرورگر برقرار می‌شود و foreign key enforcement پایگاه داده وجود ندارد.
+تعریف دقیق schema در migrationهای `server/migrations/` است:
 
-## گروه‌های اصلی موجودیت
-
-| حوزه | موجودیت‌های اصلی |
+| مرز | موجودیت‌ها |
 |---|---|
-| هویت و دسترسی | `User`, `SystemRole`, `SystemPermission` |
-| ساختار سازمانی | `Company`, `CompanyBankAccount`, `CostCenter` |
-| مالی و گردش کار | `PaymentRequest`, `RequestBatchItem`, `RequestTimelineStep`, `WorkflowStepRule` |
-| ذی‌نفعان | `Vendor`, `VendorCategory` |
-| دبیرخانه | `Letter` و مدل‌های attachment، signature، version، forward و timeline |
-| Support | `SupportCase` و مدل‌های timeline، transaction و custom field |
-| ارتباطات | `ChatMessage`, `SystemNotification`, `DirectMessage` |
-| وظایف | `AssignedTask`, `TaskLogEntry`, `TaskMessage` |
-| مشتری | `Customer`, `CustomerActivityLogEntry` |
+| Organization | `workspaces`, `companies` |
+| Identity | `persons`, `user_accounts`, `sessions` |
+| Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` |
+| Customer | `customers` با scope اجباری Workspace/Company |
+| Audit | `audit_entries` با actor، context، action، resource و correlation |
 
-## قواعد اعتبار مدل
+شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. Customer و AuditEntry دارای PostgreSQL RLS اجباری هستند.
 
-- `src/types.ts` شاهد دقیق field-level implementation است.
-- `src/utils/storage.ts` نشان می‌دهد کدام مدل‌ها persistent هستند.
-- وجود یک type به‌تنهایی اثبات نمی‌کند که تمام workflowهای مرتبط با آن کامل هستند.
-- تغییر نام ID، status یا relation باید همراه با بررسی business rules، persistence و migration انجام شود.
-- طراحی موجودیت‌های آینده sales نباید پیش از implementation وارد این سند `CURRENT` شود.
+## مدل Prototype
 
-## محدودیت‌های فعلی
+مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست.
 
-- schema registry یا runtime schema validation مرکزی مشاهده نشد.
-- database constraint و transaction سروری وجود ندارد.
-- referential integrity عمدتاً توسط code و داده‌های پیش‌فرض حفظ می‌شود.
-- versioned data migration عمومی وجود ندارد.
+## قواعد تغییر
 
-## مراجع مرتبط
-
-- [Persistence فعلی](persistence.md)
-- [معماری فعلی](../architecture/current-system.md)
-- [وضعیت API](../architecture/api-status.md)
-- [فهرست مالکیت مستندات](../README.md)
+- field دقیق Backend از SQL migration و DTO/service فعلی خوانده می‌شود.
+- field دقیق Prototype از `src/types.ts` خوانده می‌شود.
+- تغییر schema PostgreSQL فقط با migration جدید انجام می‌شود؛ migration اعمال‌شده بازنویسی نمی‌شود.
+- مدل‌های Sales آینده تا زمان implementation در اسناد `APPROVED-FUTURE` یا `DRAFT` می‌مانند.

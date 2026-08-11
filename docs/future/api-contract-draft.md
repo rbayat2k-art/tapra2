@@ -7,7 +7,7 @@
 > Supersedes: none
 > Superseded by: none
 
-> هشدار: هیچ‌یک از endpointهای این سند اکنون وجود ندارند. [API status](../architecture/api-status.md) مرجع وضعیت اجرایی است.
+> هشدار: endpointهای کاندیدای این سند CURRENT نیستند. Foundation API محدودی اکنون اجرا شده و فهرست دقیق آن فقط در [API status](../architecture/api-status.md) authoritative است.
 
 ## قواعد قرارداد پیش از تصویب
 
@@ -24,7 +24,7 @@
 
 | Method و path پیشنهادی | Use case | وضعیت طراحی |
 |---|---|---|
-| `POST /api/auth/login` | ورود و ایجاد session امن | نیازمند بازطراحی response؛ `User + token` legacy قطعی نیست. |
+| `POST /api/auth/login` | شکل legacy ورود | Foundation مسیر نسخه‌دار متفاوتی دارد؛ این candidate پیاده‌سازی‌شده محسوب نمی‌شود. |
 | `GET /api/users` | فهرست کاربران برای مدیر مجاز | نیازمند filtering و حذف فیلدهای حساس. |
 | `PUT /api/users/:id` | تغییر کاربر و دسترسی | نیازمند DTO محدود، authorization و audit. |
 | `GET /api/requests` | فهرست درخواست‌های قابل‌مشاهده | نیازمند scope و pagination. |
@@ -37,7 +37,7 @@
 
 ## حوزه‌های contract که هنوز تعریف نشده‌اند
 
-Support Case، Customer، Lead، Sales Invoice، catalog، logistics، inventory، inter-company settlement، notification، audit و integrationهای بانکی/Issabel قرارداد مصوب ندارند.
+Support Case، Customer فراتر از create/read فعلی، Lead، Sales Invoice، catalog، logistics، inventory، inter-company settlement، notification، audit query و integrationهای بانکی/Issabel قرارداد مصوب ندارند.
 
 ## معیار ارتقا از DRAFT
 

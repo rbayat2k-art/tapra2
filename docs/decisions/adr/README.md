@@ -7,7 +7,7 @@
 > Supersedes: none
 > Superseded by: none
 
-`ACCEPTED` در این پوشه یعنی تصمیم برای implementation آینده پذیرفته شده است؛ به معنی پیاده‌سازی `CURRENT` نیست. وضعیت اجراشده همچنان از [معماری فعلی](../../architecture/current-system.md) و authorityهای `CURRENT` خوانده می‌شود.
+`ACCEPTED` در این پوشه فقط وضعیت تصمیم را نشان می‌دهد و به‌تنهایی اثبات implementation نیست. بعضی بخش‌های Foundation اکنون اجرا شده‌اند، اما وضعیت دقیق و محدودیت‌ها فقط از [معماری فعلی](../../architecture/current-system.md) و authorityهای `CURRENT` خوانده می‌شود.
 
 | موضوع | مرجع authoritative |
 |---|---|

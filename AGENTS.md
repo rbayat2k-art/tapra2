@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل برای دستورالعمل‌های اجباری و مسیر ورود AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 

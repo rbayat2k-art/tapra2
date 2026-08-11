@@ -3,43 +3,32 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-## نتیجه
+Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointهای این جدول CURRENT هستند؛ فهرست‌های قدیمی یا [API draft](../future/api-contract-draft.md) قرارداد اجراشده محسوب نمی‌شوند.
 
-در commit اعتبارسنجی‌شده، Tapra2 هیچ backend یا HTTP API اجرایی ندارد. برنامه به‌صورت client-side اجرا می‌شود و داده‌های عملیاتی را در مرورگر نگهداری می‌کند.
+| Method | Path | رفتار فعلی |
+|---|---|---|
+| `GET` | `/api/v1/health` | بررسی اتصال process و PostgreSQL |
+| `POST` | `/api/v1/auth/login` | احراز هویت و ایجاد session |
+| `GET` | `/api/v1/auth/session` | دریافت user، membershipها، context و permissionها |
+| `POST` | `/api/v1/auth/logout` | پایان session؛ نیازمند CSRF |
+| `POST` | `/api/v1/session/context` | انتخاب membership مجاز؛ نیازمند CSRF |
+| `GET` | `/api/v1/customers` | فهرست Customerهای context فعال |
+| `GET` | `/api/v1/customers/:customerId` | خواندن Customer در context فعال |
+| `POST` | `/api/v1/customers` | ایجاد Customer؛ نیازمند CSRF، permission و `Idempotency-Key` از نوع UUID |
 
-برای این نتیجه، موارد زیر بررسی شدند:
+## قراردادهای مشترک
 
-- root repository و entrypointهای موجود؛
-- `src/main.tsx` و `src/App.tsx`؛
-- ۳۱ فایل component و utility که مستقیماً در ساختار فعلی استفاده می‌شوند؛
-- الگوهای `fetch`, `/api/`, `axios`, Express و service client.
+- session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
+- state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
+- Customer routeها به active Workspace/Company و permissionهای `customer.read` یا `customer.create` نیاز دارند.
+- client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
+- خطاها JSON با `error.code`, `error.message` و `correlationId` برمی‌گردند.
+- endpointهای فهرست‌شده contract کامل platform نیستند و pagination عمومی هنوز اجرا نشده است.
 
-در این محدوده هیچ route یا API client اجرایی مشاهده نشد.
+## مرز آینده
 
-## تفسیر dependencies
-
-وجود `express`, `@types/express`, `dotenv` یا `@google/genai` در `package.json` به‌تنهایی اثبات نمی‌کند که backend یا integration اجرایی وجود دارد. سند معماری فقط قابلیت‌هایی را CURRENT می‌داند که entrypoint و data flow آن‌ها در code قابل مشاهده باشد.
-
-## وضعیت سند قدیمی API
-
-نسخه تاریخی [API_DOCUMENTATION.md در Snapshot](../archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/docs/API_DOCUMENTATION.md) مجموعه‌ای از endpointهای فرضی برای آینده است. آن سند نباید:
-
-- به‌عنوان قرارداد API موجود استفاده شود؛
-- مبنای integration فعلی قرار گیرد؛
-- بدون تصمیم و implementation جدید به `CURRENT` تغییر وضعیت دهد.
-
-مرجع فعال قرارداد آینده [api-contract-draft.md](../future/api-contract-draft.md) با وضعیت `DRAFT` است؛ فعال بودن آن به معنی وجود API اجرایی نیست.
-
-## شرط تغییر این وضعیت
-
-این سند فقط زمانی باید تغییر کند که backend یا API واقعی با code، authentication، authorization، persistence، error contract و validation قابل بررسی ایجاد شود.
-
-## مراجع مرتبط
-
-- [معماری فعلی](current-system.md)
-- [Persistence فعلی](../data/persistence.md)
-- [فهرست مالکیت مستندات](../README.md)
+endpointهای مالی، Support، Sales Invoice، Lead، Catalog و integrationها هنوز وجود ندارند. طراحی احتمالی آن‌ها باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.

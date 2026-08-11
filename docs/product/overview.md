@@ -3,11 +3,11 @@
 > Status: CURRENT
 > Source of truth: This document for current product purpose and scope
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای مالی و اداری سازمان است. این سند فقط دامنه‌ای را توضیح می‌دهد که در `stable` پیاده‌سازی و در source code مشاهده شده است.
+Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای مالی و اداری سازمان است. این سند فقط دامنه‌ای را توضیح می‌دهد که در branch فعلی پیاده‌سازی و با code یا test مشاهده شده است.
 
 ## دامنه فعلی
 
@@ -25,9 +25,10 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 
 ## مرز اجرایی فعلی
 
-- برنامه یک client-side SPA است.
-- داده‌ها در مرورگر و عمدتاً در `localStorage` نگهداری می‌شوند.
-- backend و API اجرایی در commit اعتبارسنجی‌شده مشاهده نشد.
+- یک Foundation server-backed برای login، Workspace/Company context، membership/permission و Customer create/read وجود دارد.
+- Foundation از Express و PostgreSQL استفاده می‌کند و Customer create را همراه AuditEntry ثبت می‌کند.
+- سایر domainهای محصول هنوز client-side هستند و عمدتاً از `localStorage` استفاده می‌کنند.
+- مسیرهای SaaS و Prototype در دوره migration جدا هستند و داده قدیمی حذف نمی‌شود.
 - این سند ادعای `Production-Ready` بودن، امنیت enterprise یا persistence سروری ندارد.
 - طراحی‌های آینده sales، backend و API جزو رفتار فعلی محسوب نمی‌شوند.
 
