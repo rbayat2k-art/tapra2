@@ -136,7 +136,7 @@
 
 | قابلیت | شاهد legacy | شاهد canonical پیش از ادغام | رفتار کسب‌وکار | تصمیم | اقدام ادغام |
 |---|---|---|---|---|---|
-| Backend و PostgreSQL | legacy master آن را blocker می‌دانست | Fastify/PG/migrations موجود | persistence و API معتبر | `SUPERSEDED_BY_NEW_MODEL` | معماری جدید authority بماند |
+| Backend و PostgreSQL | legacy master آن را blocker می‌دانست | Express/PG/migrations موجود | persistence و API معتبر | `SUPERSEDED_BY_NEW_MODEL` | معماری جدید authority بماند |
 | Session/Auth server | login محلی prototype | session server و testهای auth | هویت قابل اعتماد | `REIMPLEMENTED_IN_SAAS` | تنها login عادی محصول |
 | Workspace/Company context | legacy فاقد tenant enforcement بود | context server و UI switcher | انتخاب tenant/company مجاز | `REIMPLEMENTED_IN_SAAS` | shell بالغ به همین context متصل شود |
 | Tenant isolation و RLS | در legacy client-side بود | PostgreSQL RLS و تست‌ها | جداسازی داده | `REIMPLEMENTED_IN_SAAS` | هیچ UI legacy نباید آن را دور بزند |
