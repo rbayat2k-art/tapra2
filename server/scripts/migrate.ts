@@ -8,14 +8,20 @@ import { Client } from 'pg';
 loadDotEnv({ path: '.env.local', quiet: true });
 loadDotEnv({ quiet: true });
 
-export async function runMigrations(connectionString = process.env.DATABASE_MIGRATION_URL): Promise<void> {
+export async function runMigrations(
+  connectionString = process.env.DATABASE_MIGRATION_URL,
+  options: { through?: string } = {},
+): Promise<void> {
   if (!connectionString?.startsWith('postgresql://')) {
     throw new Error('DATABASE_MIGRATION_URL is required and must use postgresql://');
   }
 
   const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
   const migrationsDirectory = path.resolve(scriptDirectory, '../migrations');
-  const files = (await readdir(migrationsDirectory)).filter((file) => file.endsWith('.sql')).sort();
+  const files = (await readdir(migrationsDirectory))
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .filter((file) => !options.through || file <= options.through);
   const client = new Client({ connectionString, application_name: 'tapra2_migrations' });
   await client.connect();
   try {

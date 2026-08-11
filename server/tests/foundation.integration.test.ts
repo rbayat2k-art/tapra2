@@ -46,6 +46,67 @@ async function resetTestDatabase(): Promise<void> {
   }
 }
 
+async function verifyPopulatedLegacyCustomerUpgrade(): Promise<void> {
+  const workspaceId = '91000000-0000-4000-8000-000000000001';
+  const companyId = '92000000-0000-4000-8000-000000000001';
+  const personId = '93000000-0000-4000-8000-000000000001';
+  const accountId = '94000000-0000-4000-8000-000000000001';
+  const customerId = '95000000-0000-4000-8000-000000000001';
+  const client = new Client({ connectionString: migrationUrl, application_name: 'tapra2_legacy_upgrade_fixture' });
+  const runtimeClient = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_legacy_upgrade_verify' });
+
+  await runMigrations(migrationUrl, { through: '0007_customer_import_read_permission.sql' });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE customers NO FORCE ROW LEVEL SECURITY');
+    await client.query('ALTER TABLE customer_phones NO FORCE ROW LEVEL SECURITY');
+    await client.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [workspaceId, companyId]);
+    await client.query("INSERT INTO workspaces(id, slug, name) VALUES ($1, 'legacy-upgrade', 'Legacy Upgrade')", [workspaceId]);
+    await client.query("INSERT INTO companies(id, workspace_id, code, name) VALUES ($1, $2, 'LEGACY', 'Legacy Company')", [companyId, workspaceId]);
+    await client.query("INSERT INTO persons(id, full_name) VALUES ($1, 'Legacy Customer Owner')", [personId]);
+    await client.query(`
+      INSERT INTO user_accounts(id, person_id, email, password_hash)
+      VALUES ($1, $2, 'legacy-upgrade@tapra.local', 'not-used')
+    `, [accountId, personId]);
+    await client.query(`
+      INSERT INTO customers(id, workspace_id, company_id, full_name, phone_primary, created_by_user_account_id)
+      VALUES ($1, $2, $3, 'Legacy Existing Customer', '09121234567', $4)
+    `, [customerId, workspaceId, companyId, accountId]);
+    await client.query(`
+      INSERT INTO customer_phones(workspace_id, company_id, customer_id, value, normalized_value, is_primary)
+      VALUES ($1, $2, $3, '09121234567', '09121234567', true)
+    `, [workspaceId, companyId, customerId]);
+    await client.query('ALTER TABLE customers FORCE ROW LEVEL SECURITY');
+    await client.query('ALTER TABLE customer_phones FORCE ROW LEVEL SECURITY');
+    await client.query('COMMIT');
+
+    await runMigrations(migrationUrl);
+
+    await runtimeClient.connect();
+    await runtimeClient.query('BEGIN');
+    await runtimeClient.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [workspaceId, companyId]);
+    const result = await runtimeClient.query<{ customer_identity_id: string; phone_identity_id: string }>(`
+      SELECT customer.identity_id::text AS customer_identity_id,
+             phone.identity_id::text AS phone_identity_id
+      FROM customers customer
+      JOIN customer_phones phone ON phone.customer_id = customer.id
+      WHERE customer.id = $1
+    `, [customerId]);
+    await runtimeClient.query('COMMIT');
+    if (!result.rows[0]?.customer_identity_id || result.rows[0].customer_identity_id !== result.rows[0].phone_identity_id) {
+      throw new Error('Legacy Customer identity backfill did not preserve the existing relationship.');
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    await runtimeClient.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    await runtimeClient.end().catch(() => undefined);
+    await client.end();
+  }
+}
+
 async function login(agent: ReturnType<typeof request.agent>, email: string, password: string): Promise<SessionResponse> {
   const response = await agent.post('/api/v1/auth/login').send({ email, password }).expect(200);
   return response.body as SessionResponse;
@@ -70,6 +131,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
   let createdCustomerId: string;
   let alphaWorkspaceId: string;
   let alphaCompanyId: string;
+  let populatedLegacyUpgradeVerified = false;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -79,12 +141,19 @@ describe('Foundation Sprint 1 vertical slice', () => {
     resetEnvironmentForTests();
     await closePool();
     await resetTestDatabase();
+    await verifyPopulatedLegacyCustomerUpgrade();
+    populatedLegacyUpgradeVerified = true;
+    await resetTestDatabase();
     await runMigrations(migrationUrl);
     await seedDatabase(migrationUrl);
   });
 
   afterAll(async () => {
     await closePool();
+  });
+
+  it('backfills workspace identities for populated pre-0008 Customer data', () => {
+    expect(populatedLegacyUpgradeVerified).toBe(true);
   });
 
   it('refuses unsafe or production seed targets before connecting', () => {

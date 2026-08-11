@@ -7,6 +7,13 @@ CREATE TABLE customer_identities (
   UNIQUE (workspace_id, normalized_primary_phone)
 );
 
+-- Migration runs as the table owner. Earlier migrations intentionally FORCE RLS, which
+-- also filters the owner when no tenant context is set. Temporarily lift FORCE only for
+-- the owner so every pre-existing tenant row is backfilled in this transaction; RLS
+-- remains enabled for application roles and FORCE is restored before commit.
+ALTER TABLE customers NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE customer_phones NO FORCE ROW LEVEL SECURITY;
+
 INSERT INTO customer_identities(workspace_id, normalized_primary_phone, created_at)
 SELECT workspace_id, normalize_customer_phone(phone_primary), min(created_at)
 FROM customers
@@ -69,6 +76,9 @@ DROP INDEX customer_phones_workspace_normalized_unique_idx;
 
 CREATE UNIQUE INDEX customer_phones_relationship_normalized_unique_idx
   ON customer_phones(workspace_id, company_id, customer_id, normalized_value);
+
+ALTER TABLE customers FORCE ROW LEVEL SECURITY;
+ALTER TABLE customer_phones FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE customer_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_identities FORCE ROW LEVEL SECURITY;
