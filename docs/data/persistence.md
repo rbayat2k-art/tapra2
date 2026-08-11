@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
 > Supersedes: none
 > Superseded by: none
 
@@ -11,11 +11,12 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 
 ## PostgreSQL
 
-- session، Organization/Access foundation، Customer SaaS و AuditEntry در PostgreSQL ذخیره می‌شوند.
+- session، Organization/Access foundation، Customer 360، provenance، timeline، merge lineage و AuditEntry در PostgreSQL ذخیره می‌شوند.
 - migrationها checksum، ترتیب نام و advisory lock دارند و تکرار اجرای آن‌ها idempotent است.
 - service runtime با نقش محدود `tapra2_app` و migration با `tapra2_owner` اجرا می‌شود.
-- Customer و AuditEntry در transaction دارای tenant context اجرا و با RLS محدود می‌شوند.
-- ایجاد Customer و AuditEntry مربوط به آن در یک transaction انجام می‌شود.
+- تمام relationهای Customer 360 و AuditEntry در transaction دارای tenant context اجرا و با RLS محدود می‌شوند.
+- ایجاد profile، افزودن phone/address و merge/unmerge همراه timeline و AuditEntry در transaction واحد انجام می‌شوند.
+- migration `0004_customer_360_identity.sql` ردیف‌های Sprint 1 را بدون حذف backfill می‌کند و اجرای تکراری migration runner با checksum کنترل می‌شود.
 - Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
 ## localStorage

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,10 +18,17 @@
 | Organization | `workspaces`, `companies` |
 | Identity | `persons`, `user_accounts`, `sessions` |
 | Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` |
-| Customer | `customers` با scope اجباری Workspace/Company |
+| Customer identity | `customers` به‌عنوان profile والد؛ `customer_phones` و `customer_addresses` برای داده چندتایی |
+| Provenance | `customer_sources` برای منبع، reference، زمان مشاهده/ورود، confidence و verification foundation |
+| Customer history | `customer_timeline_events` برای eventهای server-generated اجراشده |
+| Identity reconciliation | `customer_merge_operations` برای merge دارای lineage و unmerge واقعی بدون حذف profile بازنده |
 | Audit | `audit_entries` با actor، context، action، resource و correlation |
 
-شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. Customer و AuditEntry دارای PostgreSQL RLS اجباری هستند.
+شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. همه جدول‌های Customer 360 و AuditEntry دارای PostgreSQL RLS اجباری هستند.
+
+شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و index یکتای `(workspace_id, normalized_value)` مانع تعلق بی‌صدای یک phone به دو profile در همان Workspace است. visibility همچنان Company-scoped است. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
+
+در merge، phone/address/source روی Customer اصلی خود باقی می‌مانند و profile canonical آن‌ها را از رابطه merge فعال جمع می‌کند. `lineage_snapshot` و هر دو ردیف Customer حفظ می‌شوند؛ unmerge رابطه را reverse و profile بازنده را دوباره active می‌کند.
 
 ## مدل Prototype
 
