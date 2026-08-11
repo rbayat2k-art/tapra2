@@ -2,6 +2,7 @@ import express from 'express';
 import { correlationMiddleware } from './correlation.js';
 import { query } from '../infrastructure/database/pool.js';
 import { identityRoutes } from '../modules/identity/routes.js';
+import { customerRoutes } from '../modules/customers/routes.js';
 import { asyncHandler } from '../shared/async-handler.js';
 import { errorHandler, notFoundHandler } from '../shared/errors.js';
 
@@ -17,6 +18,7 @@ export function createApp() {
   }));
 
   app.use('/api/v1', identityRoutes());
+  app.use('/api/v1', customerRoutes());
 
   app.use(notFoundHandler);
   app.use(errorHandler);

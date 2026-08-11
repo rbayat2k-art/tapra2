@@ -22,6 +22,8 @@ const ids = {
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
+  customerAlpha: '70000000-0000-4000-8000-000000000001',
+  customerBeta: '70000000-0000-4000-8000-000000000002',
 } as const;
 
 export async function seedDatabase(connectionString = process.env.DATABASE_MIGRATION_URL): Promise<void> {
@@ -97,12 +99,40 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       ids.membershipAlphaOnly, ids.roleAlphaReader,
     ]);
     await client.query('COMMIT');
-    console.log('Seeded deterministic Foundation identities, memberships, roles and permissions.');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     await client.end();
+  }
+
+  const runtimeConnectionString = process.env.DATABASE_URL;
+  if (!runtimeConnectionString?.startsWith('postgresql://')) throw new Error('DATABASE_URL is required for tenant-scoped seed data.');
+  const runtime = new Client({ connectionString: runtimeConnectionString, application_name: 'tapra2_seed_tenant_data' });
+  await runtime.connect();
+  try {
+    const contexts = [
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha, customerId: ids.customerAlpha, name: 'مشتری نمونه آلفا', phone: '09120000001' },
+      { workspaceId: ids.workspaceBeta, companyId: ids.companyBeta, customerId: ids.customerBeta, name: 'مشتری نمونه بتا', phone: '09120000002' },
+    ];
+    for (const context of contexts) {
+      await runtime.query('BEGIN');
+      try {
+        await runtime.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [context.workspaceId, context.companyId]);
+        await runtime.query(`
+          INSERT INTO customers(id, workspace_id, company_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (id) DO NOTHING
+        `, [context.customerId, context.workspaceId, context.companyId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
+        await runtime.query('COMMIT');
+      } catch (error) {
+        await runtime.query('ROLLBACK');
+        throw error;
+      }
+    }
+    console.log('Seeded deterministic Foundation identities, contexts, permissions and Customers.');
+  } finally {
+    await runtime.end();
   }
 }
 

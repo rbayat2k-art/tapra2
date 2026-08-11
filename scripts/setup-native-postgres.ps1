@@ -99,7 +99,7 @@ END
     $environment = @"
 # Generated locally by scripts/setup-native-postgres.ps1. Never commit this file.
 NODE_ENV=development
-SERVER_PORT=3001
+SERVER_PORT=3101
 FRONTEND_ORIGIN=http://localhost:3000
 DATABASE_MIGRATION_URL=postgresql://tapra2_owner:$ownerPassword@localhost:5432/tapra2_dev
 DATABASE_URL=postgresql://tapra2_app:$appPassword@localhost:5432/tapra2_dev
