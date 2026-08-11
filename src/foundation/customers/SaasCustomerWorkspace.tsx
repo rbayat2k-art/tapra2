@@ -7,7 +7,8 @@ import { SaasCustomersView } from './SaasCustomersView';
 export function SaasCustomerWorkspace() {
   const { session } = useFoundationSession();
   const [tab, setTab] = useState<'profiles' | 'imports'>('profiles');
-  const canSeeImports = session?.activeContext?.permissions.includes('customer.import.create') ?? false;
+  const permissions = session?.activeContext?.permissions ?? [];
+  const canSeeImports = permissions.includes('customer.import.read') || permissions.includes('customer.import.create');
 
   return <div className="space-y-4 dir-rtl">
     {canSeeImports && <nav aria-label="بخش‌های Customer 360" className="inline-flex rounded-xl border border-slate-700 bg-slate-900 p-1 text-sm">

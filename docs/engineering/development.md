@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current development setup and commands
 > Owner: Engineering Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 

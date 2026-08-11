@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { SupportCase, SupportTransactionRow, User } from '../types';
+import { SupportCase, SupportTransactionRow, User, SystemPermission } from '../types';
 import { getJalaliNowWithSeconds } from '../utils/persianDate';
 import { formatRial } from '../utils/numberToWords';
+import { hasPermission } from '../utils/permissions';
+import { canCloseSupportCase, canRevokeUnsentSupportApproval } from '../utils/supportRefundWorkflow';
 import {
   X, CheckCircle2, XCircle, RotateCcw, Send, Banknote, Clock, UserCircle, MapPin, Phone,
   ChevronDown, ChevronUp, PackageCheck, Edit3, ShieldCheck
@@ -10,6 +12,7 @@ import {
 interface SupportCaseDetailModalProps {
   supportCase: SupportCase;
   currentUser: User | null;
+  effectivePermissions: SystemPermission[] | null;
   onClose: () => void;
   onUpdateCase: (updated: SupportCase) => void;
   onMarkRowApproved: (caseId: string, rowId: string, note: string) => void;
@@ -34,6 +37,7 @@ const statusBadge = (status: SupportTransactionRow['status']) => {
 export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
   supportCase,
   currentUser,
+  effectivePermissions,
   onClose,
   onUpdateCase,
   onMarkRowApproved,
@@ -41,17 +45,17 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
   onEditCase
 }) => {
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [activeNoteAction, setActiveNoteAction] = useState<{ rowId: string; kind: 'reject' | 'correction' } | null>(null);
+  const [activeNoteAction, setActiveNoteAction] = useState<{ rowId: string; kind: 'reject' | 'correction' | 'reset' } | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState<number>(0);
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
 
-  const isFinancialApprover = currentUser?.role === 'financial_approver' || currentUser?.role === 'admin' || !!currentUser?.customPermissions?.includes('financial_approve_support');
-  const isSupportAgent = currentUser?.role === 'support_agent' || currentUser?.role === 'admin' || !!currentUser?.customPermissions?.includes('manage_support_cases');
+  const isFinancialApprover = hasPermission(effectivePermissions, ['financial_approve_support']);
+  const isSupportAgent = hasPermission(effectivePermissions, ['manage_support_cases']);
 
-  const isCaseOwner = currentUser?.id === supportCase.operatorId || currentUser?.role === 'admin';
-  const untouchedByFinance = !supportCase.transactions.some((t) => ['approved_pending_send', 'financial_approved', 'pending_treasury_payment', 'paid'].includes(t.status));
+  const isCaseOwner = currentUser?.id === supportCase.operatorId || effectivePermissions === null;
+  const untouchedByFinance = supportCase.transactions.every((t) => t.status === 'pending_financial_approval');
   const canEditCase = isSupportAgent && isCaseOwner && untouchedByFinance && supportCase.status !== 'closed';
 
   const approvedPendingRows = useMemo(
@@ -86,6 +90,12 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
 
   const handleResetRowStatus = (row: SupportTransactionRow) => {
     if (!currentUser) return;
+    const note = noteDrafts[row.id] || '';
+    if (!canRevokeUnsentSupportApproval(row)) {
+      alert('پس از ایجاد درخواست خزانه، تصمیم مالی این ردیف غیرقابل بازنشانی است. اصلاح باید از مسیر رسمی همان درخواست انجام شود.');
+      return;
+    }
+    if (!note.trim()) { alert('لطفاً دلیل لغو تایید مالی را بنویسید.'); return; }
     let updated: SupportCase = {
       ...supportCase,
       transactions: supportCase.transactions.map((r) => r.id === row.id ? {
@@ -97,10 +107,12 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
     updated = pushTimeline(updated, {
       actorId: currentUser.id, actorName: currentUser.fullName, actorRole: currentUser.roleTitle,
       action: 'commented', actionTitle: `بازگشت از تایید/اقدام مالی فاکتور ${row.invoiceCode}`,
-      comment: 'وضعیت فاکتور توسط تاییدکننده مالی بازنشانی شد و به حالت در انتظار بررسی بازگشت.'
+      comment: note.trim()
     });
     onUpdateCase(updated);
     setSelectedRowIds((prev) => prev.filter((id) => id !== row.id));
+    setNoteDrafts((p) => ({ ...p, [row.id]: '' }));
+    setActiveNoteAction(null);
   };
 
   const confirmReject = (row: SupportTransactionRow) => {
@@ -152,20 +164,26 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
 
   const handleResubmit = (row: SupportTransactionRow) => {
     if (!currentUser) return;
+    const correctionNote = noteDrafts[row.id] || '';
+    if (!correctionNote.trim()) { alert('شرح اصلاح انجام‌شده الزامی است.'); return; }
+    if (!Number.isFinite(editAmount) || editAmount <= 0) { alert('مبلغ اصلاح‌شده باید بیشتر از صفر باشد.'); return; }
     let updated: SupportCase = {
       ...supportCase,
       transactions: supportCase.transactions.map((r) => r.id === row.id ? {
         ...r, status: 'pending_financial_approval' as const, finalRefundAmount: editAmount,
-        refundCorrection: `مبلغ اصلاح‌شده توسط پشتیبانی: ${formatRial(editAmount)}`
+        refundCorrection: correctionNote.trim(),
+        financialApproverId: undefined, financialApproverName: undefined,
+        financialApproverNote: undefined, financialActionAt: undefined
       } : r)
     };
     updated = pushTimeline(updated, {
       actorId: currentUser.id, actorName: currentUser.fullName, actorRole: currentUser.roleTitle,
       action: 'commented', actionTitle: `اصلاح و ارسال مجدد فاکتور ${row.invoiceCode}`,
-      comment: `مبلغ نهایی به ${formatRial(editAmount)} اصلاح و مجدداً برای تایید مالی ارسال شد.`
+      comment: `${correctionNote.trim()} — مبلغ نهایی: ${formatRial(editAmount)}`
     });
     onUpdateCase(updated);
     setEditingRowId(null);
+    setNoteDrafts((p) => ({ ...p, [row.id]: '' }));
   };
 
   const handleSendSelected = () => {
@@ -174,24 +192,26 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
     setSelectedRowIds([]);
   };
 
-  const handleSendAllAndClose = () => {
+  const handleSendAllApproved = () => {
     const allApprovedIds = approvedPendingRows.map((r) => r.id);
     if (allApprovedIds.length === 0) {
       alert('هیچ ردیف تایید‌شده‌ای برای ارسال وجود ندارد.');
       return;
     }
     if (undecidedCount > allApprovedIds.length) {
-      if (!confirm('هنوز ردیف‌هایی هستند که تصمیم‌گیری نشده‌اند. آیا مطمئنید می‌خواهید فقط ردیف‌های تایید‌شده را ارسال و پرونده را ببندید؟')) return;
+      if (!confirm('هنوز ردیف‌هایی تصمیم‌گیری نشده‌اند. فقط ردیف‌های تاییدشده به خزانه ارسال شوند؟')) return;
     }
-    onSendApprovedRowsToTreasury(supportCase.id, allApprovedIds, true);
+    onSendApprovedRowsToTreasury(supportCase.id, allApprovedIds, false);
     setSelectedRowIds([]);
   };
 
   const handleCloseCase = () => {
     if (!currentUser) return;
-    if (undecidedCount > 0) {
-      if (!confirm(`${undecidedCount} ردیف هنوز تصمیم‌گیری یا ارسال نشده است. مطمئنید پرونده بسته شود؟`)) return;
-    } else if (!confirm('این پرونده بسته شود؟')) return;
+    if (!canCloseSupportCase(supportCase)) {
+      alert('پرونده فقط زمانی بسته می‌شود که همه ردیف‌ها پرداخت شده یا با دلیل نهایی رد شده باشند.');
+      return;
+    }
+    if (!confirm('این پرونده بسته شود؟')) return;
     let updated: SupportCase = { ...supportCase, status: 'closed', complaintStatus: 'closed', completedAt: getJalaliNowWithSeconds() };
     updated = pushTimeline(updated, {
       actorId: currentUser.id, actorName: currentUser.fullName, actorRole: currentUser.roleTitle,
@@ -319,10 +339,10 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
                   <Send className="w-3.5 h-3.5" /> ارسال {selectedRowIds.length > 0 ? `(${selectedRowIds.length})` : ''} به خزانه
                 </button>
                 <button
-                  onClick={handleSendAllAndClose}
+                  onClick={handleSendAllApproved}
                   className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded-lg cursor-pointer"
                 >
-                  ارسال همه و بستن پرونده
+                  ارسال همه تاییدشده‌ها
                 </button>
               </div>
             </div>
@@ -382,10 +402,10 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
                                   </button>
                                 </div>
                               )}
-                              {isFinancialApprover && ['approved_pending_send', 'financial_approved', 'financial_rejected', 'needs_correction'].includes(row.status) && (
-                                <button onClick={() => handleResetRowStatus(row)} title="بازگشت از تایید / لغو اقدام" className="px-2 py-1 bg-amber-600/90 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer shadow">
+                              {isFinancialApprover && canRevokeUnsentSupportApproval(row) && (
+                                <button onClick={() => setActiveNoteAction({ rowId: row.id, kind: 'reset' })} title="لغو تایید پیش از ارسال" className="px-2 py-1 bg-amber-600/90 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer shadow">
                                   <RotateCcw className="w-3 h-3" />
-                                  <span>بازگشت از اقدام</span>
+                                  <span>لغو تایید</span>
                                 </button>
                               )}
                               {isSupportAgent && row.status === 'needs_correction' && editingRowId !== row.id && (
@@ -410,11 +430,11 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
                                     autoFocus
                                     value={noteDrafts[row.id] || ''}
                                     onChange={(e) => setNoteDrafts((p) => ({ ...p, [row.id]: e.target.value }))}
-                                    placeholder={activeNoteAction.kind === 'reject' ? 'دلیل رد را بنویسید (الزامی)...' : 'توضیح دهید چه اصلاحی لازم است (الزامی)...'}
+                                    placeholder={activeNoteAction.kind === 'reject' ? 'دلیل رد را بنویسید (الزامی)...' : activeNoteAction.kind === 'reset' ? 'دلیل لغو تایید را بنویسید (الزامی)...' : 'توضیح دهید چه اصلاحی لازم است (الزامی)...'}
                                     className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
                                   />
                                   <button
-                                    onClick={() => activeNoteAction.kind === 'reject' ? confirmReject(row) : confirmNeedsCorrection(row)}
+                                    onClick={() => activeNoteAction.kind === 'reject' ? confirmReject(row) : activeNoteAction.kind === 'reset' ? handleResetRowStatus(row) : confirmNeedsCorrection(row)}
                                     className={`px-3 py-2 text-white text-[11px] font-bold rounded-lg cursor-pointer ${activeNoteAction.kind === 'reject' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-orange-600 hover:bg-orange-500'}`}
                                   >
                                     ثبت
@@ -467,7 +487,7 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
                                 )}
 
                                 {isSupportAgent && row.status === 'needs_correction' && editingRowId === row.id && (
-                                  <div className="mt-2.5 flex items-center gap-2">
+                                  <div className="mt-2.5 grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
                                     <input
                                       type="text"
                                       inputMode="numeric"
@@ -476,6 +496,12 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
                                       dir="ltr"
                                       className="flex-1 bg-slate-800 border border-indigo-400 rounded-lg px-3 py-2 text-xs text-white font-mono text-left"
                                       placeholder="مبلغ نهایی اصلاح‌شده"
+                                    />
+                                    <input
+                                      value={noteDrafts[row.id] || ''}
+                                      onChange={(e) => setNoteDrafts((p) => ({ ...p, [row.id]: e.target.value }))}
+                                      className="bg-slate-800 border border-indigo-400 rounded-lg px-3 py-2 text-xs text-white"
+                                      placeholder="شرح اصلاح انجام‌شده (الزامی)"
                                     />
                                     <button onClick={() => handleResubmit(row)} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 cursor-pointer">
                                       <Send className="w-3.5 h-3.5" /> ارسال مجدد
@@ -498,7 +524,7 @@ export const SupportCaseDetailModal: React.FC<SupportCaseDetailModalProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black text-indigo-300 flex items-center gap-1.5"><Clock className="w-4 h-4" /> تاریخچه پرونده</h3>
-              <span className="text-[10px] text-slate-500 font-bold">حداکثر ۲ رکورد نمایشی (قابل اسکرول)</span>
+              <span className="text-[10px] text-slate-500 font-bold">تاریخچه کامل و غیرقابل حذف</span>
             </div>
             <div className="max-h-52 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-700">
               {supportCase.timeline.slice().reverse().map((t) => (

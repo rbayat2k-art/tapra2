@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { PaymentRequest, User, RequestStatus, AttachmentFile, RequestBatchItem } from '../types';
+import { PaymentRequest, User, RequestStatus, AttachmentFile, RequestBatchItem, SystemRole, SystemPermission } from '../types';
 import { formatRial, numberToPersianWords } from '../utils/numberToWords';
 import { getJalaliNow } from '../utils/persianDate';
-import { 
-  X, CheckCircle2, Clock, RefreshCw, RotateCcw, XCircle, 
-  Send, Upload, Printer, Building, MapPin, 
-  User as UserIcon, Calendar, CreditCard, FileText, 
+import { hasPermission, getEffectiveUserPermissions } from '../utils/permissions';
+import { logAudit } from '../utils/auditLog';
+import { computeBatchTotals, canFinalizeBatch, applyRowAmountCorrection } from '../utils/batchCalculations';
+import {
+  X, CheckCircle2, Clock, RefreshCw, RotateCcw, XCircle,
+  Send, Upload, Printer, Building, MapPin,
+  User as UserIcon, Calendar, CreditCard, FileText,
   Paperclip, Image as ImageIcon, MessageSquare, AlertCircle, Phone,
-  Edit3, Trash2
+  Edit3, Trash2, Zap
 } from 'lucide-react';
 
 interface RequestDetailModalProps {
@@ -16,6 +19,9 @@ interface RequestDetailModalProps {
   onClose: () => void;
   currentUser: User | null;
   users: User[];
+  roles: SystemRole[];
+  effectivePermissions: SystemPermission[] | null;
+  impersonatorAdmin?: User | null;
   onUpdateRequest: (updatedReq: PaymentRequest) => void;
   onDeleteRequest?: (requestId: string) => void;
   onOpenPrintModal: (req: PaymentRequest) => void;
@@ -27,6 +33,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   onClose,
   currentUser,
   users,
+  roles,
+  effectivePermissions,
+  impersonatorAdmin = null,
   onUpdateRequest,
   onDeleteRequest,
   onOpenPrintModal
@@ -42,7 +51,20 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
   // Per-row optional rejection reason input for consolidated/batch requests
   const [batchRejectReasons, setBatchRejectReasons] = useState<Record<string, string>>({});
-  
+  // Per-row optional amount-correction input for consolidated/batch requests — approver may
+  // correct a row's amount before approving it (see applyRowAmountCorrection).
+  const [batchCorrectionAmounts, setBatchCorrectionAmounts] = useState<Record<string, string>>({});
+  const [batchCorrectionReasons, setBatchCorrectionReasons] = useState<Record<string, string>>({});
+
+  // Payment referral (normal flow) — admin/refer_for_payment holder picks the payment officer
+  // once the request is 'approved_awaiting_payment_assignment'. No users[0] fallback anywhere.
+  const [selectedPaymentOfficerId, setSelectedPaymentOfficerId] = useState<string>('');
+
+  // Emergency payment referral — independent permission, mandatory reason, self-referral forbidden.
+  const [showEmergencyPaymentInput, setShowEmergencyPaymentInput] = useState(false);
+  const [emergencyReasonInput, setEmergencyReasonInput] = useState('');
+  const [selectedEmergencyExecutorId, setSelectedEmergencyExecutorId] = useState<string>('');
+
   // Edit Mode State for Requestor
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -70,7 +92,6 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   // Cancellation Request State
   const [showCancellationInput, setShowCancellationInput] = useState(false);
   const [cancellationReasonInput, setCancellationReasonInput] = useState('');
-  const [selectedDelegatedUserId, setSelectedDelegatedUserId] = useState<string>('');
 
   // Users this approver is allowed to forward/approve requests to. Falls back to
   // everyone except themself if the admin hasn't configured a restricted list yet.
@@ -97,8 +118,12 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
       setIsEditing(false);
       setShowCancellationInput(false);
       setCancellationReasonInput('');
-      const firstExec = users.find(u => u.role === 'treasury_executor' || u.roleTitle?.includes('مجری')) || users[0];
-      setSelectedDelegatedUserId(firstExec?.id || '');
+      // No pre-selected default here on purpose — admin/refer_for_payment holder and
+      // refer_for_emergency_payment holder must actively pick a target, never a silent default.
+      setSelectedPaymentOfficerId('');
+      setShowEmergencyPaymentInput(false);
+      setEmergencyReasonInput('');
+      setSelectedEmergencyExecutorId('');
       setSelectedForwardUserId(forwardTargetUsers[0]?.id || users[0]?.id || '');
     }
   }, [request, users, currentUser]);
@@ -124,15 +149,34 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   const canRequestCancellation = isOwnerRequestor && (request.status === 'pending_approval' || request.status === 'approved_pending_payment') && hasBeenProcessedByApprovers && !request.cancellationRequested;
   const canResubmit = !isSubmitting && isOwnerRequestor && request.status === 'returned';
 
+  // Multi-role/deny-aware permission checks (admin always bypasses via effectivePermissions===null).
+  const canReferForPayment = isAdminRole || hasPermission(effectivePermissions, ['refer_for_payment']);
+  const canReferForEmergencyPayment = isAdminRole || hasPermission(effectivePermissions, ['refer_for_emergency_payment']);
+  const canExecuteEmergencyPaymentPerm = isAdminRole || hasPermission(effectivePermissions, ['execute_emergency_payment']);
+
   const canApproveAndForward = !isSubmitting && (isApproverRole || isAdminRole) && isCurrentResponsibleParty && request.status === 'pending_approval';
   const canFinalApproveTreasury = !isSubmitting && (isAdminRole || isTreasuryExecRole) && isCurrentResponsibleParty && request.status === 'pending_approval';
-  const canMarkPaid = !isSubmitting && (isTreasuryExecRole || isAdminRole) && isCurrentResponsibleParty && (request.status === 'approved_pending_payment' || request.status === 'pending_approval' || request.status === 'paid');
+  // Tightened per business rule: paid only by the specific officer this request was referred
+  // to, and only while it is actually sitting in approved_pending_payment.
+  const canMarkPaid = !isSubmitting && (isTreasuryExecRole || isAdminRole) && isCurrentResponsibleParty && request.status === 'approved_pending_payment';
   const canReturnOrReject = !isSubmitting && (isApproverRole || isAdminRole || isTreasuryExecRole) && isCurrentResponsibleParty && (request.status === 'pending_approval' || request.status === 'approved_pending_payment');
-  const canDelegateExecution = !isSubmitting && (isAdminRole || currentUser?.roleTitle?.includes('مدیر ارشد')) && (request.status === 'approved_pending_payment' || request.status === 'pending_approval');
+
+  // Normal payment referral: final approval no longer auto-picks anyone — only admin or an
+  // explicit refer_for_payment holder may pick the payment officer, only once the request is
+  // sitting in 'approved_awaiting_payment_assignment' (no owner yet).
+  const canReferForPaymentNow = !isSubmitting && canReferForPayment && request.status === 'approved_awaiting_payment_assignment';
+
+  // Emergency payment: independent permission, available on any not-yet-finalized request,
+  // and execution only by the specific person it was referred to.
+  const canTriggerEmergencyReferral = !isSubmitting && canReferForEmergencyPayment &&
+    !['paid', 'completed', 'cancelled', 'rejected', 'emergency_pending_payment'].includes(request.status);
+  const canExecuteEmergencyPaymentNow = !isSubmitting && canExecuteEmergencyPaymentPerm &&
+    request.status === 'emergency_pending_payment' && request.currentApproverId === currentUser?.id;
 
   // Consolidated / Batch Request Row-Level Approval
   const hasBatchItems = !!request.batchItems && request.batchItems.length > 0;
   const allBatchItemsDecided = !hasBatchItems || request.batchItems!.every(bi => bi.status !== 'pending');
+  const batchBlocksFinalApproval = hasBatchItems && !canFinalizeBatch(request.batchItems);
 
   // The row-level batch edit form only replaces the single title/amount edit form while the
   // request is still in its pre-approval editable window (canEditOrDeleteInitial); a returned
@@ -250,8 +294,10 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     alert(isResubmitting ? 'درخواست شما با موفقیت اصلاح و مجدداً جهت بررسی ارسال گردید.' : 'تغییرات با موفقیت ذخیره شد.');
   };
 
+  // Cancels the request (status -> 'cancelled'); it stays in the cancelled-archive and is
+  // never physically removed from storage — see handleCancelRequest in App.tsx.
   const handleDelete = () => {
-    if (confirm(`آیا از لغو و حذف کامل درخواست با کد پیگیری ${request.trackingCode} اطمینان دارید؟`)) {
+    if (confirm(`آیا از لغو درخواست با کد پیگیری ${request.trackingCode} اطمینان دارید؟ این درخواست حذف فیزیکی نمی‌شود و در بایگانی لغوشده‌ها باقی می‌ماند.`)) {
       if (onDeleteRequest) {
         onDeleteRequest(request.id);
       }
@@ -280,10 +326,16 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
     // Amount correction is optional: only validated/applied if the approver actually
     // changed it away from the request's current amount (so info_request's amount=0,
-    // and every other unmodified case, is left completely untouched).
-    const isAmountCorrected = correctedAmount !== request.amount;
+    // and every other unmodified case, is left completely untouched). For batch requests
+    // the total must never be edited independently of its rows — it is always derived from
+    // computeBatchTotals over the row decisions/corrections, so this path is disabled there.
+    const isAmountCorrected = !hasBatchItems && correctedAmount !== request.amount;
     if (isAmountCorrected && (!correctedAmount || correctedAmount <= 0)) {
       alert('مبلغ اصلاح‌شده باید عددی بزرگ‌تر از صفر باشد.');
+      return;
+    }
+    if (hasBatchItems && !canFinalizeBatch(request.batchItems)) {
+      alert('تا زمانی که تصمیم روی همه ردیف‌های درخواست تجمیعی ثبت نشود، امکان تایید و ارجاع وجود ندارد.');
       return;
     }
 
@@ -465,52 +517,156 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
   };
 
   const handleFinalApproval = () => {
-    if (isSubmitting) return;
+    // Handler-level re-check (not just a disabled button): current user, ownership, status,
+    // and batch completeness must all still hold at the moment of the click.
+    if (isSubmitting || !currentUser) return;
+    if (!isCurrentResponsibleParty) { alert('این درخواست در حال حاضر نزد شما نیست.'); return; }
+    if (request.status !== 'pending_approval') { alert('وضعیت درخواست برای تایید نهایی معتبر نیست.'); return; }
+    if (!canFinalizeBatch(request.batchItems)) {
+      alert('تا زمانی که تصمیم روی همه ردیف‌های درخواست تجمیعی ثبت نشود، امکان تایید نهایی وجود ندارد.');
+      return;
+    }
     setIsSubmitting(true);
 
-    const actorName = currentUser?.fullName || 'رضا بیات';
-    const actorRole = currentUser?.roleTitle || 'مدیر خزانه‌داری';
-    const executor = users.find(u => u.role === 'treasury_executor') || users[0];
+    const actorName = currentUser.fullName;
+    const actorRole = currentUser.roleTitle;
+
+    // Recompute total from decided rows for batch requests; if every row was rejected the
+    // whole request is rejected automatically instead of moving forward for payment.
+    let finalAmount = request.amount;
+    let finalAmountInWords = request.amountInWords;
+    let finalStatus: RequestStatus = 'approved_awaiting_payment_assignment';
+    if (hasBatchItems) {
+      const totals = computeBatchTotals(request.batchItems!);
+      finalAmount = totals.total;
+      finalAmountInWords = totals.amountInWords;
+      if (totals.allRejected) finalStatus = 'rejected';
+    }
 
     const updatedTimeline = [
       ...request.timeline,
       {
         id: `tl_${Date.now()}`,
-        actorId: currentUser?.id,
+        actorId: currentUser.id,
         actorName,
         actorRole,
-        action: 'approved' as const,
-        actionTitle: 'تایید نهایی خزانه‌داری و آماده واریز',
-        nextActorName: executor.fullName,
+        action: (finalStatus === 'rejected' ? 'rejected' : 'approved') as 'rejected' | 'approved',
+        actionTitle: finalStatus === 'rejected'
+          ? 'رد خودکار درخواست - همه ردیف‌های تجمیعی رد شدند'
+          : 'تایید نهایی خزانه‌داری - آماده ارجاع پرداخت',
         timestamp: getJalaliNow(),
-        comment: commentText.trim() || 'درخواست تایید نهایی گردید و برای واریز به کارمند اجرا ارجاع شد.'
+        comment: commentText.trim() || (finalStatus === 'rejected'
+          ? 'همه ردیف‌های درخواست تجمیعی رد شدند؛ درخواست به‌صورت خودکار رد شد.'
+          : 'درخواست تایید نهایی گردید. این درخواست اکنون آماده ارجاع توسط ادمین یا مسئول ارجاع پرداخت به یک مسئول پرداخت مشخص است.')
+      }
+    ];
+
+    // No currentApproverId is set here — final approval alone must never auto-pick a
+    // payment officer (no treasury_executor/users[0] fallback). The request is genuinely
+    // ownerless until handleReferForPayment explicitly assigns one.
+    const updated: PaymentRequest = {
+      ...request,
+      amount: finalAmount,
+      amountInWords: finalAmountInWords,
+      currentApproverId: '',
+      currentApproverName: '',
+      currentApproverPhone: undefined,
+      status: finalStatus,
+      rejectionReason: finalStatus === 'rejected' ? 'همه ردیف‌های درخواست تجمیعی توسط تاییدکننده رد شدند.' : request.rejectionReason,
+      updatedAt: getJalaliNow(),
+      timeline: updatedTimeline
+    };
+
+    onUpdateRequest(updated);
+    logAudit({
+      action: finalStatus === 'rejected' ? 'batch_auto_rejected' : 'final_approval',
+      effectiveUser: currentUser,
+      impersonatorAdmin,
+      roles,
+      permissionUsed: 'approve_treasury',
+      targetId: request.id,
+      details: `درخواست ${request.trackingCode}`
+    });
+    setCommentText('');
+    setIsSubmitting(false);
+    alert(finalStatus === 'rejected'
+      ? 'همه ردیف‌های درخواست تجمیعی رد شده بودند؛ درخواست به‌صورت خودکار رد شد.'
+      : 'تایید نهایی خزانه‌داری با موفقیت ثبت شد و درخواست آماده ارجاع پرداخت است.');
+  };
+
+  // Normal payment referral (payment flow v2): only admin or an explicit refer_for_payment
+  // holder may run this, only while the request is 'approved_awaiting_payment_assignment',
+  // and only onto a valid, active target who actually holds execute_payment. No fallback.
+  const handleReferForPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    if (!canReferForPayment) { alert('شما مجوز ارجاع پرداخت (refer_for_payment) را ندارید.'); return; }
+    if (request.status !== 'approved_awaiting_payment_assignment') { alert('این درخواست در وضعیت «آماده ارجاع پرداخت» نیست.'); return; }
+    if (!selectedPaymentOfficerId) { alert('لطفاً مسئول پرداخت را انتخاب کنید.'); return; }
+    const targetUser = users.find(u => u.id === selectedPaymentOfficerId);
+    if (!targetUser) { alert('کاربر مقصد معتبر یافت نشد. عملیات متوقف شد.'); return; }
+    if (targetUser.isActive === false) { alert('کاربر مقصد غیرفعال است.'); return; }
+    const targetPerms = targetUser.role === 'admin' ? null : getEffectiveUserPermissions(targetUser, roles);
+    if (!hasPermission(targetPerms, ['execute_payment'])) {
+      alert('کاربر انتخابی مجوز اجرای پرداخت (execute_payment) را ندارد.');
+      return;
+    }
+    setIsSubmitting(true);
+
+    const updatedTimeline = [
+      ...request.timeline,
+      {
+        id: `tl_${Date.now()}`,
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'referred_for_payment' as const,
+        actionTitle: 'ارجاع پرداخت به مسئول پرداخت مشخص',
+        nextActorName: targetUser.fullName,
+        timestamp: getJalaliNow(),
+        comment: `پرونده جهت اجرای واریز به ${targetUser.fullName} (${targetUser.roleTitle}) ارجاع گردید.`
       }
     ];
 
     const updated: PaymentRequest = {
       ...request,
-      currentApproverId: executor.id,
-      currentApproverName: executor.fullName,
-      currentApproverPhone: executor.phone,
+      currentApproverId: targetUser.id,
+      currentApproverName: targetUser.fullName,
+      currentApproverPhone: targetUser.phone,
+      delegatedToExecutorId: targetUser.id,
+      delegatedToExecutorName: targetUser.fullName,
       status: 'approved_pending_payment',
       updatedAt: getJalaliNow(),
       timeline: updatedTimeline
     };
 
     onUpdateRequest(updated);
-    setCommentText('');
+    logAudit({
+      action: 'refer_for_payment',
+      effectiveUser: currentUser,
+      impersonatorAdmin,
+      roles,
+      permissionUsed: 'refer_for_payment',
+      targetId: request.id,
+      details: `ارجاع به ${targetUser.fullName}`
+    });
     setIsSubmitting(false);
-    alert('تایید نهایی خزانه‌داری با موفقیت ثبت شد.');
+    alert(`درخواست پرداخت با موفقیت به ${targetUser.fullName} ارجاع شد.`);
   };
 
   const handleMarkPaid = () => {
-    if (isSubmitting) return;
+    // Handler-level re-check: exact status + exact ownership, not just the disabled button.
+    if (isSubmitting || !currentUser) return;
+    if (request.status !== 'approved_pending_payment') { alert('وضعیت درخواست برای ثبت پرداخت معتبر نیست.'); return; }
+    if (request.currentApproverId !== currentUser.id) { alert('این پرداخت به شما ارجاع نشده است.'); return; }
     setIsSubmitting(true);
 
-    const actorName = currentUser?.fullName || 'امیرحسین رضایی';
-    const actorRole = currentUser?.roleTitle || 'کارمند اجرا';
+    const actorName = currentUser.fullName;
+    const actorRole = currentUser.roleTitle;
 
-    let receiptAttachment: AttachmentFile | undefined = request.paymentReceiptAttachment;
+    // Payment without a receipt is allowed, but is recorded honestly via paidWithoutReceipt —
+    // never a fake/placeholder image standing in for a real bank receipt.
+    let receiptAttachment: AttachmentFile | undefined;
+    let paidWithoutReceipt = false;
     if (receiptFile) {
       receiptAttachment = {
         id: `att_rcpt_${Date.now()}`,
@@ -521,27 +677,20 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
         uploadedAt: getJalaliNow()
       };
     } else {
-      receiptAttachment = {
-        id: `att_rcpt_${Date.now()}`,
-        name: 'فیش_واریز_پایا.jpg',
-        url: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=800&q=80',
-        type: 'image/jpeg',
-        size: 1024000,
-        uploadedAt: getJalaliNow()
-      };
+      paidWithoutReceipt = true;
     }
 
     const updatedTimeline = [
       ...request.timeline,
       {
         id: `tl_${Date.now()}`,
-        actorId: currentUser?.id,
+        actorId: currentUser.id,
         actorName,
         actorRole,
         action: 'paid' as const,
-        actionTitle: 'واریز بانکی انجام شد و فیش آپلود گردید',
+        actionTitle: paidWithoutReceipt ? 'واریز بانکی بدون آپلود فیش ثبت شد' : 'واریز بانکی انجام شد و فیش آپلود گردید',
         timestamp: getJalaliNow(),
-        comment: commentText.trim() || 'عملیات واریز وجه انجام و تصویر فیش واریز در سیستم بایگانی شد.'
+        comment: commentText.trim() || (paidWithoutReceipt ? 'عملیات واریز وجه بدون فیش ثبت شد.' : 'عملیات واریز وجه انجام و تصویر فیش واریز در سیستم بایگانی شد.')
       }
     ];
 
@@ -549,14 +698,24 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
       ...request,
       status: 'paid',
       paymentReceiptAttachment: receiptAttachment,
+      paidWithoutReceipt,
       updatedAt: getJalaliNow(),
       timeline: updatedTimeline
     };
 
     onUpdateRequest(updated);
+    logAudit({
+      action: 'mark_paid',
+      effectiveUser: currentUser,
+      impersonatorAdmin,
+      roles,
+      permissionUsed: 'execute_payment',
+      targetId: request.id,
+      details: paidWithoutReceipt ? 'بدون فیش' : 'با فیش'
+    });
     setCommentText('');
     setIsSubmitting(false);
-    alert('تایید واریز وجه و بایگانی فیش با موفقیت انجام شد!');
+    alert(paidWithoutReceipt ? 'پرداخت بدون فیش با موفقیت ثبت شد.' : 'تایید واریز وجه و بایگانی فیش با موفقیت انجام شد!');
   };
 
   const handleReturnForCorrection = () => {
@@ -684,30 +843,36 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
   // Approver / Treasury Approve Cancellation
   const handleApproveCancellation = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || !currentUser) return;
+    if (!request.cancellationRequested) { alert('درخواست لغوی برای این پرونده ثبت نشده است.'); return; }
+    if (!isCurrentResponsibleParty && !isAdminRole) { alert('شما مجاز به تایید این لغو نیستید.'); return; }
     setIsSubmitting(true);
 
-    const actorName = currentUser?.fullName || 'تاییدکننده';
-    const actorRole = currentUser?.roleTitle || 'مسئول بررسی';
+    const actorName = currentUser.fullName;
+    const actorRole = currentUser.roleTitle;
 
     const updatedTimeline = [
       ...request.timeline,
       {
         id: `tl_${Date.now()}`,
-        actorId: currentUser?.id,
+        actorId: currentUser.id,
         actorName,
         actorRole,
-        action: 'rejected' as const,
+        action: 'cancelled' as const,
         actionTitle: 'موافقت با درخواست لغو و ابطال پرونده',
         timestamp: getJalaliNow(),
         comment: `درخواست لغو ثبت‌کننده تایید گردید. علت: ${request.cancellationReason || 'تقاضای متقاضی'}`
       }
     ];
 
+    // Cancellation never physically deletes the record — it stays visible in the
+    // cancelled-requests archive, with who/why/when recorded explicitly.
     const updated: PaymentRequest = {
       ...request,
-      status: 'rejected',
-      rejectionReason: `ابطال بر اساس درخواست انصراف کاربر: ${request.cancellationReason || 'تقاضای متقاضی'}`,
+      status: 'cancelled',
+      cancelledByUserId: currentUser.id,
+      cancelledByName: currentUser.fullName,
+      cancelledAt: getJalaliNow(),
       cancellationRequested: false,
       updatedAt: getJalaliNow(),
       timeline: updatedTimeline
@@ -715,7 +880,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
     onUpdateRequest(updated);
     setIsSubmitting(false);
-    alert('با درخواست لغو موافقت شد و درخواست ابطال گردید.');
+    alert('با درخواست لغو موافقت شد؛ درخواست لغو گردید و در بایگانی لغوشده‌ها باقی می‌ماند.');
   };
 
   // Approver / Treasury Reject Cancellation (Continue process)
@@ -757,25 +922,39 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
     (isApproverRole || isAdminRole || isTreasuryExecRole) &&
     (request.status === 'pending_approval' || request.status === 'approved_pending_payment');
 
+  // Recomputes request.amount/amountInWords from the current batchItems (pending/rejected
+  // rows excluded, per computeBatchTotals) — called after every single row decision or
+  // correction, not just at final approval, so the displayed total is never stale.
+  const applyBatchItemsUpdate = (updatedBatchItems: RequestBatchItem[]) => {
+    const totals = computeBatchTotals(updatedBatchItems);
+    onUpdateRequest({
+      ...request,
+      batchItems: updatedBatchItems,
+      amount: totals.total,
+      amountInWords: totals.amountInWords,
+      updatedAt: getJalaliNow()
+    });
+  };
+
   const handleBatchItemApprove = (itemId: string) => {
-    if (!canActOnBatchItems) return;
+    if (!canActOnBatchItems || !currentUser) return;
     const updatedBatchItems = (request.batchItems || []).map(bi =>
       bi.id === itemId
         ? {
             ...bi,
             status: 'approved' as const,
-            decidedByUserId: currentUser?.id,
-            decidedByName: currentUser?.fullName,
+            decidedByUserId: currentUser.id,
+            decidedByName: currentUser.fullName,
             decidedAt: getJalaliNow(),
             rejectionReason: undefined
           }
         : bi
     );
-    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+    applyBatchItemsUpdate(updatedBatchItems);
   };
 
   const handleBatchItemReject = (itemId: string) => {
-    if (!canActOnBatchItems) return;
+    if (!canActOnBatchItems || !currentUser) return;
     const reason = (batchRejectReasons[itemId] || '').trim();
     if (!reason) {
       alert('لطفاً دلیل رد این ردیف را وارد کنید.');
@@ -786,14 +965,14 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
         ? {
             ...bi,
             status: 'rejected' as const,
-            decidedByUserId: currentUser?.id,
-            decidedByName: currentUser?.fullName,
+            decidedByUserId: currentUser.id,
+            decidedByName: currentUser.fullName,
             decidedAt: getJalaliNow(),
             rejectionReason: reason
           }
         : bi
     );
-    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+    applyBatchItemsUpdate(updatedBatchItems);
   };
 
   const handleBatchItemRevert = (itemId: string) => {
@@ -810,52 +989,168 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
           }
         : bi
     );
-    onUpdateRequest({ ...request, batchItems: updatedBatchItems, updatedAt: getJalaliNow() });
+    applyBatchItemsUpdate(updatedBatchItems);
+  };
+
+  // Approver may correct a row's amount before approving it — old amount, new amount,
+  // reason, corrector and timestamp are all recorded on the row (see applyRowAmountCorrection),
+  // and the request total is recomputed immediately from the corrected amounts.
+  const handleBatchItemCorrectAmount = (itemId: string) => {
+    if (!canActOnBatchItems || !currentUser) return;
+    const item = (request.batchItems || []).find(bi => bi.id === itemId);
+    if (!item) return;
+    const newAmountRaw = batchCorrectionAmounts[itemId];
+    const newAmount = Number(newAmountRaw);
+    if (!newAmountRaw || !Number.isFinite(newAmount) || newAmount <= 0) {
+      alert('مبلغ اصلاح‌شده باید عددی بزرگ‌تر از صفر باشد.');
+      return;
+    }
+    const reason = (batchCorrectionReasons[itemId] || '').trim();
+    if (!reason) {
+      alert('لطفاً دلیل اصلاح مبلغ این ردیف را وارد کنید.');
+      return;
+    }
+    const corrected = applyRowAmountCorrection(item, newAmount, reason, currentUser.id, currentUser.fullName, getJalaliNow());
+    const updatedBatchItems = (request.batchItems || []).map(bi => (bi.id === itemId ? corrected : bi));
+    applyBatchItemsUpdate(updatedBatchItems);
+    setBatchCorrectionAmounts(prev => ({ ...prev, [itemId]: '' }));
+    setBatchCorrectionReasons(prev => ({ ...prev, [itemId]: '' }));
   };
 
   // Senior Treasury Manager Delegation to Execution Specialist
-  const handleDelegateExecution = () => {
-    if (!selectedDelegatedUserId) {
-      alert('لطفاً مسئول پرداخت خزانه‌داری را انتخاب کنید.');
+  // Emergency payment referral: independent permission, mandatory reason, and explicit
+  // self-referral prevention (the referrer can never name themselves as executor — that
+  // would bypass the normal approval chain entirely).
+  const handleReferForEmergencyPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    if (!canReferForEmergencyPayment) { alert('شما مجوز ارجاع پرداخت فوری (refer_for_emergency_payment) را ندارید.'); return; }
+    if (['paid', 'completed', 'cancelled', 'rejected', 'emergency_pending_payment'].includes(request.status)) {
+      alert('وضعیت فعلی درخواست اجازه ارجاع پرداخت فوری را نمی‌دهد.');
       return;
     }
-    if (isSubmitting) return;
+    if (!emergencyReasonInput.trim()) { alert('ذکر دلیل پرداخت فوری الزامی است.'); return; }
+    if (!selectedEmergencyExecutorId) { alert('لطفاً مسئول اجرای پرداخت فوری را انتخاب کنید.'); return; }
+    if (selectedEmergencyExecutorId === currentUser.id) {
+      alert('خودارجاعی مجاز نیست — شما نمی‌توانید خودتان را به‌عنوان مجری پرداخت فوری انتخاب کنید.');
+      return;
+    }
+    const targetUser = users.find(u => u.id === selectedEmergencyExecutorId);
+    if (!targetUser) { alert('کاربر مقصد معتبر یافت نشد. عملیات متوقف شد.'); return; }
+    if (targetUser.isActive === false) { alert('کاربر مقصد غیرفعال است.'); return; }
+    const targetPerms = targetUser.role === 'admin' ? null : getEffectiveUserPermissions(targetUser, roles);
+    if (!hasPermission(targetPerms, ['execute_emergency_payment'])) {
+      alert('کاربر انتخابی مجوز اجرای پرداخت فوری (execute_emergency_payment) را ندارد.');
+      return;
+    }
     setIsSubmitting(true);
-
-    const targetUser = users.find(u => u.id === selectedDelegatedUserId) || users[0];
-    const actorName = currentUser?.fullName || 'رضا بیات';
-    const actorRole = currentUser?.roleTitle || 'مدیر ارشد خزانه‌داری';
 
     const updatedTimeline = [
       ...request.timeline,
       {
         id: `tl_${Date.now()}`,
-        actorId: currentUser?.id,
-        actorName,
-        actorRole,
-        action: 'forwarded' as const,
-        actionTitle: 'تخصیص و ارجاع پرداخت به مجری خزانه‌داری',
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'referred_for_emergency_payment' as const,
+        actionTitle: 'ارجاع به مسیر پرداخت فوری',
         nextActorName: targetUser.fullName,
         timestamp: getJalaliNow(),
-        comment: `پرونده جهت اجرای واریز به ${targetUser.fullName} (${targetUser.roleTitle}) ارجاع گردید.`
+        comment: `دلیل پرداخت فوری: ${emergencyReasonInput.trim()} — مجری: ${targetUser.fullName} (${targetUser.roleTitle})`
       }
     ];
 
     const updated: PaymentRequest = {
       ...request,
+      isEmergencyPayment: true,
+      emergencyReason: emergencyReasonInput.trim(),
+      emergencyReferredByUserId: currentUser.id,
+      emergencyReferredByName: currentUser.fullName,
+      emergencyReferredAt: getJalaliNow(),
       currentApproverId: targetUser.id,
       currentApproverName: targetUser.fullName,
       currentApproverPhone: targetUser.phone,
-      delegatedToExecutorId: targetUser.id,
-      delegatedToExecutorName: targetUser.fullName,
-      status: 'approved_pending_payment',
+      status: 'emergency_pending_payment',
       updatedAt: getJalaliNow(),
       timeline: updatedTimeline
     };
 
     onUpdateRequest(updated);
+    logAudit({
+      action: 'refer_for_emergency_payment',
+      effectiveUser: currentUser,
+      impersonatorAdmin,
+      roles,
+      permissionUsed: 'refer_for_emergency_payment',
+      targetId: request.id,
+      details: `دلیل: ${emergencyReasonInput.trim()} — مجری: ${targetUser.fullName}`
+    });
     setIsSubmitting(false);
-    alert(`درخواست پرداخت با موفقیت به ${targetUser.fullName} (مجری واریز) ارجاع شد.`);
+    setShowEmergencyPaymentInput(false);
+    setEmergencyReasonInput('');
+    setSelectedEmergencyExecutorId('');
+    alert(`درخواست به مسیر پرداخت فوری ارجاع شد و اکنون نزد ${targetUser.fullName} است.`);
+  };
+
+  // Execute the emergency payment — only the specific person it was referred to, no fake
+  // receipt image if none is uploaded (paidWithoutReceipt: true instead).
+  const handleExecuteEmergencyPayment = () => {
+    if (isSubmitting || !currentUser) return;
+    if (!canExecuteEmergencyPaymentPerm) { alert('شما مجوز اجرای پرداخت فوری (execute_emergency_payment) را ندارید.'); return; }
+    if (request.status !== 'emergency_pending_payment') { alert('این درخواست در وضعیت پرداخت فوری نیست.'); return; }
+    if (request.currentApproverId !== currentUser.id) { alert('این پرداخت فوری به شما ارجاع نشده است.'); return; }
+    setIsSubmitting(true);
+
+    let receiptAttachment: AttachmentFile | undefined;
+    let paidWithoutReceipt = false;
+    if (receiptFile) {
+      receiptAttachment = {
+        id: `att_rcpt_${Date.now()}`,
+        name: receiptFileName || 'عکس_فیش_واریزی_بانک.jpg',
+        url: receiptFile,
+        type: 'image/jpeg',
+        size: 1024000,
+        uploadedAt: getJalaliNow()
+      };
+    } else {
+      paidWithoutReceipt = true;
+    }
+
+    const updatedTimeline = [
+      ...request.timeline,
+      {
+        id: `tl_${Date.now()}`,
+        actorId: currentUser.id,
+        actorName: currentUser.fullName,
+        actorRole: currentUser.roleTitle,
+        action: 'emergency_paid' as const,
+        actionTitle: 'اجرای پرداخت فوری',
+        timestamp: getJalaliNow(),
+        comment: commentText.trim() || (paidWithoutReceipt ? 'پرداخت فوری بدون آپلود فیش ثبت شد.' : 'پرداخت فوری انجام و فیش واریز بایگانی شد.')
+      }
+    ];
+
+    const updated: PaymentRequest = {
+      ...request,
+      status: 'paid',
+      paymentReceiptAttachment: receiptAttachment,
+      paidWithoutReceipt,
+      updatedAt: getJalaliNow(),
+      timeline: updatedTimeline
+    };
+
+    onUpdateRequest(updated);
+    logAudit({
+      action: 'execute_emergency_payment',
+      effectiveUser: currentUser,
+      impersonatorAdmin,
+      roles,
+      permissionUsed: 'execute_emergency_payment',
+      targetId: request.id,
+      details: paidWithoutReceipt ? 'بدون فیش' : 'با فیش'
+    });
+    setCommentText('');
+    setIsSubmitting(false);
+    alert('پرداخت فوری با موفقیت اجرا و ثبت شد.');
   };
 
   return (
@@ -955,10 +1250,10 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                   <h4 className="text-xs font-extrabold text-white">
                     {request.status === 'returned'
                       ? 'این درخواست عودت داده شده است و منتظر ویرایش و ارسال مجدد شماست'
-                      : 'امکان ویرایش و یا حذف درخواست (پیش از بررسی تاییدکنندگان)'}
+                      : 'امکان ویرایش و یا لغو درخواست (پیش از بررسی تاییدکنندگان)'}
                   </h4>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    شما می‌توانید مشخصات این درخواست را اصلاح کرده یا در صورت انصراف، آن را کلاً حذف نمایید.
+                    شما می‌توانید مشخصات این درخواست را اصلاح کرده یا در صورت انصراف، آن را لغو نمایید (لغو، حذف فیزیکی نیست و در بایگانی باقی می‌ماند).
                   </p>
                 </div>
               </div>
@@ -979,7 +1274,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                   className="px-4 py-2 bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>انصراف و حذف درخواست</span>
+                  <span>لغو درخواست</span>
                 </button>
               </div>
             </div>
@@ -1307,7 +1602,14 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                       <tr key={bi.id || idx} className="hover:bg-slate-900/50 align-top">
                         <td className="p-2 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
                         <td className="p-2 font-bold text-slate-200">{bi.title}</td>
-                        <td className="p-2 font-mono font-bold text-emerald-400 text-left dir-ltr">{formatRial(bi.amount)}</td>
+                        <td className="p-2 font-mono font-bold text-emerald-400 text-left dir-ltr">
+                          {formatRial(bi.amount)}
+                          {bi.originalAmount !== undefined && bi.originalAmount !== bi.amount && (
+                            <div className="text-[9px] text-amber-400 font-normal mt-0.5">
+                              اصلاح از {formatRial(bi.originalAmount)} توسط {bi.amountCorrectedByName} ({bi.amountCorrectionReason})
+                            </div>
+                          )}
+                        </td>
                         <td className="p-2 text-slate-300">{bi.destinationName}</td>
                         <td className="p-2 font-mono text-[11px] text-slate-300">{bi.destinationCard}</td>
                         <td className="p-2">
@@ -1330,6 +1632,31 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                           <td className="p-2 min-w-[180px]">
                             {bi.status === 'pending' && (
                               <div className="space-y-1.5">
+                                <div className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={batchCorrectionAmounts[bi.id] || ''}
+                                    onChange={(e) => setBatchCorrectionAmounts(prev => ({ ...prev, [bi.id]: e.target.value.replace(/\D/g, '') }))}
+                                    placeholder="مبلغ اصلاح‌شده"
+                                    className="w-1/2 bg-slate-900 text-emerald-300 font-mono text-[10px] rounded-lg px-2 py-1 border border-slate-700 focus:outline-none focus:border-amber-500"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={batchCorrectionReasons[bi.id] || ''}
+                                    onChange={(e) => setBatchCorrectionReasons(prev => ({ ...prev, [bi.id]: e.target.value }))}
+                                    placeholder="دلیل اصلاح"
+                                    className="w-1/2 bg-slate-900 text-white text-[10px] rounded-lg px-2 py-1 border border-slate-700 focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleBatchItemCorrectAmount(bi.id)}
+                                  className="w-full py-1 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>اصلاح مبلغ این ردیف</span>
+                                </button>
                                 <input
                                   type="text"
                                   value={batchRejectReasons[bi.id] || ''}
@@ -1443,6 +1770,11 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                       مشاهده فیش کامل
                     </a>
                   </div>
+                </div>
+              ) : request.status === 'paid' && request.paidWithoutReceipt ? (
+                <div className="p-4 bg-amber-950/30 border border-amber-500/30 rounded-xl text-center text-amber-300 text-xs">
+                  <AlertCircle className="w-6 h-6 mx-auto text-amber-400 mb-1" />
+                  <span className="font-bold">پرداخت بدون فیش انجام و ثبت شده است.</span>
                 </div>
               ) : (
                 <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-center text-slate-400 text-xs">
@@ -1589,6 +1921,93 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
             </div>
           )}
 
+          {/* Emergency Payment Banner — independent permission (refer_for_emergency_payment /
+              execute_emergency_payment), mandatory reason, explicit self-referral prevention. */}
+          {(canTriggerEmergencyReferral || request.status === 'emergency_pending_payment') && (
+            <div className="p-4 bg-orange-950/40 border-2 border-orange-500/40 rounded-2xl space-y-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-orange-400" />
+                <h4 className="text-xs font-black text-orange-200">مسیر پرداخت فوری (مستقل از زنجیره تایید عادی)</h4>
+              </div>
+
+              {request.status === 'emergency_pending_payment' && (
+                <div className="text-[11px] text-orange-200 bg-orange-950/60 border border-orange-500/30 rounded-xl p-2.5 space-y-1">
+                  <p>این درخواست به مسیر پرداخت فوری ارجاع شده است.</p>
+                  <p>دلیل: <strong className="text-white">{request.emergencyReason}</strong></p>
+                  <p>ارجاع‌دهنده: <strong className="text-white">{request.emergencyReferredByName}</strong> — مجری: <strong className="text-white">{request.currentApproverName}</strong></p>
+                </div>
+              )}
+
+              {canTriggerEmergencyReferral && !showEmergencyPaymentInput && (
+                <button
+                  type="button"
+                  onClick={() => setShowEmergencyPaymentInput(true)}
+                  className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>ارجاع به پرداخت فوری</span>
+                </button>
+              )}
+
+              {canTriggerEmergencyReferral && showEmergencyPaymentInput && (
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-orange-200 mb-1">دلیل پرداخت فوری (الزامی)</label>
+                    <textarea
+                      value={emergencyReasonInput}
+                      onChange={(e) => setEmergencyReasonInput(e.target.value)}
+                      rows={2}
+                      placeholder="مثلاً: تعهد فوری قراردادی، مهلت قانونی..."
+                      className="w-full bg-slate-900 text-white text-xs rounded-xl p-2.5 border border-orange-500/30 focus:outline-none focus:border-orange-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-orange-200 mb-1">مجری پرداخت فوری (نمی‌تواند خودتان باشید)</label>
+                    <select
+                      value={selectedEmergencyExecutorId}
+                      onChange={(e) => setSelectedEmergencyExecutorId(e.target.value)}
+                      className="w-full bg-slate-900 text-white text-xs rounded-xl px-2.5 py-2 border border-orange-500/30 focus:outline-none focus:border-orange-400"
+                    >
+                      <option value="">انتخاب کنید...</option>
+                      {users.filter(u => u.id !== currentUser?.id && u.isActive !== false).map(u => (
+                        <option key={u.id} value={u.id}>{u.fullName} ({u.roleTitle})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={handleReferForEmergencyPayment}
+                      disabled={isSubmitting}
+                      className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                    >
+                      ثبت ارجاع پرداخت فوری
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmergencyPaymentInput(false)}
+                      className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl hover:bg-slate-700 cursor-pointer"
+                    >
+                      انصراف
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {canExecuteEmergencyPaymentNow && (
+                <button
+                  type="button"
+                  onClick={handleExecuteEmergencyPayment}
+                  disabled={isSubmitting}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>اجرای پرداخت فوری (با یا بدون فیش)</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Actions Panel */}
           <div className="p-5 bg-slate-800/90 rounded-2xl border border-slate-700 space-y-4">
             <h4 className="text-xs font-bold text-white flex items-center gap-2">
@@ -1639,29 +2058,33 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                         </select>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-amber-300 mb-1">
-                          اصلاح مبلغ (اختیاری)
-                        </label>
-                        <input
-                          type="number"
-                          value={correctedAmount || ''}
-                          onChange={(e) => setCorrectedAmount(Number(e.target.value))}
-                          className="w-full bg-slate-800 text-emerald-300 font-mono font-bold text-[10px] rounded-lg px-2 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500"
-                        />
-                        {correctedAmount !== request.amount && (
-                          <span className="text-[9px] text-amber-400 block mt-1 leading-tight">
-                            {correctedAmount > 0
-                              ? `مبلغ از ${formatRial(request.amount)} به ${formatRial(correctedAmount)} اصلاح خواهد شد.`
-                              : 'مبلغ اصلاح‌شده باید بزرگ‌تر از صفر باشد.'}
-                          </span>
-                        )}
-                        {hasBatchItems && (
-                          <span className="text-[9px] text-slate-500 block mt-1 leading-tight">
-                            این اصلاح فقط روی مبلغ کل درخواست اعمال می‌شود و وضعیت تایید/رد ردیف‌های جدول تجمیعی را تغییر نمی‌دهد.
-                          </span>
-                        )}
-                      </div>
+                      {hasBatchItems ? (
+                        <div>
+                          <span className="text-[10px] font-bold text-amber-300 mb-1 block">مبلغ کل (محاسبه‌شده از ردیف‌ها)</span>
+                          <p className="text-[9px] text-slate-500 leading-tight">
+                            برای درخواست تجمیعی، مبلغ کل مستقل از ردیف‌ها قابل ویرایش نیست — فقط از طریق اصلاح مبلغ هر ردیف در جدول پایین قابل تغییر است.
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] font-bold text-amber-300 mb-1">
+                            اصلاح مبلغ (اختیاری)
+                          </label>
+                          <input
+                            type="number"
+                            value={correctedAmount || ''}
+                            onChange={(e) => setCorrectedAmount(Number(e.target.value))}
+                            className="w-full bg-slate-800 text-emerald-300 font-mono font-bold text-[10px] rounded-lg px-2 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500"
+                          />
+                          {correctedAmount !== request.amount && (
+                            <span className="text-[9px] text-amber-400 block mt-1 leading-tight">
+                              {correctedAmount > 0
+                                ? `مبلغ از ${formatRial(request.amount)} به ${formatRial(correctedAmount)} اصلاح خواهد شد.`
+                                : 'مبلغ اصلاح‌شده باید بزرگ‌تر از صفر باشد.'}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       <button
                         onClick={handleApproveAndForward}
@@ -1688,18 +2111,23 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                           ۲. تایید مالی خزانه‌داری
                         </span>
                         <p className="text-[9.5px] text-slate-400 mt-1 leading-tight">
-                          صدور تاییدیه مالی و ارسال پرونده به مجری پرداخت
+                          صدور تاییدیه مالی نهایی — پس از این، درخواست آماده ارجاع به یک مسئول پرداخت مشخص می‌شود
                         </p>
                       </div>
                       <button
                         onClick={handleFinalApproval}
-                        disabled={isSubmitting}
-                        className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                        disabled={isSubmitting || batchBlocksFinalApproval}
+                        title={batchBlocksFinalApproval ? 'ابتدا باید تکلیف تمام ردیف‌های جدول تجمیعی مشخص شود.' : undefined}
+                        className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>تایید نهایی خزانه‌داری</span>
                       </button>
-                      <span className="text-[9px] text-slate-400 block text-center">تایید کامل جهت واریز</span>
+                      {batchBlocksFinalApproval ? (
+                        <span className="text-[9px] text-amber-400 font-bold block text-center">ابتدا ردیف‌های تجمیعی را تعیین تکلیف کنید</span>
+                      ) : (
+                        <span className="text-[9px] text-slate-400 block text-center">تایید کامل - بدون انتخاب خودکار مسئول پرداخت</span>
+                      )}
                     </div>
                   )}
 
@@ -1723,6 +2151,38 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
                         <span>تایید واریز و ثبت فیش</span>
                       </button>
                       <span className="text-[9px] text-slate-400 block text-center">پرداخت شده و مختومه</span>
+                    </div>
+                  )}
+
+                  {/* Refer for Payment — admin or explicit refer_for_payment holder only,
+                      only while the request is 'approved_awaiting_payment_assignment' (no
+                      owner yet). Never a users[0]/first-treasury-executor fallback. */}
+                  {canReferForPaymentNow && (
+                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5 flex flex-col justify-between">
+                      <div>
+                        <label className="block text-[10px] font-bold text-sky-300 mb-1">
+                          ارجاع به مسئول پرداخت مشخص
+                        </label>
+                        <select
+                          value={selectedPaymentOfficerId}
+                          onChange={(e) => setSelectedPaymentOfficerId(e.target.value)}
+                          className="w-full bg-slate-800 text-white text-[10px] rounded-lg px-2 py-1.5 border border-slate-700"
+                        >
+                          <option value="">انتخاب کنید...</option>
+                          {users.filter(u => u.isActive !== false).map(u => (
+                            <option key={u.id} value={u.id}>{u.fullName} ({u.roleTitle})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        onClick={handleReferForPayment}
+                        disabled={isSubmitting || !selectedPaymentOfficerId}
+                        className="w-full py-2 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>ارجاع پرداخت</span>
+                      </button>
+                      <span className="text-[9px] text-slate-400 block text-center">فقط ادمین یا دارنده مجوز ارجاع پرداخت</span>
                     </div>
                   )}
 

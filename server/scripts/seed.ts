@@ -22,12 +22,42 @@ const ids = {
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
+  customerIdentityAlpha: '65000000-0000-4000-8000-000000000001',
+  customerIdentityBeta: '65000000-0000-4000-8000-000000000002',
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   customerBeta: '70000000-0000-4000-8000-000000000002',
 } as const;
 
+type SeedEnvironment = 'development' | 'test' | 'production';
+
+export function assertSafeSeedTarget(
+  connectionString: string,
+  expectedRole: 'tapra2_owner' | 'tapra2_app',
+  environment = process.env.NODE_ENV as SeedEnvironment | undefined,
+): { database: string } {
+  const activeEnvironment = environment ?? 'development';
+  if (activeEnvironment === 'production') {
+    throw new Error('Development seed is forbidden when NODE_ENV=production.');
+  }
+  if (activeEnvironment !== 'development' && activeEnvironment !== 'test') {
+    throw new Error('Development seed requires NODE_ENV=development or NODE_ENV=test.');
+  }
+  const parsed = new URL(connectionString);
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+  const role = decodeURIComponent(parsed.username);
+  const expectedDatabase = activeEnvironment === 'test' ? 'tapra2_test' : 'tapra2_dev';
+  if (database !== expectedDatabase) {
+    throw new Error(`Development seed requires the dedicated ${expectedDatabase} database.`);
+  }
+  if (role !== expectedRole) {
+    throw new Error(`Development seed requires the restricted ${expectedRole} role.`);
+  }
+  return { database };
+}
+
 export async function seedDatabase(connectionString = process.env.DATABASE_MIGRATION_URL): Promise<void> {
   if (!connectionString?.startsWith('postgresql://')) throw new Error('DATABASE_MIGRATION_URL is required.');
+  const migrationTarget = assertSafeSeedTarget(connectionString, 'tapra2_owner');
   const client = new Client({ connectionString, application_name: 'tapra2_seed' });
   await client.connect();
   try {
@@ -75,6 +105,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('customer.create', 'Create Customers in the active context'),
         ('customer.identity.manage', 'Manage Customer identity details in the active context'),
         ('customer.merge', 'Merge and unmerge Customers in the active context'),
+        ('customer.import.read', 'Read sanitized Customer import summaries in the active context'),
         ('customer.import.create', 'Create a staged Customer CSV import in the active context'),
         ('customer.import.review', 'Review and reconcile staged Customer import records'),
         ('customer.import.approve', 'Approve a reconciled Customer import into Customer 360')
@@ -91,10 +122,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       INSERT INTO role_permissions(role_id, permission_code) VALUES
         ($1, 'customer.read'), ($1, 'customer.create'),
         ($1, 'customer.identity.manage'), ($1, 'customer.merge'),
-        ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
+        ($1, 'customer.import.read'), ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
         ($2, 'customer.read'), ($2, 'customer.create'),
         ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
-        ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
+        ($2, 'customer.import.read'), ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
         ($3, 'customer.read')
       ON CONFLICT DO NOTHING
     `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader]);
@@ -117,22 +148,36 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
 
   const runtimeConnectionString = process.env.DATABASE_URL;
   if (!runtimeConnectionString?.startsWith('postgresql://')) throw new Error('DATABASE_URL is required for tenant-scoped seed data.');
+  const runtimeTarget = assertSafeSeedTarget(runtimeConnectionString, 'tapra2_app');
+  if (runtimeTarget.database !== migrationTarget.database) {
+    throw new Error('Seed migration and runtime connections must target the same dedicated database.');
+  }
   const runtime = new Client({ connectionString: runtimeConnectionString, application_name: 'tapra2_seed_tenant_data' });
   await runtime.connect();
   try {
     const contexts = [
-      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha, customerId: ids.customerAlpha, name: 'مشتری نمونه آلفا', phone: '09120000001' },
-      { workspaceId: ids.workspaceBeta, companyId: ids.companyBeta, customerId: ids.customerBeta, name: 'مشتری نمونه بتا', phone: '09120000002' },
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha, identityId: ids.customerIdentityAlpha, customerId: ids.customerAlpha, name: 'مشتری نمونه آلفا', phone: '09120000001' },
+      { workspaceId: ids.workspaceBeta, companyId: ids.companyBeta, identityId: ids.customerIdentityBeta, customerId: ids.customerBeta, name: 'مشتری نمونه بتا', phone: '09120000002' },
     ];
     for (const context of contexts) {
       await runtime.query('BEGIN');
       try {
         await runtime.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [context.workspaceId, context.companyId]);
         await runtime.query(`
-          INSERT INTO customers(id, workspace_id, company_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO customer_identities(id, workspace_id, normalized_primary_phone)
+          VALUES ($1, $2, normalize_customer_phone($3))
+          ON CONFLICT DO NOTHING
+        `, [context.identityId, context.workspaceId, context.phone]);
+        await runtime.query(`
+          INSERT INTO customer_identity_phones(workspace_id, identity_id, normalized_value)
+          VALUES ($1, $2, normalize_customer_phone($3))
+          ON CONFLICT DO NOTHING
+        `, [context.workspaceId, context.identityId, context.phone]);
+        await runtime.query(`
+          INSERT INTO customers(id, workspace_id, company_id, identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           ON CONFLICT (id) DO NOTHING
-        `, [context.customerId, context.workspaceId, context.companyId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
+        `, [context.customerId, context.workspaceId, context.companyId, context.identityId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
         await runtime.query(`
           INSERT INTO customer_sources(
             workspace_id, company_id, customer_id, source_type, source_name,
@@ -146,17 +191,17 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         `, [context.workspaceId, context.companyId, context.customerId, ids.accountDemo]);
         await runtime.query(`
           INSERT INTO customer_phones(
-            workspace_id, company_id, customer_id, source_id, value, normalized_value,
+            workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
             label, is_primary, verification_status
           )
-          SELECT $1::uuid, $2::uuid, $3::uuid, s.id, $4::text, normalize_customer_phone($4::text),
+          SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, s.id, $5::text, normalize_customer_phone($5::text),
             'mobile', true, 'unverified'
           FROM customer_sources s
           WHERE s.customer_id = $3::uuid
           ORDER BY s.created_at, s.id
           LIMIT 1
-          ON CONFLICT (workspace_id, normalized_value) DO NOTHING
-        `, [context.workspaceId, context.companyId, context.customerId, context.phone]);
+          ON CONFLICT (workspace_id, company_id, customer_id, normalized_value) DO NOTHING
+        `, [context.workspaceId, context.companyId, context.customerId, context.identityId, context.phone]);
         await runtime.query(`
           INSERT INTO customer_timeline_events(
             workspace_id, company_id, customer_id, actor_user_account_id,

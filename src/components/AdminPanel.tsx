@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { User, Company, CostCenter, UserRole, PaymentRequest, SystemPermission, SystemRole } from '../types';
+import { User, Company, CostCenter, UserRole, PaymentRequest, SystemPermission, SystemRole, SalesBranch, SalesOrgAssignment } from '../types';
 import { storage, DEFAULT_ROLE_ID_MAP } from '../utils/storage';
+import { canStartImpersonation } from '../utils/auth';
+import { getAssignedRoleIds, deriveLegacyUserRoleFromAssignedRoles } from '../utils/permissions';
+import { SALES_HIERARCHY_LEVELS, getActiveSalesAssignment, resolveSalesHierarchy, validateSalesAssignment } from '../utils/salesOrgStructure';
+import { getJalaliNow } from '../utils/persianDate';
 import { CompaniesView } from './CompaniesView';
 import { CostCentersView } from './CostCentersView';
 import { ALL_PERMISSIONS } from './RolesAndPermissionsView';
@@ -16,6 +20,37 @@ import {
 const REQUESTOR_LIKE_ROLE_IDS = ['role_purchaser'];
 const APPROVER_LIKE_ROLE_IDS = ['role_branch_approver', 'role_treasury_manager'];
 const ISSUER_CAPABLE_ROLE_IDS = ['role_super_admin', 'role_treasury_manager', 'role_branch_approver', 'role_treasury_executor'];
+
+// دامنه‌های غیرمالی (مأموریت بازسازی کاربران/نقش‌ها/سازمان فروش) — بخش «مالی و خزانه‌داری» فرم
+// فقط وقتی مخفی می‌شود که دامنهٔ همهٔ نقش‌های انتخابی این کاربر (نقش پایه + نقش‌های تکمیلی) در
+// همین فهرست باشد؛ یک نقش بدون domain (مثلاً نقش سفارشی قدیمی) همیشه به‌صورت ایمن باعث نمایش
+// بخش مالی می‌شود، نه مخفی‌شدن آن.
+const NON_FINANCIAL_ROLE_DOMAINS = ['sales', 'sales_finance', 'data', 'advertising', 'registration', 'monitoring', 'fulfillment', 'general'];
+
+const DOMAIN_LABELS: Record<string, string> = {
+  system: 'سیستم', treasury: 'خزانه‌داری', sales: 'فروش', sales_finance: 'مالی فروش',
+  data: 'مدیریت داده', advertising: 'تبلیغات', registration: 'واحد ثبت', monitoring: 'واحد شنود',
+  after_sales: 'خدمات پس از فروش', fulfillment: 'اجرا و لجستیک', general: 'عمومی'
+};
+const DOMAIN_BADGE_CLASSES: Record<string, string> = {
+  system: 'bg-amber-950/60 text-amber-300 border-amber-800/60',
+  treasury: 'bg-indigo-950/60 text-indigo-300 border-indigo-800/60',
+  sales: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60',
+  sales_finance: 'bg-teal-950/60 text-teal-300 border-teal-800/60',
+  data: 'bg-sky-950/60 text-sky-300 border-sky-800/60',
+  advertising: 'bg-fuchsia-950/60 text-fuchsia-300 border-fuchsia-800/60',
+  registration: 'bg-cyan-950/60 text-cyan-300 border-cyan-800/60',
+  monitoring: 'bg-violet-950/60 text-violet-300 border-violet-800/60',
+  after_sales: 'bg-rose-950/60 text-rose-300 border-rose-800/60',
+  fulfillment: 'bg-orange-950/60 text-orange-300 border-orange-800/60',
+  general: 'bg-slate-800 text-slate-400 border-slate-700'
+};
+
+// شناسهٔ نقش‌های سازمان فروش را به نمایش کوتاه فارسی برای پیش‌نمایش زنجیره تبدیل می‌کند.
+const SALES_ROLE_SHORT_LABEL: Record<string, string> = {
+  role_salesperson: 'فروشنده', role_sales_supervisor: 'سرپرست', role_senior_sales_supervisor: 'سرپرست ارشد',
+  role_sales_manager: 'مدیر فروش', role_sales_deputy: 'معاونت فروش'
+};
 
 function deriveIsDualRoleFromRoles(baseRole: UserRole, selectedRoleIds: string[]): boolean {
   const hasRequestorLike = baseRole === 'requestor' || selectedRoleIds.some((id) => REQUESTOR_LIKE_ROLE_IDS.includes(id));
@@ -37,6 +72,9 @@ interface AdminPanelProps {
   requests: PaymentRequest[];
   roles: SystemRole[];
   currentUser: User | null;
+  realActor?: User | null;
+  impersonatorAdmin?: User | null;
+  realActorPermissions?: SystemPermission[] | null;
   onUpdateUsers: (newUsers: User[]) => void;
   onUpdateCompanies: (newComp: Company[]) => void;
   onUpdateCostCenters: (newCC: CostCenter[]) => void;
@@ -50,6 +88,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   requests,
   roles,
   currentUser,
+  realActor = null,
+  impersonatorAdmin = null,
+  realActorPermissions = null,
   onUpdateUsers,
   onUpdateCompanies,
   onUpdateCostCenters,
@@ -57,7 +98,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'cost_centers' | 'companies'>('users');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userDomainFilter, setUserDomainFilter] = useState<string>('all');
+
+  // سازمان فروش — SalesBranch/SalesOrgAssignment منبع اصلی است (نه فقط users prop)؛ چون
+  // AdminPanel این دو مجموعه را از App.tsx دریافت نمی‌کند، مستقیماً از storage خوانده و بعد از
+  // هر ذخیرهٔ موفق، رفرش دستی می‌شود (همان الگویی که این کامپوننت برای storage.getTasks() دارد).
+  const [salesBranches, setSalesBranches] = useState<SalesBranch[]>(() => storage.getSalesBranches());
+  const [salesOrgAssignments, setSalesOrgAssignments] = useState<SalesOrgAssignment[]>(() => storage.getSalesOrgAssignments());
+  const refreshSalesOrgData = () => {
+    setSalesBranches(storage.getSalesBranches());
+    setSalesOrgAssignments(storage.getSalesOrgAssignments());
+  };
+
+  // فرم — فقط برای کاربری معنی دارد که roleId/additionalRoleIds او یکی از پنج نقش سلسله‌مراتب
+  // فروش باشد؛ فروشندهٔ فعال دقیقاً یک شعبه، سطوح بالاتر می‌توانند چند شعبه داشته باشند.
+  const [salesBranchIds, setSalesBranchIds] = useState<string[]>([]);
+  const [salesDirectManagerUserId, setSalesDirectManagerUserId] = useState<string>('');
+
   // Modals State
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -109,6 +167,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [roleAccessOverrides, setRoleAccessOverrides] = useState<{ roleId: string; permissions: SystemPermission[] }[]>([]);
   const [openRolePanels, setOpenRolePanels] = useState<Record<string, boolean>>({});
 
+  // User-specific deny list — subtracted from the union of role permissions at read time
+  // (see getEffectiveUserPermissions). Takes priority over every granted role permission.
+  const [deniedPermissions, setDeniedPermissions] = useState<SystemPermission[]>([]);
+  // General org supervisor chain (independent of salesSupervisorId / approvalChain) — used
+  // only for territory computation (computeVisibleUserIds / 'direct_reports' / 'subtree' scope).
+  const [reportsToUserId, setReportsToUserId] = useState<string>('');
+  // Per-role visibility scope. Default is 'own' when a role has no entry here — company/branch
+  // scope is only ever granted explicitly, never a fallback.
+  const [roleScopes, setRoleScopes] = useState<{ roleId: string; scope: { scopeType: 'own' | 'direct_reports' | 'subtree' | 'company' | 'branch'; companyId?: string; costCenterId?: string } }[]>([]);
+
   // Quick Password Change State
   const [newPasswordValue, setNewPasswordValue] = useState('');
 
@@ -116,6 +184,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     branches: false,
     multiRole: true,
+    territory: false,
     seniorSupervisor: false,
     forward: true,
     chain: true,
@@ -129,6 +198,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setOpenSections({
       branches: true,
       multiRole: true,
+      territory: true,
       seniorSupervisor: true,
       forward: true,
       chain: true,
@@ -139,6 +209,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setOpenSections({
       branches: false,
       multiRole: false,
+      territory: false,
       seniorSupervisor: false,
       forward: false,
       chain: false,
@@ -182,8 +253,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setRoleAccessOverrides((prev) => prev.filter((o) => o.roleId !== rId));
   };
 
-  // Live preview of the derived dual-role status for the currently selected role set.
-  const derivedIsDualRole = deriveIsDualRoleFromRoles(role, [roleId, ...additionalRoleIds]);
+  const toggleDeniedPermission = (perm: SystemPermission) => {
+    setDeniedPermissions((prev) => prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]);
+  };
+
+  const getRoleScope = (rId: string) => roleScopes.find((rs) => rs.roleId === rId)?.scope || { scopeType: 'own' as const };
+
+  const setRoleScopeType = (rId: string, scopeType: 'own' | 'direct_reports' | 'subtree' | 'company' | 'branch') => {
+    setRoleScopes((prev) => {
+      const existing = prev.find((rs) => rs.roleId === rId);
+      const nextScope = { scopeType, companyId: existing?.scope.companyId, costCenterId: existing?.scope.costCenterId };
+      if (existing) return prev.map((rs) => (rs.roleId === rId ? { ...rs, scope: nextScope } : rs));
+      return [...prev, { roleId: rId, scope: nextScope }];
+    });
+  };
+
+  const setRoleScopeTarget = (rId: string, field: 'companyId' | 'costCenterId', value: string) => {
+    setRoleScopes((prev) => {
+      const existing = prev.find((rs) => rs.roleId === rId);
+      const base = existing?.scope || { scopeType: 'own' as const };
+      const nextScope = { ...base, [field]: value || undefined };
+      if (existing) return prev.map((rs) => (rs.roleId === rId ? { ...rs, scope: nextScope } : rs));
+      return [...prev, { roleId: rId, scope: nextScope }];
+    });
+  };
+
+  // Live preview of the derived dual-role status for the currently selected role set — uses the
+  // same single-source derivation that Save will persist (role دیگر دستی انتخاب نمی‌شود).
+  const liveDerivedLegacyRole = deriveLegacyUserRoleFromAssignedRoles([roleId, ...additionalRoleIds]);
+  const derivedIsDualRole = deriveIsDualRoleFromRoles(liveDerivedLegacyRole, [roleId, ...additionalRoleIds]);
+
+  // نقش پایه یکی از پنج نقش سلسله‌مراتب فروش است یا نه — بخش «سازمان فروش» فقط برای همین حالت
+  // نمایش داده می‌شود (هر کاربر حداکثر یک پست فعال از پنج پست دارد، بسته به roleId اصلی‌اش).
+  const selectedRoleIdsForForm = [roleId, ...additionalRoleIds];
+  const isSalesOrgRole = SALES_HIERARCHY_LEVELS.includes(roleId as typeof SALES_HIERARCHY_LEVELS[number]);
+  const selectedSalesRole = roles.find((r) => r.id === roleId);
+  const salesAllowedParentRoleIds = selectedSalesRole?.allowedParentRoleIds || [];
+
+  // بخش «مالی و خزانه‌داری» فقط وقتی مخفی می‌شود که دامنهٔ همهٔ نقش‌های انتخابی این کاربر در
+  // فهرست غیرمالی باشد — یک نقش بدون domain همیشه به‌صورت ایمن باعث نمایش می‌شود.
+  const showFinancialSection = selectedRoleIdsForForm.some((rId) => {
+    const r = roles.find((rr) => rr.id === rId);
+    return !r?.domain || !NON_FINANCIAL_ROLE_DOMAINS.includes(r.domain);
+  });
+
+  // پیش‌نمایش زنجیرهٔ کامل فروش برای فرم — چون کاربر جدید هنوز id ندارد، زنجیره از مدیر مستقیم
+  // انتخاب‌شده به بالا Resolve و پستِ در حال ویرایش در ابتدای آن اضافه می‌شود.
+  const salesChainPreview = (() => {
+    if (!isSalesOrgRole) return null;
+    const currentLabel = `${fullName.trim() || '(کاربر جدید)'} — ${SALES_ROLE_SHORT_LABEL[roleId] || roleId}`;
+    if (!salesAllowedParentRoleIds.length) {
+      return { ok: true as const, chainLabel: currentLabel, isComplete: true };
+    }
+    if (!salesDirectManagerUserId) {
+      return { ok: false as const, reason: 'مدیر مستقیم هنوز انتخاب نشده است.' };
+    }
+    const managerChain = resolveSalesHierarchy(salesDirectManagerUserId, salesOrgAssignments, users);
+    if (managerChain.ok === false) {
+      return { ok: false as const, reason: managerChain.reason };
+    }
+    const { hierarchy } = managerChain;
+    const levels = [hierarchy.salesperson, hierarchy.supervisor, hierarchy.seniorSupervisor, hierarchy.manager, hierarchy.deputy]
+      .filter((l): l is NonNullable<typeof l> => !!l)
+      .map((l) => `${l.userName} — ${SALES_ROLE_SHORT_LABEL[l.assignment.salesRoleId] || l.assignment.salesRoleId}`);
+    return { ok: true as const, chainLabel: [currentLabel, ...levels].join(' ← '), isComplete: true };
+  })();
 
   const toggleShowPassword = (id: string) => {
     setShowPasswordMap(prev => ({ ...prev, [id]: !prev[id] }));
@@ -217,6 +351,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAdditionalRoleIds([]);
     setRoleAccessOverrides([]);
     setOpenRolePanels({});
+    setDeniedPermissions([]);
+    setReportsToUserId('');
+    setRoleScopes([]);
+    setSalesBranchIds([]);
+    setSalesDirectManagerUserId('');
+    refreshSalesOrgData();
     setShowAddUserModal(true);
   };
 
@@ -251,6 +391,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAdditionalRoleIds(u.additionalRoleIds || []);
     setRoleAccessOverrides(u.roleAccessOverrides || []);
     setOpenRolePanels({});
+    setDeniedPermissions(u.deniedPermissions || []);
+    setReportsToUserId(u.reportsToUserId || '');
+    setRoleScopes(u.roleScopes || []);
+    refreshSalesOrgData();
+    const activeAssignment = getActiveSalesAssignment(u.id, storage.getSalesOrgAssignments());
+    setSalesBranchIds(activeAssignment?.salesBranchIds || []);
+    setSalesDirectManagerUserId(activeAssignment?.directManagerUserId || '');
   };
 
   const handleSaveUser = (e: React.FormEvent) => {
@@ -258,6 +405,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!fullName.trim() || !username.trim()) {
       alert('لطفاً نام و نام کاربری را وارد کنید.');
       return;
+    }
+
+    const targetUserId = editingUser ? editingUser.id : `user_${Date.now()}`;
+
+    // پست سازمان فروش قبل از هر ذخیره‌ای اعتبارسنجی می‌شود — اگر کاربر همین حالا یک پست فعال
+    // دیگر (نقش سازمان فروش متفاوت) دارد، برای اعتبارسنجی به‌عنوان غیرفعال در نظر گرفته می‌شود
+    // (یعنی «ارتقا/جابه‌جایی پست» مجاز است)، ولی رکورد قدیمی حذف نمی‌شود — فقط در لحظهٔ ذخیرهٔ
+    // نهایی isActive:false می‌گیرد تا سابقهٔ سازمانی حفظ شود.
+    const existingActiveAssignment = getActiveSalesAssignment(targetUserId, salesOrgAssignments);
+    let salesAssignmentsAfterSave: SalesOrgAssignment[] | null = null;
+
+    if (isSalesOrgRole) {
+      const assignmentsForValidation = existingActiveAssignment && existingActiveAssignment.salesRoleId !== roleId
+        ? salesOrgAssignments.map((a) => (a.id === existingActiveAssignment.id ? { ...a, isActive: false } : a))
+        : salesOrgAssignments;
+      const validation = validateSalesAssignment(
+        {
+          userId: targetUserId, salesRoleId: roleId as typeof SALES_HIERARCHY_LEVELS[number],
+          salesBranchIds, directManagerUserId: salesDirectManagerUserId || undefined,
+          validFrom: existingActiveAssignment?.salesRoleId === roleId ? existingActiveAssignment.validFrom : getJalaliNow(),
+          isActive: true, changedByUserId: currentUser?.id
+        },
+        targetUserId, assignmentsForValidation, users, salesBranches, roles
+      );
+      if (validation.ok === false) {
+        alert(`خطا در سازمان فروش: ${validation.reason}`);
+        return;
+      }
+
+      const now = getJalaliNow();
+      if (existingActiveAssignment && existingActiveAssignment.salesRoleId === roleId) {
+        // بند ۲۱ AGENTS.md / بند ۷ سند مرجع چرخهٔ عمر نیروی فروش: پس از اولین استفادهٔ مؤثر
+        // (immutableAfterFirstBusinessUse)، انتصاب دیگر هرگز درجا overwrite نمی‌شود — این باگ
+        // preexisting دقیقاً همین بود. پیش از استفاده، اصلاح درجا همچنان مجاز است.
+        if (existingActiveAssignment.immutableAfterFirstBusinessUse === true) {
+          alert('این انتصاب پس از اولین استفادهٔ مؤثر قفل شده — از فلوی «درخواست انتقال» (برای فروشنده) یا «اصلاح اضطراری» (فقط ادمین اصلی) استفاده کنید، نه ویرایش مستقیم این فرم.');
+          return;
+        }
+        salesAssignmentsAfterSave = salesOrgAssignments.map((a) => (a.id === existingActiveAssignment.id ? {
+          ...a, salesBranchIds, directManagerUserId: salesDirectManagerUserId || undefined,
+          changedByUserId: currentUser?.id, changedAt: now
+        } : a));
+      } else {
+        const deactivated = existingActiveAssignment
+          ? salesOrgAssignments.map((a) => (a.id === existingActiveAssignment.id ? { ...a, isActive: false, changedByUserId: currentUser?.id, changedAt: now } : a))
+          : salesOrgAssignments;
+        salesAssignmentsAfterSave = [...deactivated, {
+          id: `sassign_${targetUserId}_${Date.now()}`, userId: targetUserId, salesRoleId: roleId as typeof SALES_HIERARCHY_LEVELS[number],
+          salesBranchIds, directManagerUserId: salesDirectManagerUserId || undefined,
+          validFrom: now, isActive: true, changedByUserId: currentUser?.id, changedAt: now
+        }];
+      }
+    } else if (existingActiveAssignment) {
+      // کاربر دیگر نقش سازمان فروش ندارد — پست فعال قبلی‌اش بسته می‌شود، ولی رکورد برای Snapshotهای قدیمی باقی می‌ماند.
+      salesAssignmentsAfterSave = salesOrgAssignments.map((a) => (a.id === existingActiveAssignment.id ? { ...a, isActive: false, changedByUserId: currentUser?.id, changedAt: getJalaliNow() } : a));
     }
 
     let chain: string[] = [];
@@ -272,18 +474,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     // instead of forcing a fallback branch on them.
     const finalAllowedBranches = allowedCostCenterIds;
 
-    // Sync customPermissions with canCreateRequests flag
+    // Sync customPermissions with canCreateRequests flag — وقتی بخش «مالی و خزانه‌داری» اصلاً
+    // نمایش داده نشده (کاربر خالص فروش/داده/تبلیغات/...)، این پرچم همیشه false ذخیره می‌شود؛
+    // چون canAccessNavItem مستقیماً از همین فیلد برای دکمهٔ «ثبت درخواست جدید» خزانه استفاده
+    // می‌کند، صرف مخفی‌کردن چک‌باکس در UI کافی نبود — باید مقدار واقعی هم اجباری false شود.
+    const finalCanCreateRequests = showFinancialSection ? canCreateRequests : false;
     let finalCustomPerms = [...customPermissions];
-    if (canCreateRequests && !finalCustomPerms.includes('create_request')) {
+    if (finalCanCreateRequests && !finalCustomPerms.includes('create_request')) {
       finalCustomPerms.push('create_request');
-    } else if (!canCreateRequests) {
+    } else if (!finalCanCreateRequests) {
       finalCustomPerms = finalCustomPerms.filter(p => p !== 'create_request');
     }
 
     // Multi-role access model: exclude the base role from additionalRoleIds if it ended
-    // up duplicated there, and derive isDualRole from the final selected role set.
+    // up duplicated there, and derive isDualRole + the Legacy compatibility role from the
+    // final selected role set — role دیگر از فرم انتخاب نمی‌شود، همیشه محاسبه‌شده در Save
+    // نوشته می‌شود (بند ۱ مأموریت بازسازی کاربران/نقش‌ها/سازمان فروش).
     const finalAdditionalRoleIds = additionalRoleIds.filter(id => id !== roleId);
-    const finalIsDualRole = deriveIsDualRoleFromRoles(role, [roleId, ...finalAdditionalRoleIds]);
+    const derivedLegacyRole = deriveLegacyUserRoleFromAssignedRoles([roleId, ...finalAdditionalRoleIds]);
+    const finalIsDualRole = deriveIsDualRoleFromRoles(derivedLegacyRole, [roleId, ...finalAdditionalRoleIds]);
+    const finalSalesSupervisorId = isSalesOrgRole ? (salesDirectManagerUserId || undefined) : undefined;
 
     if (editingUser) {
       // Update existing user
@@ -294,7 +504,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         password: password.trim() || '123456',
         phone: phone.trim() || u.phone,
         email: email.trim() || u.email,
-        role,
+        role: derivedLegacyRole,
         roleTitle: roleTitle.trim() || u.roleTitle,
         companyId,
         costCenterId,
@@ -305,13 +515,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         workflowNote: workflowNote.trim(),
         canIssueTasks,
         canExecuteTasks,
-        canCreateRequests,
+        canCreateRequests: finalCanCreateRequests,
         isDualRole: finalIsDualRole,
         isSeniorTreasurySupervisor,
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        reportsToUserId: reportsToUserId || undefined,
+        roleScopes,
+        salesSupervisorId: isSalesOrgRole ? finalSalesSupervisorId : u.salesSupervisorId
       } : u);
 
       // Only one user may hold the senior treasury supervisor designation at a time
@@ -321,18 +535,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       onUpdateUsers(updated);
       storage.saveUsers(updated);
+      if (salesAssignmentsAfterSave) {
+        storage.saveSalesOrgAssignments(salesAssignmentsAfterSave);
+        setSalesOrgAssignments(salesAssignmentsAfterSave);
+      }
       setEditingUser(null);
       alert('اطلاعات، دسترسی‌ها و وضعیت کاربری با موفقیت بروزرسانی شد.');
     } else {
       // Add new user
       const newUser: User = {
-        id: `user_${Date.now()}`,
+        id: targetUserId,
         username: username.trim(),
         password: password.trim() || '123456',
         fullName: fullName.trim(),
         phone: phone.trim() || '09120000000',
         email: email.trim() || `${username}@shavaz.com`,
-        role,
+        role: derivedLegacyRole,
         roleTitle: roleTitle.trim() || 'کاربر سیستم',
         companyId,
         costCenterId,
@@ -344,13 +562,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         workflowNote: workflowNote.trim(),
         canIssueTasks,
         canExecuteTasks,
-        canCreateRequests,
+        canCreateRequests: finalCanCreateRequests,
         isDualRole: finalIsDualRole,
         isSeniorTreasurySupervisor,
         customPermissions: finalCustomPerms,
         roleId,
         additionalRoleIds: finalAdditionalRoleIds,
-        roleAccessOverrides
+        roleAccessOverrides,
+        deniedPermissions,
+        reportsToUserId: reportsToUserId || undefined,
+        roleScopes,
+        salesSupervisorId: finalSalesSupervisorId
       };
 
       let updated = [...users, newUser];
@@ -359,6 +581,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       onUpdateUsers(updated);
       storage.saveUsers(updated);
+      if (salesAssignmentsAfterSave) {
+        storage.saveSalesOrgAssignments(salesAssignmentsAfterSave);
+        setSalesOrgAssignments(salesAssignmentsAfterSave);
+      }
       setShowAddUserModal(false);
       alert('کاربر جدید با مسیر تاییدات اختصاصی ایجاد گردید.');
     }
@@ -399,9 +625,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     // Check user activities & logs across system
     const userRequests = requests.filter(r => 
-      r.requestorId === u.id || 
-      r.currentApproverId === u.id || 
-      r.approvalHistory?.some(h => h.actorId === u.id) ||
+      r.requestorId === u.id ||
+      r.currentApproverId === u.id ||
       r.timeline?.some(t => t.actorName === u.fullName || t.nextActorName === u.fullName)
     );
     const userTasks = storage.getTasks().filter(t => 
@@ -561,6 +786,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
           </div>
 
+          {/* Search + Domain filter — search matches name/username/role title/roles/branches
+              (financial cost centers + sales branches); domain filter matches by RBAC role domain. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={userSearchQuery}
+              onChange={(e) => setUserSearchQuery(e.target.value)}
+              placeholder="جست‌وجو بر اساس نام، نام کاربری، نقش یا شعبه..."
+              className="flex-1 min-w-[220px] bg-slate-900 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
+            />
+            <select
+              value={userDomainFilter}
+              onChange={(e) => setUserDomainFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
+            >
+              <option value="all">همه دامنه‌های نقش</option>
+              {Object.entries(DOMAIN_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs text-slate-300">
@@ -572,6 +819,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <th className="p-3.5">تلفن و ایمیل</th>
                     <th className="p-3.5">نقش / عنوان شغلی</th>
                     <th className="p-3.5">شرکت و شعبه مربوطه</th>
+                    <th className="p-3.5">سازمان فروش</th>
                     <th className="p-3.5">وضعیت</th>
                     <th className="p-3.5 text-center">عملیات ادمین</th>
                   </tr>
@@ -583,10 +831,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       if (userStatusFilter === 'inactive') return !u.isActive;
                       return true;
                     })
+                    .filter(u => {
+                      if (userDomainFilter === 'all') return true;
+                      return getAssignedRoleIds(u).some((rId) => roles.find((r) => r.id === rId)?.domain === userDomainFilter);
+                    })
+                    .filter(u => {
+                      const q = userSearchQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      const branchNames = (u.allowedCostCenterIds || []).map((ccId) => costCenters.find((c) => c.id === ccId)?.name || '').join(' ');
+                      const activeAssignment = getActiveSalesAssignment(u.id, salesOrgAssignments);
+                      const salesBranchNames = (activeAssignment?.salesBranchIds || []).map((bId) => salesBranches.find((b) => b.id === bId)?.name || '').join(' ');
+                      const haystack = [u.fullName, u.username, u.roleTitle, branchNames, salesBranchNames, ...getAssignedRoleIds(u).map((rId) => roles.find((r) => r.id === rId)?.name || '')].join(' ').toLowerCase();
+                      return haystack.includes(q);
+                    })
                     .map((u) => {
                     const comp = companies.find(c => c.id === u.companyId);
                     const cc = costCenters.find(c => c.id === u.costCenterId);
                     const isPassVisible = showPasswordMap[u.id];
+                    const roleChips = getAssignedRoleIds(u).map((rId) => {
+                      const r = roles.find((rr) => rr.id === rId);
+                      return { id: rId, label: r?.name || rId, domain: r?.domain || 'general' };
+                    });
+                    const userSalesAssignment = getActiveSalesAssignment(u.id, salesOrgAssignments);
+                    const userSalesChain = userSalesAssignment ? resolveSalesHierarchy(u.id, salesOrgAssignments, users) : null;
 
                     return (
                       <tr key={u.id} className="hover:bg-slate-800/40 transition">
@@ -618,10 +885,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </td>
 
                         <td className="p-3.5">
-                          <span className="font-bold text-slate-200 block">{u.roleTitle}</span>
-                          <span className="text-[10px] text-indigo-400 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-800/50">
-                            {u.role === 'admin' ? 'ادمین ارشد' : u.role === 'approver' ? 'تاییدکننده' : u.role === 'treasury_executor' ? 'مجری واریز' : 'درخواست‌کننده'}
-                          </span>
+                          <span className="font-bold text-slate-200 block mb-1">{u.roleTitle}</span>
+                          <div className="flex flex-wrap gap-1">
+                            {roleChips.map((chip) => (
+                              <span
+                                key={chip.id}
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${DOMAIN_BADGE_CLASSES[chip.domain] || DOMAIN_BADGE_CLASSES.general}`}
+                                title={DOMAIN_LABELS[chip.domain] || chip.domain}
+                              >
+                                {chip.label}
+                              </span>
+                            ))}
+                          </div>
                         </td>
 
                         <td className="p-3.5 max-w-[220px]">
@@ -647,6 +922,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <div className="text-[10px] text-slate-500 mt-0.5">{comp?.name || 'گروه شاواز'}</div>
                         </td>
 
+                        <td className="p-3.5 max-w-[200px]">
+                          {userSalesAssignment ? (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-emerald-300 block">
+                                {SALES_ROLE_SHORT_LABEL[userSalesAssignment.salesRoleId] || userSalesAssignment.salesRoleId}
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {userSalesAssignment.salesBranchIds.slice(0, 2).map((bId) => (
+                                  <span key={bId} className="text-[10px] bg-slate-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-900/60 font-bold">
+                                    {salesBranches.find((b) => b.id === bId)?.name || bId}
+                                  </span>
+                                ))}
+                                {userSalesAssignment.salesBranchIds.length > 2 && (
+                                  <span className="text-[10px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-800 font-bold">
+                                    +{userSalesAssignment.salesBranchIds.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                              {userSalesChain?.ok === false ? (
+                                <span className="text-[9px] text-rose-300 font-bold flex items-center gap-1" title={userSalesChain.reason}>
+                                  <ShieldAlert className="w-3 h-3" /> زنجیره ناقص
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-emerald-400 font-bold">زنجیره کامل</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-600">—</span>
+                          )}
+                        </td>
+
                         <td className="p-3.5">
                           <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 w-fit ${
                             u.isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
@@ -657,8 +963,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Impersonate / Login as User Button (Admin only) */}
-                            {onImpersonateUser && u.id !== currentUser?.id && (
+                            {/* Impersonate / Login as User Button — rendered only when
+                                canStartImpersonation would actually succeed for this target:
+                                real actor must be the true admin (not merely a permission
+                                holder), no nested session already open, target active. */}
+                            {onImpersonateUser && u.id !== currentUser?.id &&
+                              canStartImpersonation(realActor, impersonatorAdmin, u, realActorPermissions).ok && (
                               <button
                                 onClick={() => onImpersonateUser(u)}
                                 className="p-1.5 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg transition"
@@ -812,29 +1122,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">نقش و سطح دسترسی سیستم</label>
-                <select
-                  value={role}
-                  onChange={(e) => {
-                    const newRole = e.target.value as UserRole;
-                    setRole(newRole);
-                    setRoleId(DEFAULT_ROLE_ID_MAP[newRole]);
-                  }}
-                  className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="requestor">درخواست‌کننده (مسئول خرید / پرسنل شعب)</option>
-                  <option value="approver">تاییدکننده (مدیر واحد / سرپرست شعبه)</option>
-                  <option value="treasury_executor">کارمند اجرای واریز خزانه‌داری</option>
-                  <option value="support_agent">کارشناس پشتیبانی و خدمات پس از فروش</option>
-                  <option value="financial_approver">کارشناس تایید مالی (خدمات پس از فروش)</option>
-                  <option value="admin">مدیر کل خزانه‌داری (Super Admin)</option>
-                </select>
-              </div>
-
-              <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">نقش دقیق سیستمی (RBAC)</label>
                 <span className="text-[10px] text-slate-400 block mb-1">
-                  همان دسترسی‌هایی که در «نقش‌ها و دسترسی‌ها» تعریف کرده‌اید، اینجا اعمال می‌شود — چیزی که تیک نخورده باشد، این کاربر اصلاً نمی‌بیند. برای اکثر کاربران نیازی به تغییر این گزینه نیست؛ فقط برای نقش‌های سفارشی استفاده کنید.
+                  همان دسترسی‌هایی که در «نقش‌ها و دسترسی‌ها» تعریف کرده‌اید، اینجا اعمال می‌شود — چیزی که تیک نخورده باشد، این کاربر اصلاً نمی‌بیند. نقش قدیمی (Legacy) دیگر از این‌جا انتخاب نمی‌شود؛ برای گردش‌کارهای خزانه‌داری که هنوز به آن وابسته‌اند، خودکار و فقط بر اساس همین نقش محاسبه می‌شود.
                 </span>
                 <select
                   value={roleId}
@@ -846,6 +1136,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ))}
                 </select>
               </div>
+
+              {isSalesOrgRole && (
+                <div className="p-3.5 bg-slate-950/90 border border-emerald-500/30 rounded-2xl space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-300 text-xs font-extrabold">
+                    <MapPin className="w-4 h-4 shrink-0" />
+                    <span>سازمان فروش — {SALES_ROLE_SHORT_LABEL[roleId] || roleId}</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                      {roleId === 'role_salesperson' ? 'شعبه فروش (دقیقاً یک شعبه)' : 'شعبه‌های فروش تحت مدیریت'}
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto p-1">
+                      {salesBranches.filter((b) => b.isActive).map((b) => {
+                        const isSelected = salesBranchIds.includes(b.id);
+                        return (
+                          <label key={b.id} className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 cursor-pointer transition ${
+                            isSelected ? 'bg-emerald-600/30 border-emerald-500 text-white' : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:bg-slate-800'
+                          }`}>
+                            <input
+                              type={roleId === 'role_salesperson' ? 'radio' : 'checkbox'}
+                              name="sales-branch"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (roleId === 'role_salesperson') { setSalesBranchIds([b.id]); return; }
+                                setSalesBranchIds(isSelected ? salesBranchIds.filter((id) => id !== b.id) : [...salesBranchIds, b.id]);
+                              }}
+                              className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-700 bg-slate-800 focus:ring-emerald-500"
+                            />
+                            <span className="truncate text-[11px]">{b.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1.5">مدیر مستقیم در سازمان فروش</label>
+                    {salesAllowedParentRoleIds.length === 0 ? (
+                      <p className="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-3 py-2">
+                        بالاترین سطح سازمان فروش (معاونت فروش) — بدون مدیر مستقیم.
+                      </p>
+                    ) : (
+                      <select
+                        value={salesDirectManagerUserId}
+                        onChange={(e) => setSalesDirectManagerUserId(e.target.value)}
+                        className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="">— انتخاب مدیر مستقیم —</option>
+                        {users
+                          .filter((u) => u.id !== editingUser?.id && salesAllowedParentRoleIds.includes(getActiveSalesAssignment(u.id, salesOrgAssignments)?.salesRoleId || ''))
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>{u.fullName} ({SALES_ROLE_SHORT_LABEL[getActiveSalesAssignment(u.id, salesOrgAssignments)?.salesRoleId || ''] || ''})</option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="text-[11px] rounded-xl px-3 py-2 border bg-slate-900/70 border-slate-800">
+                    <span className="block font-bold text-slate-300 mb-1">پیش‌نمایش زنجیره کامل:</span>
+                    {salesChainPreview?.ok === true ? (
+                      <span className="text-emerald-300">{salesChainPreview.chainLabel}</span>
+                    ) : (
+                      <span className="text-rose-300">{salesChainPreview?.reason || 'ناقص'}</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">عنوان شغلی رسمی</label>
@@ -911,7 +1269,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
-              {/* Multi-Select Branches Box */}
+              {/* Multi-Select Branches Box — مرکز هزینه مالی، فقط برای کاربری که واقعاً نقش
+                  مالی/خزانه‌داری دارد؛ برای کاربر خالص فروش نمایش داده نمی‌شود (شعبهٔ فروش او
+                  از بخش «سازمان فروش» بالا مدیریت می‌شود، نه از این‌جا). */}
+              {showFinancialSection && (
               <div className="p-3.5 bg-slate-950/90 border border-indigo-500/30 rounded-2xl space-y-2.5">
                 <button
                   type="button"
@@ -1026,6 +1387,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Multi-Role Access Model: additional roles + per-role permission overrides.
                   Replaces the old standalone task-directive box, custom-permissions box,
@@ -1178,6 +1540,125 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 )}
               </div>
 
+              {/* Territory & Denied Permissions: general org supervisor (reportsToUserId,
+                  independent of salesSupervisorId/approvalChain), per-role visibility scope
+                  (own by default — company/branch only when explicitly assigned here), and
+                  a user-specific deny list that always wins over granted role permissions. */}
+              <div className="p-3.5 bg-slate-950/90 border border-sky-500/30 rounded-2xl space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('territory')}
+                  className="w-full flex items-center justify-between cursor-pointer text-right"
+                >
+                  <div className="flex items-center gap-2 overflow-hidden flex-wrap">
+                    <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="text-xs font-extrabold text-sky-300 truncate">
+                      قلمرو سازمانی و محرومیت‌های دسترسی این کاربر
+                    </span>
+                    {deniedPermissions.length > 0 && (
+                      <span className="text-[10px] font-bold bg-rose-950 text-rose-300 px-2 py-0.5 rounded-full border border-rose-800/60 shrink-0">
+                        {deniedPermissions.length} مجوز محروم
+                      </span>
+                    )}
+                  </div>
+                  {openSections.territory ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+                </button>
+
+                {openSections.territory && (
+                  <div className="pt-2 border-t border-slate-800 space-y-3 animate-fade-in">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        سرپرست سازمانی مستقیم (زنجیره عمومی گزارش‌دهی)
+                      </label>
+                      <select
+                        value={reportsToUserId}
+                        onChange={(e) => setReportsToUserId(e.target.value)}
+                        className="w-full bg-slate-800 text-white text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-sky-500"
+                      >
+                        <option value="">بدون سرپرست مشخص</option>
+                        {users.filter(u => u.id !== editingUser?.id).map(u => (
+                          <option key={u.id} value={u.id}>{u.fullName} ({u.roleTitle})</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        فقط برای محاسبه قلمرو دید سازمانی (زیرمجموعه مستقیم / کل زیرشاخه) استفاده می‌شود — مستقل از سلسله‌مراتب فروش و زنجیره تایید مالی.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-slate-400">
+                        قلمرو دید هر نقش فعال این کاربر (پیش‌فرض «فقط خودم» — هیچ نقشی بدون تخصیص صریح، دسترسی گسترده‌تر ندارد):
+                      </p>
+                      {[roleId, ...additionalRoleIds].map((rId) => {
+                        const r = roles.find(rr => rr.id === rId);
+                        if (!r) return null;
+                        const scope = getRoleScope(rId);
+                        return (
+                          <div key={rId} className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 space-y-2">
+                            <span className="text-xs font-bold text-white">{r.name}</span>
+                            <select
+                              value={scope.scopeType}
+                              onChange={(e) => setRoleScopeType(rId, e.target.value as any)}
+                              className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                            >
+                              <option value="own">فقط خودم</option>
+                              <option value="direct_reports">زیرمجموعه مستقیم</option>
+                              <option value="subtree">کل زیرشاخه سازمانی</option>
+                              <option value="company">کل یک شرکت</option>
+                              <option value="branch">یک شعبه / مرکز هزینه</option>
+                            </select>
+                            {scope.scopeType === 'company' && (
+                              <select
+                                value={scope.companyId || ''}
+                                onChange={(e) => setRoleScopeTarget(rId, 'companyId', e.target.value)}
+                                className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                              >
+                                <option value="">انتخاب شرکت...</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            )}
+                            {scope.scopeType === 'branch' && (
+                              <select
+                                value={scope.costCenterId || ''}
+                                onChange={(e) => setRoleScopeTarget(rId, 'costCenterId', e.target.value)}
+                                className="w-full bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-sky-500"
+                              >
+                                <option value="">انتخاب شعبه...</option>
+                                {costCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        محرومیت اختصاصی از مجوز (اولویت بالاتر از هر نقش اعطاشده)
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                        {ALL_PERMISSIONS.map((p) => {
+                          const checked = deniedPermissions.includes(p.key);
+                          return (
+                            <label key={p.key} className={`p-2 rounded-lg border text-[10.5px] font-bold flex items-start gap-2 cursor-pointer transition ${
+                              checked ? 'bg-rose-950/50 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleDeniedPermission(p.key)}
+                                className="w-3.5 h-3.5 mt-0.5 text-rose-600 rounded border-slate-700 bg-slate-800 focus:ring-rose-500"
+                              />
+                              <span>{p.title}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Workflow & Permission Architecture Section Header */}
               <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl space-y-1">
                 <div className="flex items-center gap-2 text-indigo-300 text-xs font-extrabold">
@@ -1192,7 +1673,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </p>
               </div>
 
-              {/* Senior Treasury Supervisor Designation (independent of the multi-role model above) */}
+              {/* Senior Treasury Supervisor Designation + Approval Chain — فقط برای کاربری که
+                  واقعاً نقش مالی/خزانه‌داری دارد؛ برای کاربر خالص فروش هرگز نمایش/پیش‌فرض‌دهی
+                  نمی‌شود (بند ۵-د مأموریت بازسازی کاربران/نقش‌ها/سازمان فروش). */}
+              {showFinancialSection && (<>
               <div className="p-3.5 bg-slate-950/90 border border-amber-500/30 rounded-2xl space-y-2.5">
                 <button
                   type="button"
@@ -1379,8 +1863,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 )}
               </div>
+              </>)}
 
-              {/* Approve & Forward destinations - restricts who this approver can send requests to */}
+              {/* Approve & Forward destinations - restricts who this approver can send requests to;
+                  گیت شده پشت همان showFinancialSection چون مختص کارتابل تاییدکنندگان است. */}
+              {showFinancialSection && (
               <div className="p-3.5 bg-slate-950/90 border border-teal-500/30 rounded-2xl space-y-2.5">
                 <button
                   type="button"
@@ -1455,6 +1942,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 )}
               </div>
+              )}
 
               <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
                 <button

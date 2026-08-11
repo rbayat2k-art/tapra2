@@ -125,6 +125,25 @@ export interface ImportJob {
   candidates?: Array<{ id: string; fullName: string; phonePrimary: string }>;
 }
 
+export type ImportJobSummary = Pick<
+  ImportJob,
+  'id' | 'fileName' | 'sourceName' | 'schemaVersion' | 'status' | 'counts' | 'createdAt' | 'approvedAt' | 'completedAt'
+>;
+
+export function summarizeCustomerImport(job: ImportJob): ImportJobSummary {
+  return {
+    id: job.id,
+    fileName: job.fileName,
+    sourceName: job.sourceName,
+    schemaVersion: job.schemaVersion,
+    status: job.status,
+    counts: job.counts,
+    createdAt: job.createdAt,
+    approvedAt: job.approvedAt,
+    completedAt: job.completedAt,
+  };
+}
+
 function requireCompany(context: MembershipContext): { id: string } {
   if (!context.company) throw new AppError(409, 'company_context_required', 'A Company context is required.');
   return context.company;
@@ -361,7 +380,7 @@ export async function stageCustomerImport(
   });
 }
 
-export async function listCustomerImports(context: MembershipContext): Promise<ImportJob[]> {
+export async function listCustomerImports(context: MembershipContext): Promise<ImportJobSummary[]> {
   const company = requireCompany(context);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
     const jobs = await client.query<ImportJobRow>(`
@@ -370,7 +389,7 @@ export async function listCustomerImports(context: MembershipContext): Promise<I
       review_required_rows, approved_rows, rejected_rows, created_at, approved_at, completed_at
       FROM customer_import_jobs ORDER BY created_at DESC, id DESC LIMIT 50
     `);
-    return jobs.rows.map(mapJob);
+    return jobs.rows.map(mapJob).map(summarizeCustomerImport);
   });
 }
 

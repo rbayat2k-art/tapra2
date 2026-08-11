@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار پیاده‌سازی‌شده Customer Import، staging و reconciliation است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -50,9 +50,12 @@ Approval در transaction tenant-scoped اجرا می‌شود و پردازش �
 
 permissionهای server-side عبارت‌اند از:
 
+- `customer.import.read`
 - `customer.import.create`
 - `customer.import.review`
 - `customer.import.approve`
+
+`read` فقط summary پاک‌سازی‌شده را مجاز می‌کند. مشاهده `raw_data`، candidateها و تصمیم‌های ردیفی به `read + review` نیاز دارد. `customer.read` به‌تنهایی هیچ دسترسی به Import نمی‌دهد.
 
 هر دو جدول Import دارای `RLS` و `FORCE ROW LEVEL SECURITY` بر اساس Workspace/Company فعال هستند. candidate matching نیز در همان transaction و context انجام می‌شود؛ client نمی‌تواند Workspace یا Company مقصد را در payload تعیین کند.
 
@@ -72,6 +75,7 @@ permissionهای server-side عبارت‌اند از:
 
 - `server/migrations/0005_customer_import_staging.sql`
 - `server/migrations/0006_customer_import_completion_fields.sql`
+- `server/migrations/0007_customer_import_read_permission.sql`
 - `server/src/modules/customer-imports/`
 - `src/foundation/customers/CustomerImportView.tsx`
 - `server/fixtures/customer-import/`

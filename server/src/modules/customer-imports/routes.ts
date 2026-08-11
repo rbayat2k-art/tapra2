@@ -17,6 +17,7 @@ import {
   listCustomerImports,
   readCustomerImport,
   stageCustomerImport,
+  summarizeCustomerImport,
 } from './import-service.js';
 
 const uuid = z.string().uuid();
@@ -52,13 +53,18 @@ export function customerImportRoutes(): Router {
   const router = Router();
   router.use(requireAuthentication, requireActiveContext);
 
-  router.get('/customer-imports', requirePermission('customer.read'), asyncHandler(async (_request, response) => {
+  router.get('/customer-imports', requirePermission('customer.import.read'), asyncHandler(async (_request, response) => {
     response.json({ imports: await listCustomerImports(getActiveContext(response.locals)) });
   }));
 
-  router.get('/customer-imports/:jobId', requirePermission('customer.read'), asyncHandler(async (request, response) => {
+  router.get(
+    '/customer-imports/:jobId',
+    requirePermission('customer.import.read'),
+    requirePermission('customer.import.review'),
+    asyncHandler(async (request, response) => {
     response.json({ import: await readCustomerImport(getActiveContext(response.locals), uuid.parse(request.params.jobId)) });
-  }));
+    }),
+  );
 
   router.post(
     '/customer-imports',
@@ -77,7 +83,7 @@ export function customerImportRoutes(): Router {
           correlationId: response.locals.correlationId as string,
         },
       );
-      response.status(201).json({ import: result });
+      response.status(201).json({ import: summarizeCustomerImport(result) });
     }),
   );
 
@@ -98,12 +104,18 @@ export function customerImportRoutes(): Router {
     ) });
   }));
 
-  router.post('/customer-imports/:jobId/approve', requireCsrf, requirePermission('customer.import.approve'), asyncHandler(async (request, response) => {
+  router.post(
+    '/customer-imports/:jobId/approve',
+    requireCsrf,
+    requirePermission('customer.import.review'),
+    requirePermission('customer.import.approve'),
+    asyncHandler(async (request, response) => {
     response.json({ import: await approveCustomerImport(
       getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.jobId),
       response.locals.correlationId as string,
     ) });
-  }));
+    }),
+  );
 
   return router;
 }

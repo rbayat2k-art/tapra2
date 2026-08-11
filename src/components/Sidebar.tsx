@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { User, DirectMessage, SystemRole, SystemPermission, Letter } from '../types';
-import { getEffectiveUserPermissions } from '../utils/permissions';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { User, DirectMessage, SystemRole, Letter } from '../types';
+import { useEffectivePermissions, getAssignedRoleIds } from '../utils/permissions';
+import { storage } from '../utils/storage';
+import { getActiveSalesAssignment } from '../utils/salesOrgStructure';
 import {
-  LayoutDashboard, PlusCircle, Inbox, Archive, FileText, Search,
-  GitFork, MessageSquare, ShieldCheck, CreditCard, Building, MapPin, KeyRound, Users, CheckSquare,
-  ChevronDown, MoreHorizontal, UsersRound, BookUser, Tags, LifeBuoy, Mail, ShieldAlert, Palette,
-  Menu, X, PanelRightClose, PanelRightOpen, Contact
+  NAV_GROUP_LABELS, getVisibleGroupedNavItems, getEligiblePrimaryActions,
+  type NavGroupId, type NavItemDefinition, type NavVisibilityContext
+} from '../config/navigationRegistry';
+import {
+  ChevronDown, MoreHorizontal, UsersRound, PanelRightClose, PanelRightOpen, X,
+  Briefcase, MapPinned, ChevronsUpDown
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,6 +31,8 @@ interface SidebarProps {
 
 const conversationId = (a: string, b: string) => [a, b].sort().join('__');
 
+const expandedGroupsStorageKey = (userId: string) => `shavaz_sidebar_expanded_groups_${userId}`;
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onOpenTab,
@@ -43,95 +49,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile
 }) => {
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-
+  // بند «مأموریت بازطراحی UI»: هیچ Permission را تغییر نده — دقیقاً همان چک preexisting
+  // (role==='admin' خام، نه isSystemAdmin) که Sidebar/App.tsx's tabAccessMap قبلاً برای سه آیتم
+  // admin/roles_permissions/all_communications استفاده می‌کردند، حفظ شده.
   const isAdmin = currentUser?.role === 'admin';
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
 
-  const effectivePermissions = useMemo(() => {
-    if (!currentUser) return [] as SystemPermission[];
-    if (isAdmin) return null; // null = unrestricted (admin bypasses all checks)
-    return getEffectiveUserPermissions(currentUser, roles);
-  }, [currentUser, roles, isAdmin]);
+  const visibilityCtx: NavVisibilityContext = { currentUser, effectivePermissions, isAdmin };
+  const groupedNavItems = useMemo(() => getVisibleGroupedNavItems(visibilityCtx), [currentUser, effectivePermissions, isAdmin]);
+  const activeGroup: NavGroupId | undefined = groupedNavItems.find((g) => g.items.some((i) => i.id === activeTab))?.group;
 
-  const hasAccess = (required?: SystemPermission[]) => {
-    if (!required || required.length === 0) return true;
-    if (isAdmin) return true;
-
-    // Direct explicit toggle check for create_request permission
-    if (required.includes('create_request')) {
-      if (currentUser?.canCreateRequests !== undefined) {
-        if (currentUser.canCreateRequests) return true;
-        if (!currentUser.canCreateRequests) return false;
-      }
+  // باز/بسته بودن هر گروه فقط برای همین کاربر، در localStorage — پیش‌فرض: فقط گروه فعال باز است.
+  const [expandedGroups, setExpandedGroups] = useState<Set<NavGroupId>>(() => {
+    if (!currentUser) return new Set();
+    const saved = localStorage.getItem(expandedGroupsStorageKey(currentUser.id));
+    if (saved) {
+      try { return new Set(JSON.parse(saved) as NavGroupId[]); } catch { /* ignore malformed */ }
     }
+    return activeGroup ? new Set([activeGroup]) : new Set();
+  });
 
-    // Dual-role users (isDualRole) may approve/pay their own escalated requests even
-    // though their base role's permission set doesn't grant approval_inbox access.
-    if (required.includes('approve_branch_request') || required.includes('approve_treasury') || required.includes('execute_payment')) {
-      if (currentUser?.isDualRole === true) return true;
-    }
+  useEffect(() => {
+    if (activeGroup) setExpandedGroups((prev) => (prev.has(activeGroup) ? prev : new Set(prev).add(activeGroup)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroup]);
 
-    // Direct explicit check for task directives permission
-    if (required.includes('manage_assigned_tasks')) {
-      if (isAdmin) return true;
-      const canIssue = currentUser?.canIssueTasks === true;
-      const canExecute = currentUser?.canExecuteTasks === true;
-      const hasCustom = !!currentUser?.customPermissions?.includes('manage_assigned_tasks');
-      const hasTaskAccess = canIssue || canExecute || hasCustom;
-      if (!hasTaskAccess) return false;
-      return true;
-    }
+  useEffect(() => {
+    if (!currentUser) return;
+    localStorage.setItem(expandedGroupsStorageKey(currentUser.id), JSON.stringify(Array.from(expandedGroups)));
+  }, [expandedGroups, currentUser]);
 
-    if (effectivePermissions === null) return true;
-    return required.some((p) => effectivePermissions!.includes(p));
+  const toggleGroup = (group: NavGroupId) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      return next;
+    });
   };
 
-  const navItems: {
-    id: string; label: string; icon: any; badge: string | number | null; badgeColor?: string;
-    requires?: SystemPermission[];
-  }[] = [
-    { id: 'dashboard', label: 'داشبورد و خلاصه آمار', icon: LayoutDashboard, badge: null },
-    { id: 'new_request', label: 'ثبت درخواست جدید', icon: PlusCircle, badge: null, requires: ['create_request'] },
-    { id: 'my_requests', label: 'درخواست‌های من', icon: FileText, badge: myRequestsCount > 0 ? myRequestsCount : null, requires: ['create_request'] },
-    { id: 'assigned_tasks', label: 'کارهای محوله و دستورات', icon: CheckSquare, badge: 'جدید', badgeColor: 'bg-indigo-600', requires: ['manage_assigned_tasks'] },
-    { id: 'approval_inbox', label: 'کارتابل تایید و پرداخت', icon: Inbox, badge: pendingApprovalCount > 0 ? pendingApprovalCount : null, badgeColor: 'bg-amber-500', requires: ['approve_branch_request', 'approve_treasury', 'execute_payment'] },
-    { id: 'style_settings', label: 'تنظیمات استایل و فونت', icon: Palette, badge: 'جدید', badgeColor: 'bg-emerald-600' },
-    { id: 'cost_centers', label: 'شعب فروش و مراکز هزینه', icon: MapPin, badge: null, requires: ['manage_cost_centers'] },
-    { id: 'companies', label: 'شرکت‌های tapra', icon: Building, badge: null, requires: ['manage_companies'] },
-    { id: 'archive', label: 'جستجوی پیشرفته و خروجی', icon: Search, badge: 'جامع', badgeColor: 'bg-indigo-600' },
-    { id: 'workflow', label: 'چارت گردش کار (فلو)', icon: GitFork, badge: null, requires: ['view_analytics'] },
-    { id: 'messenger', label: 'گفتگوی عمومی خزانه‌داری', icon: MessageSquare, badge: null },
-    { id: 'customers', label: 'مشتریان', icon: Contact, badge: null, requires: ['sales_access'] },
-  ];
-
-  // Visual grouping only — none of this changes hasAccess/requires, badges, icons, or
-  // isCollapsed/expandedGroup behavior; it only reorders where each (already-filtered)
-  // item renders. Groups: عملیات روزمره (primary, unchanged) → بایگانی و گزارش‌ها →
-  // دفترچه و منابع سازمانی → ارتباطات → خدمات پس از فروش → کاربران و دسترسی‌ها →
-  // تنظیمات شخصی (style_settings, moved to its own section at the very bottom).
-  const visibleNavItems = navItems.filter((item) => hasAccess(item.requires));
-  const getVisibleItem = (id: string) => visibleNavItems.find((i) => i.id === id);
-
-  const primaryItems = visibleNavItems.filter((i) => ['dashboard', 'new_request', 'my_requests', 'assigned_tasks', 'approval_inbox'].includes(i.id));
-  const archiveReportItems = ['archive', 'workflow'].map(getVisibleItem).filter(Boolean) as typeof navItems;
-  const orgResourceItems = ['cost_centers', 'companies'].map(getVisibleItem).filter(Boolean) as typeof navItems;
-  const communicationNavItems = ['messenger'].map(getVisibleItem).filter(Boolean) as typeof navItems;
-  // گروه جدید «فروش» (ماژول فروش، گام اول) — فعلاً فقط یک آیتم (مشتریان)؛ یک ردیف
-  // مستقل و ساده، نه یک گروه کشویی کامل مثل «دفترچه»/«کاربران»، چون هنوز آیتم دومی ندارد.
-  const salesNavItems = ['customers'].map(getVisibleItem).filter(Boolean) as typeof navItems;
-  const styleSettingsItem = getVisibleItem('style_settings');
-
-  const canSeeVendors = hasAccess(['manage_vendors']);
-  const canSeeVendorCategories = isAdmin || !!currentUser?.customPermissions?.includes('manage_vendors');
-  const canSeeSupport = hasAccess(['manage_support_cases', 'financial_approve_support', 'view_support_reports']);
-  const canSeeLetters = hasAccess(['manage_letters']);
+  // نشان هر آیتم — فقط از badgeKey رجیستری خوانده می‌شود، عدد/رنگ خودش اینجا محاسبه می‌شود.
   const unreadLettersCount = useMemo(() => {
     if (!currentUser) return 0;
     return letters.filter((l) => l.toUserId === currentUser.id && !l.seenBy.some((s) => s.userId === currentUser.id)).length;
   }, [letters, currentUser]);
-  const canSeeAdminUsers = isAdmin || !!currentUser?.customPermissions?.includes('manage_users');
-  const canSeeRoles = isAdmin || !!currentUser?.customPermissions?.includes('manage_roles');
-  const canSeeAllCommunications = isAdmin || !!currentUser?.customPermissions?.includes('manage_users');
+
+  const totalUnreadDMs = useMemo(() => {
+    if (!currentUser) return 0;
+    return directMessages.filter((m) => m.recipientId === currentUser.id && !m.readAt).length;
+  }, [directMessages, currentUser]);
+
+  const getBadge = (item: NavItemDefinition): { label: string | number; tone: 'neutral' | 'attention' | 'new' } | null => {
+    switch (item.badgeKey) {
+      case 'pendingApproval': return pendingApprovalCount > 0 ? { label: pendingApprovalCount, tone: 'attention' } : null;
+      case 'myRequests': return myRequestsCount > 0 ? { label: myRequestsCount, tone: 'neutral' } : null;
+      case 'unreadLetters': return unreadLettersCount > 0 ? { label: unreadLettersCount, tone: 'attention' } : { label: 'جدید', tone: 'new' };
+      case 'unreadDMs': return totalUnreadDMs > 0 ? { label: totalUnreadDMs, tone: 'attention' } : null;
+      default: return null;
+    }
+  };
 
   // Top 3 most-recently-active colleague conversations, for the quick-access shortcut list
   const recentColleagues = useMemo(() => {
@@ -150,349 +125,285 @@ export const Sidebar: React.FC<SidebarProps> = ({
       .slice(0, 3);
   }, [users, directMessages, currentUser]);
 
-  const totalUnreadDMs = useMemo(() => {
-    if (!currentUser) return 0;
-    return directMessages.filter((m) => m.recipientId === currentUser.id && !m.readAt).length;
-  }, [directMessages, currentUser]);
+  // هویت کاربر: دامنهٔ نقش اصلی + (فقط برای نقش‌های فروش) شعبهٔ فعال — صرفاً نمایشی، از
+  // storage خوانده می‌شود (بدون تغییر مدل داده/Permission)، تا Sidebar شلوغ نشود.
+  const identityMeta = useMemo(() => {
+    if (!currentUser) return null;
+    const primaryRoleId = getAssignedRoleIds(currentUser)[0];
+    const primaryRole = roles.find((r) => r.id === primaryRoleId);
+    let branchName: string | null = null;
+    if (primaryRole?.domain === 'sales') {
+      const assignment = getActiveSalesAssignment(currentUser.id, storage.getSalesOrgAssignments());
+      if (assignment?.salesBranchIds?.[0]) {
+        branchName = storage.getSalesBranches().find((b) => b.id === assignment.salesBranchIds[0])?.name || null;
+      }
+    }
+    return { domainLabel: DOMAIN_LABELS[primaryRole?.domain || 'general'], branchName };
+  }, [currentUser, roles]);
 
-  const usersGroupActive = activeTab === 'admin' || activeTab === 'colleagues';
-  const directoryGroupActive = activeTab === 'vendors' || activeTab === 'vendor_categories';
+  const eligiblePrimaryActions = useMemo(() => getEligiblePrimaryActions(visibilityCtx), [currentUser, effectivePermissions]);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
-  const toggleGroup = (id: string) => {
-    setExpandedGroup((prev) => (prev === id ? null : id));
+  const handleNavigate = (item: NavItemDefinition) => {
+    onOpenTab(item.id, item.label);
+    if (onCloseMobile) onCloseMobile();
   };
 
-  const renderFlatItem = (item: typeof navItems[number]) => {
+  // Escape بستن Drawer موبایل + Focus روی دکمهٔ بستن هنگام باز شدن (Focus Trap سبک: تمرکز
+  // فقط روی خودِ Drawer نگه داشته می‌شود، نه سراسر صفحه).
+  const drawerRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isMobileOpen) return;
+    closeButtonRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onCloseMobile?.(); return; }
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+      const focusables = drawerRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isMobileOpen, onCloseMobile]);
+
+  const renderNavButton = (item: NavItemDefinition) => {
     const Icon = item.icon;
     const isActive = activeTab === item.id;
+    const badge = getBadge(item);
     return (
       <button
         key={item.id}
-        onClick={() => {
-          onOpenTab(item.id, item.label);
-          if (onCloseMobile) onCloseMobile();
-        }}
+        onClick={() => handleNavigate(item)}
         title={isCollapsed ? item.label : undefined}
-        className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
+        aria-current={isActive ? 'page' : undefined}
+        className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2.5' : 'justify-between px-3 py-2'} rounded-[10px] text-[13px] font-medium transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${
           isActive
-            ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-            : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
+            ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-bold'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]'
         }`}
       >
-        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-          <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-          {!isCollapsed && <span>{item.label}</span>}
-        </div>
-        {!isCollapsed && item.badge !== null && (
-          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full text-white ${item.badgeColor || 'bg-emerald-600'}`}>
-            {item.badge}
+        <span className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+          <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[var(--primary)]' : 'text-[var(--text-muted)]'}`} />
+          {!isCollapsed && <span className="truncate">{item.label}</span>}
+        </span>
+        {!isCollapsed && badge && (
+          <span className={`shrink-0 px-1.5 py-0.5 text-[11px] font-bold rounded-full ${
+            badge.tone === 'attention' ? 'bg-[var(--danger)] text-white' : badge.tone === 'new' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--surface-muted)] text-[var(--text-secondary)]'
+          }`}>
+            {badge.label}
           </span>
         )}
-        {isCollapsed && item.badge !== null && (
-          <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-1 right-1" />
-        )}
+        {isCollapsed && badge && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--danger)]" />}
       </button>
     );
   };
 
-  const showDirectoryGroup = canSeeVendors || canSeeVendorCategories;
-  const showUsersGroup = canSeeAdminUsers || true;
-
-  return (
-    <aside className={`${isCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'} bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-300 border-l border-slate-200 dark:border-slate-800 p-3 sm:p-4 flex flex-col justify-between dir-rtl shrink-0 transition-all duration-300`}>
-      <div className="space-y-4">
-        
-        {/* Top Sidebar Header with Hamburger Collapse Toggle */}
-        <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-          {!isCollapsed && (
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                منوی خزانه‌داری
-              </span>
-            </div>
+  const sidebarBody = (
+    <>
+      {/* Top Header */}
+      <div className="flex items-center justify-between pb-3 mb-2 border-b border-[var(--border)]">
+        {!isCollapsed && (
+          <span className="text-[11px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider">
+            فضای کاری
+          </span>
+        )}
+        <div className={`flex items-center gap-1 ${isCollapsed ? 'w-full justify-center' : ''}`}>
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="p-1.5 rounded-lg bg-[var(--surface-muted)] hover:bg-[var(--border)] text-[var(--text-secondary)] transition cursor-pointer"
+              title={isCollapsed ? 'باز کردن منو' : 'بستن (جمع کردن) منو'}
+              aria-label={isCollapsed ? 'باز کردن منو' : 'جمع کردن منو'}
+            >
+              {isCollapsed ? <PanelRightOpen className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
+            </button>
           )}
-
-          <div className={`flex items-center gap-1 ${isCollapsed ? 'w-full justify-center' : ''}`}>
-            {/* Collapse/Expand Desktop Button */}
-            {onToggleCollapse && (
-              <button
-                type="button"
-                onClick={onToggleCollapse}
-                className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                title={isCollapsed ? 'باز کردن منو' : 'بستن (جمع کردن) منو'}
-              >
-                {isCollapsed ? <PanelRightOpen className="w-4 h-4 text-emerald-400" /> : <PanelRightClose className="w-4 h-4" />}
-              </button>
-            )}
-
-            {/* Close Mobile Overlay Button */}
-            {onCloseMobile && (
-              <button
-                type="button"
-                onClick={onCloseMobile}
-                className="md:hidden p-1.5 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          {onCloseMobile && (
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onCloseMobile}
+              className="md:hidden p-1.5 rounded-lg bg-[var(--danger-soft)] text-[var(--danger)] transition cursor-pointer"
+              aria-label="بستن منوی ناوبری"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
-
-        {/* Primary CTA Button */}
-        {hasAccess(['create_request']) && (
-          <button
-            onClick={() => {
-              onOpenTab('new_request', 'ثبت درخواست جدید');
-              if (onCloseMobile) onCloseMobile();
-            }}
-            title="ایجاد درخواست پرداخت جدید"
-            className={`w-full py-3 ${isCollapsed ? 'px-2' : 'px-4'} bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer`}
-          >
-            <PlusCircle className="w-5 h-5 text-emerald-100 shrink-0" />
-            {!isCollapsed && <span>ایجاد درخواست پرداخت</span>}
-          </button>
-        )}
-
-        {/* Navigation Section */}
-        <nav className="space-y-1">
-          {primaryItems.map(renderFlatItem)}
-
-          {/* ب) بایگانی و گزارش‌ها */}
-          {archiveReportItems.map(renderFlatItem)}
-
-          {/* ج) دفترچه و منابع سازمانی: گروه دفترچه، سپس شعب/مراکز هزینه و شرکت‌ها */}
-          {/* directory group */}
-          {showDirectoryGroup && !isCollapsed && (
-            <div>
-              <button
-                onClick={() => toggleGroup('directory')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition cursor-pointer ${
-                  directoryGroupActive
-                    ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <BookUser className={`w-4 h-4 ${directoryGroupActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                  <span>دفترچه</span>
-                </div>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedGroup === 'directory' || directoryGroupActive ? 'rotate-180' : ''}`} />
-              </button>
-
-              {(expandedGroup === 'directory' || directoryGroupActive) && (
-                <div className="pr-4 mt-1 space-y-1 border-r border-slate-200 dark:border-slate-800 mr-4">
-                  {canSeeVendors && (
-                    <button
-                      onClick={() => { onOpenTab('vendors', 'ذینفعان و فروشندگان'); if (onCloseMobile) onCloseMobile(); }}
-                      className={`w-full text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        activeTab === 'vendors' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                      }`}
-                    >
-                      ذینفعان و فروشندگان
-                    </button>
-                  )}
-                  {canSeeVendorCategories && (
-                    <button
-                      onClick={() => { onOpenTab('vendor_categories', 'دسته‌بندی‌ها'); if (onCloseMobile) onCloseMobile(); }}
-                      className={`w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        activeTab === 'vendor_categories' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                      }`}
-                    >
-                      <Tags className="w-3 h-3" />
-                      دسته‌بندی‌ها
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {orgResourceItems.map(renderFlatItem)}
-
-          {/* د) ارتباطات: گفتگوی عمومی، نامه‌ها، کلیه مکاتبات */}
-          {communicationNavItems.map(renderFlatItem)}
-
-          {canSeeLetters && (
-            <button
-              onClick={() => { onOpenTab('letters', 'نامه‌ها'); if (onCloseMobile) onCloseMobile(); }}
-              title="نامه‌ها"
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
-                activeTab === 'letters'
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-                <Mail className={`w-4 h-4 shrink-0 ${activeTab === 'letters' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                {!isCollapsed && <span>نامه</span>}
-              </div>
-              {!isCollapsed && (
-                unreadLettersCount > 0 ? (
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-rose-500">{unreadLettersCount}</span>
-                ) : (
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">جدید</span>
-                )
-              )}
-            </button>
-          )}
-
-          {canSeeAllCommunications && (
-            <button
-              onClick={() => { onOpenTab('all_communications', 'کلیه مکاتبات و چت‌های همکاران'); if (onCloseMobile) onCloseMobile(); }}
-              title="کلیه مکاتبات و چت‌های همکاران"
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
-                activeTab === 'all_communications'
-                  ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 font-bold'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-                <ShieldAlert className={`w-4 h-4 shrink-0 ${activeTab === 'all_communications' ? 'text-indigo-400' : 'text-slate-400'}`} />
-                {!isCollapsed && <span>کلیه مکاتبات و چت‌های همکاران</span>}
-              </div>
-              {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">امنیتی</span>}
-            </button>
-          )}
-
-          {/* گروه فروش (مشتریان) */}
-          {salesNavItems.map(renderFlatItem)}
-
-          {/* ه) خدمات پس از فروش و شکایات */}
-          {canSeeSupport && (
-            <button
-              onClick={() => { onOpenTab('support', 'خدمات پس از فروش و شکایات'); if (onCloseMobile) onCloseMobile(); }}
-              title="خدمات پس از فروش و شکایات"
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
-                activeTab === 'support'
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-                <LifeBuoy className={`w-4 h-4 shrink-0 ${activeTab === 'support' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                {!isCollapsed && <span>خدمات پس از فروش و شکایات</span>}
-              </div>
-              {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-indigo-600">جدید</span>}
-            </button>
-          )}
-
-          {/* و) کاربران و دسترسی‌ها */}
-          {/* users group */}
-          {showUsersGroup && !isCollapsed && (
-            <div>
-              <button
-                onClick={() => toggleGroup('users')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition cursor-pointer ${
-                  usersGroupActive
-                    ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Users className={`w-4 h-4 ${usersGroupActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                  <span>کاربران</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {totalUnreadDMs > 0 && (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-rose-500">{totalUnreadDMs}</span>
-                  )}
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedGroup === 'users' || usersGroupActive ? 'rotate-180' : ''}`} />
-                </div>
-              </button>
-
-              {(expandedGroup === 'users' || usersGroupActive) && (
-                <div className="pr-4 mt-1 space-y-1 border-r border-slate-200 dark:border-slate-800 mr-4">
-                  {canSeeAdminUsers && (
-                    <button
-                      onClick={() => { onOpenTab('admin', 'مدیریت کاربران سیستمی'); if (onCloseMobile) onCloseMobile(); }}
-                      className={`w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        activeTab === 'admin' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                      }`}
-                    >
-                      <ShieldCheck className="w-3 h-3" />
-                      مدیریت کاربران سیستمی
-                    </button>
-                  )}
-
-                  <div className="px-3 pt-1 pb-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                    <UsersRound className="w-3 h-3" />
-                    همکاران
-                  </div>
-
-                  {recentColleagues.map(({ user, unread }) => (
-                    <button
-                      key={user.id}
-                      onClick={() => { onSelectColleague(user.id); onOpenTab('colleagues', 'گفتگوی همکاران'); if (onCloseMobile) onCloseMobile(); }}
-                      className={`w-full flex items-center justify-between text-right px-3 py-2 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        activeTab === 'colleagues' ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                      }`}
-                    >
-                      <span className="truncate">{user.fullName}</span>
-                      {unread > 0 && (
-                        <span className="w-4 h-4 shrink-0 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
-                          {unread}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-
-                  <button
-                    onClick={() => { onSelectColleague(''); onOpenTab('colleagues', 'گفتگوی همکاران'); if (onCloseMobile) onCloseMobile(); }}
-                    className="w-full flex items-center gap-1.5 text-right px-3 py-2 rounded-lg text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition cursor-pointer"
-                    title="نمایش همه‌ی همکاران و شروع گفتگوی جدید"
-                  >
-                    <MoreHorizontal className="w-3.5 h-3.5" />
-                    همه همکاران / شروع گفتگو
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {canSeeRoles && (
-            <button
-              onClick={() => { onOpenTab('roles_permissions', 'نقش‌ها و دسترسی‌ها (RBAC)'); if (onCloseMobile) onCloseMobile(); }}
-              title="نقش‌ها و دسترسی‌ها (RBAC)"
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl font-medium text-xs transition cursor-pointer ${
-                activeTab === 'roles_permissions'
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-bold'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-                <KeyRound className={`w-4 h-4 shrink-0 ${activeTab === 'roles_permissions' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                {!isCollapsed && <span>نقش‌ها و دسترسی‌ها (RBAC)</span>}
-              </div>
-              {!isCollapsed && <span className="px-2 py-0.5 text-[10px] font-bold rounded-full text-white bg-emerald-600">جدید</span>}
-            </button>
-          )}
-        </nav>
-
-        {/* ز) تنظیمات شخصی — جدا از گروه‌های گردش‌کاری بالا، در پایین‌ترین بخش محتوای سایدبار */}
-        {styleSettingsItem && (
-          <div className="pt-3 mt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1">
-            {renderFlatItem(styleSettingsItem)}
-          </div>
-        )}
       </div>
 
-      {/* User Status Card at Bottom */}
-      {currentUser && (
-        <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/80 text-right">
-          <div className={`p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-            <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-sm border border-emerald-200 dark:border-emerald-700/40 shrink-0">
-              <CreditCard className="w-4 h-4" />
+      {/* Role-aware Primary Action */}
+      {eligiblePrimaryActions.length === 1 && (
+        <button
+          onClick={() => handleNavigate({ id: eligiblePrimaryActions[0].navId, label: eligiblePrimaryActions[0].label } as NavItemDefinition)}
+          title={eligiblePrimaryActions[0].label}
+          className={`w-full mb-3 py-2.5 ${isCollapsed ? 'px-2' : 'px-4'} bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-bold text-[13px] rounded-xl shadow-sm flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer`}
+        >
+          {React.createElement(eligiblePrimaryActions[0].icon, { className: 'w-4 h-4 shrink-0' })}
+          {!isCollapsed && <span>{eligiblePrimaryActions[0].label}</span>}
+        </button>
+      )}
+      {eligiblePrimaryActions.length > 1 && (
+        <div className="relative mb-3">
+          <button
+            onClick={() => setIsActionMenuOpen((v) => !v)}
+            title="ایجاد / اقدام سریع"
+            className={`w-full py-2.5 ${isCollapsed ? 'px-2' : 'px-4'} bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-bold text-[13px] rounded-xl shadow-sm flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer`}
+            aria-haspopup="menu"
+            aria-expanded={isActionMenuOpen}
+          >
+            <ChevronsUpDown className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span>ایجاد / اقدام سریع</span>}
+          </button>
+          {isActionMenuOpen && (
+            <div role="menu" className="absolute z-20 mt-1 w-full min-w-[200px] bg-[var(--surface-elevated)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden">
+              {eligiblePrimaryActions.map((action) => (
+                <button
+                  key={action.id}
+                  role="menuitem"
+                  onClick={() => { setIsActionMenuOpen(false); handleNavigate({ id: action.navId, label: action.label } as NavItemDefinition); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium text-[var(--text-primary)] hover:bg-[var(--surface-muted)] transition cursor-pointer text-right"
+                >
+                  <action.icon className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+                  <span>{action.label}</span>
+                </button>
+              ))}
             </div>
-            {!isCollapsed && (
-              <div className="overflow-hidden">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{currentUser.fullName}</p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentUser.roleTitle}</p>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       )}
-    </aside>
+
+      {/* Grouped Navigation */}
+      <nav className="space-y-0.5" aria-label="منوی اصلی">
+        {groupedNavItems.map(({ group, items }) => {
+          const isSingleItemGroup = items.length === 1 && group !== 'sales_crm' && group !== 'finance_treasury';
+          const isOpen = expandedGroups.has(group) || isCollapsed;
+
+          if (isCollapsed) {
+            return <div key={group} className="space-y-0.5 py-1">{items.map(renderNavButton)}</div>;
+          }
+
+          // گروه تک‌آیتمی (مثل «خانه») بدون سرتیتر قابل‌جمع‌شدن رندر می‌شود.
+          if (isSingleItemGroup) {
+            return <div key={group}>{items.map(renderNavButton)}</div>;
+          }
+
+          return (
+            <div key={group} className="py-0.5">
+              <button
+                onClick={() => toggleGroup(group)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-[10px] text-[11px] font-extrabold text-[var(--text-muted)] uppercase tracking-wide hover:bg-[var(--surface-muted)] transition cursor-pointer"
+                aria-expanded={isOpen}
+              >
+                <span>{NAV_GROUP_LABELS[group]}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isOpen && (
+                <div className="space-y-0.5 mt-0.5">
+                  {items.map(renderNavButton)}
+                  {group === 'communications' && recentColleagues.length > 0 && (
+                    <div className="pr-2 mr-2 border-r border-[var(--border)] space-y-0.5 pt-1">
+                      {recentColleagues.map(({ user, unread }) => (
+                        <button
+                          key={user.id}
+                          onClick={() => { onSelectColleague(user.id); handleNavigate({ id: 'colleagues', label: 'گفتگوی همکاران' } as NavItemDefinition); }}
+                          className="w-full flex items-center justify-between text-right px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-muted)] transition cursor-pointer"
+                        >
+                          <span className="truncate">{user.fullName}</span>
+                          {unread > 0 && (
+                            <span className="w-4 h-4 shrink-0 rounded-full bg-[var(--danger)] text-white text-[10px] font-black flex items-center justify-center">
+                              {unread}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => { onSelectColleague(''); handleNavigate({ id: 'colleagues', label: 'گفتگوی همکاران' } as NavItemDefinition); }}
+                        className="w-full flex items-center gap-1.5 text-right px-3 py-1.5 rounded-lg text-[11px] font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] transition cursor-pointer"
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                        همه همکاران
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+    </>
   );
+
+  return (
+    <>
+      {/* Mobile overlay backdrop */}
+      {isMobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/50"
+          onClick={onCloseMobile}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        ref={drawerRef}
+        role={isMobileOpen ? 'dialog' : undefined}
+        aria-modal={isMobileOpen ? true : undefined}
+        aria-label={isMobileOpen ? 'منوی ناوبری' : undefined}
+        className={`
+          ${isMobileOpen ? 'fixed inset-y-0 right-0 z-50 flex w-[85%] max-w-xs shadow-2xl' : 'hidden'}
+          md:static md:z-auto md:flex md:shrink-0 ${isCollapsed ? 'md:w-[72px]' : 'md:w-[280px]'}
+          bg-[var(--surface)] text-[var(--text-primary)] border-l border-[var(--border)]
+          flex-col justify-between dir-rtl transition-[width] duration-200 overflow-y-auto
+        `}
+      >
+        <div className="p-3 flex-1">
+          {sidebarBody}
+        </div>
+
+        {/* Identity Card */}
+        {currentUser && (
+          <div className="p-3 pt-2 border-t border-[var(--border)]">
+            <div className={`p-2.5 bg-[var(--surface-muted)] rounded-xl flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+              <div className="w-8 h-8 rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] flex items-center justify-center font-bold text-xs shrink-0">
+                {currentUser.fullName.slice(0, 1)}
+              </div>
+              {!isCollapsed && (
+                <div className="overflow-hidden min-w-0">
+                  <p className="text-[12.5px] font-bold text-[var(--text-primary)] truncate">{currentUser.fullName}</p>
+                  <p className="text-[11px] text-[var(--text-muted)] truncate">{currentUser.roleTitle}</p>
+                  {identityMeta && (
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] rounded-full px-1.5 py-0.5">
+                        <Briefcase className="w-2.5 h-2.5" />
+                        {identityMeta.domainLabel}
+                      </span>
+                      {identityMeta.branchName && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] rounded-full px-1.5 py-0.5">
+                          <MapPinned className="w-2.5 h-2.5" />
+                          {identityMeta.branchName}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </aside>
+    </>
+  );
+};
+
+const DOMAIN_LABELS: Record<string, string> = {
+  system: 'سیستم', treasury: 'خزانه‌داری', sales: 'فروش', sales_finance: 'مالی فروش',
+  data: 'مدیریت داده', advertising: 'تبلیغات', registration: 'واحد ثبت', monitoring: 'واحد شنود',
+  after_sales: 'خدمات پس از فروش', fulfillment: 'اجرا و لجستیک', general: 'عمومی'
 };

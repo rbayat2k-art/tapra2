@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against Foundation implementation through `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -36,6 +36,8 @@
 | Persistence فعلی | [data/persistence.md](data/persistence.md) |
 | راه‌اندازی محیط توسعه | [engineering/development.md](engineering/development.md) |
 | وضعیت quality و test | [engineering/quality.md](engineering/quality.md) |
+| Engineering Gate A | [engineering/engineering-gate-a.md](engineering/engineering-gate-a.md) |
+| وضعیت ادغام محصول canonical | [engineering/canonical-product-integration.md](engineering/canonical-product-integration.md) |
 | فهرست ماژول‌های فعلی | [product/module-catalog.md](product/module-catalog.md) |
 | واژه‌های دامنه | [glossary.md](glossary.md) |
 | قواعد مالی و دسترسی | [finance rules](domains/finance/business-rules.md)، [roles](domains/finance/roles-and-permissions.md) |
@@ -67,6 +69,8 @@
 | Customer Import و reconciliation | [domains/sales/customer-import.md](domains/sales/customer-import.md) | `CURRENT` |
 | Development workflow | [engineering/development.md](engineering/development.md) | `CURRENT` |
 | Quality status | [engineering/quality.md](engineering/quality.md) | `CURRENT` |
+| Engineering Gate A | [engineering/engineering-gate-a.md](engineering/engineering-gate-a.md) | `CURRENT` |
+| وضعیت ادغام محصول canonical | [engineering/canonical-product-integration.md](engineering/canonical-product-integration.md) | `CURRENT` |
 | Security posture | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) | `CURRENT` |
 | معماری آینده | [architecture/future-platform.md](architecture/future-platform.md) | `DRAFT` |
 | تصمیم‌های معماری Foundation SaaS | [decisions/adr/README.md](decisions/adr/README.md) | `ACCEPTED`؛ آینده پیاده‌سازی‌نشده |
@@ -103,7 +107,9 @@
 - [Pre-migration snapshot manifest](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/manifest.md)
 - [Pre-migration snapshot checksums](archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/checksums.sha256)
 - [Migration traceability and legacy classification](archive/migration-traceability.md)
+- [Legacy product preservation and Legacy → SaaS map](archive/legacy-product-preservation-matrix.md)
 - [Permanent Sales Draft archive](archive/sales/README.md)
+- [PR #1 historical preservation and classification](archive/pr-1/README.md)
 
 Snapshot فقط برای بازیابی و تاریخچه است و نباید به‌عنوان مستندات فعال استفاده شود.
 
@@ -162,6 +168,8 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |
 | راه‌اندازی و development workflow | `docs/engineering/development.md` | `docs/engineering/development.md` | Engineering Owner | `ACTIVE` | `README.md`, AI instructions |
 | testing و quality gates | `docs/engineering/quality.md` | `docs/engineering/quality.md` | Engineering Owner | `ACTIVE` | development guide, release guidance |
+| کنترل‌های Engineering Gate A | `docs/engineering/engineering-gate-a.md` | `docs/engineering/engineering-gate-a.md` | Engineering Owner | `ACTIVE` | quality، security، CI guidance |
+| وضعیت canonical product integration | `docs/engineering/canonical-product-integration.md` | `docs/engineering/canonical-product-integration.md` | Product Integration | `ACTIVE` | module catalog، AI instructions، preservation matrix |
 | security و privacy | `docs/engineering/security-and-privacy.md` با شواهد code | `docs/engineering/security-and-privacy.md` | Security Owner | `ACTIVE` | persistence, API status, roles and permissions |
 | قرارداد مفهومی API آینده | `docs/future/api-contract-draft.md` | `docs/future/api-contract-draft.md` | Architecture Owner | `ACTIVE (DRAFT)` | API status, future platform |
 | تاریخچه تصمیمات | `docs/decisions/DECISION_LOG.md` | `docs/decisions/DECISION_LOG.md` | Architecture Owner | `ACTIVE (HISTORICAL)` | همه اسنادی که به rationale نیاز دارند |

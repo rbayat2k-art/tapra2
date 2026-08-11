@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current system architecture and technology stack
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -19,19 +19,20 @@ Tapra2 اکنون یک vertical slice از معماری SaaS را در کنار 
 | Identity | login محلی، session opaque در database و cookie دارای `HttpOnly` و `SameSite=Lax` |
 | Organization | `Workspace`، `Company`، `Membership`، انتخاب context و permission سمت server |
 | Customer 360 slice | profile، phone/address چندتایی، provenance، timeline، duplicate check و merge/unmerge تراکنشی در PostgreSQL |
-| Prototype | سایر قابلیت‌های قدیمی همچنان در SPA و `localStorage` اجرا می‌شوند |
+| Canonical product shell | Dashboard، navigation چندگروهی، tabها، Sales، Finance، Support، Organization/RBAC و Communications در یک SPA واحد |
+| Prototype backing | منطق domainهای migrateنشده همچنان در `localStorage` اجرا می‌شود و authorization SaaS محسوب نمی‌شود |
 
 ورودی Backend در `server/src/index.ts` و composition آن در `server/src/app/create-app.ts` است. Web client فقط از client متمرکز `src/foundation/api/client.ts` به Foundation API متصل می‌شود.
 
 ## مرز فعلی migration
 
 - session و Customer 360 SaaS از PostgreSQL استفاده می‌کنند.
-- صفحه Customer امکان انتخاب صریح `SaaS / PostgreSQL` یا `Prototype / localStorage` دارد.
+- صفحه Customer فقط تجربه واحد `SaasCustomerWorkspace` را نشان می‌دهد؛ فناوری persistence از UI عادی حذف شده است.
 - هیچ داده قدیمی `localStorage` حذف یا خودکار migrate نمی‌شود.
-- domainهای مالی، Support، Letters، Chat و بخش‌های قدیمی Sales هنوز server-backed نشده‌اند.
+- domainهای مالی، Support، Letters، Chat و Sales غیرCustomer در shell حفظ شده‌اند، اما هنوز server-backed نشده‌اند.
 - طراحی‌های Lead، Invoice، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند.
 
-Customer 360 در این Sprint فقط foundation هویت است؛ fuzzy matching، import حجیم، Prospect/Lead/Opportunity و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند.
+Customer 360 foundation هویت و relationship است؛ fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Lead، Catalog، Invoice، Coordination و Fulfillment وجود دارند، اما backing آن‌ها prototype است و Backend Sales کامل را اثبات نمی‌کنند.
 
 ## Technology stack
 
@@ -50,3 +51,7 @@ Customer 360 در این Sprint فقط foundation هویت است؛ fuzzy matchi
 Customer 360 اکنون یک pipeline محدود و server-backed برای UTF-8 CSV دارد. فایل ابتدا در `customer_import_jobs` و `customer_import_records` staging می‌شود؛ normalization، validation و duplicate detection قبل از هر تغییر master انجام می‌شوند. فقط تصمیم‌های نهایی و Approval دارای permission می‌توانند در یک transaction به Customer 360 اعمال شوند. جزئیات authoritative در [Customer Import](../domains/sales/customer-import.md) است.
 
 این pipeline از `xlsx` استفاده نمی‌کند. پردازش `102M`، worker پس‌زمینه، fuzzy/AI resolution و تبدیل purchase history به Invoice هنوز اجرا نشده‌اند.
+
+## ادغام محصول
+
+جزئیات shell واحد، backing status و validation در [Canonical Product Integration](../engineering/canonical-product-integration.md) است. وضعیت Gateهای engineering در [Engineering Gate A](../engineering/engineering-gate-a.md) نگه‌داری می‌شود.

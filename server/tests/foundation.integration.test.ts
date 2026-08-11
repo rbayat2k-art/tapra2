@@ -7,7 +7,7 @@ import { createApp } from '../src/app/create-app.js';
 import { resetEnvironmentForTests } from '../src/config/env.js';
 import { closePool, withTenantTransaction } from '../src/infrastructure/database/pool.js';
 import { runMigrations } from '../scripts/migrate.js';
-import { seedDatabase } from '../scripts/seed.js';
+import { assertSafeSeedTarget, seedDatabase } from '../scripts/seed.js';
 import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '../src/modules/customer-imports/csv-parser.js';
 
 interface SessionResponse {
@@ -46,6 +46,67 @@ async function resetTestDatabase(): Promise<void> {
   }
 }
 
+async function verifyPopulatedLegacyCustomerUpgrade(): Promise<void> {
+  const workspaceId = '91000000-0000-4000-8000-000000000001';
+  const companyId = '92000000-0000-4000-8000-000000000001';
+  const personId = '93000000-0000-4000-8000-000000000001';
+  const accountId = '94000000-0000-4000-8000-000000000001';
+  const customerId = '95000000-0000-4000-8000-000000000001';
+  const client = new Client({ connectionString: migrationUrl, application_name: 'tapra2_legacy_upgrade_fixture' });
+  const runtimeClient = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_legacy_upgrade_verify' });
+
+  await runMigrations(migrationUrl, { through: '0007_customer_import_read_permission.sql' });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE customers NO FORCE ROW LEVEL SECURITY');
+    await client.query('ALTER TABLE customer_phones NO FORCE ROW LEVEL SECURITY');
+    await client.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [workspaceId, companyId]);
+    await client.query("INSERT INTO workspaces(id, slug, name) VALUES ($1, 'legacy-upgrade', 'Legacy Upgrade')", [workspaceId]);
+    await client.query("INSERT INTO companies(id, workspace_id, code, name) VALUES ($1, $2, 'LEGACY', 'Legacy Company')", [companyId, workspaceId]);
+    await client.query("INSERT INTO persons(id, full_name) VALUES ($1, 'Legacy Customer Owner')", [personId]);
+    await client.query(`
+      INSERT INTO user_accounts(id, person_id, email, password_hash)
+      VALUES ($1, $2, 'legacy-upgrade@tapra.local', 'not-used')
+    `, [accountId, personId]);
+    await client.query(`
+      INSERT INTO customers(id, workspace_id, company_id, full_name, phone_primary, created_by_user_account_id)
+      VALUES ($1, $2, $3, 'Legacy Existing Customer', '09121234567', $4)
+    `, [customerId, workspaceId, companyId, accountId]);
+    await client.query(`
+      INSERT INTO customer_phones(workspace_id, company_id, customer_id, value, normalized_value, is_primary)
+      VALUES ($1, $2, $3, '09121234567', '09121234567', true)
+    `, [workspaceId, companyId, customerId]);
+    await client.query('ALTER TABLE customers FORCE ROW LEVEL SECURITY');
+    await client.query('ALTER TABLE customer_phones FORCE ROW LEVEL SECURITY');
+    await client.query('COMMIT');
+
+    await runMigrations(migrationUrl);
+
+    await runtimeClient.connect();
+    await runtimeClient.query('BEGIN');
+    await runtimeClient.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [workspaceId, companyId]);
+    const result = await runtimeClient.query<{ customer_identity_id: string; phone_identity_id: string }>(`
+      SELECT customer.identity_id::text AS customer_identity_id,
+             phone.identity_id::text AS phone_identity_id
+      FROM customers customer
+      JOIN customer_phones phone ON phone.customer_id = customer.id
+      WHERE customer.id = $1
+    `, [customerId]);
+    await runtimeClient.query('COMMIT');
+    if (!result.rows[0]?.customer_identity_id || result.rows[0].customer_identity_id !== result.rows[0].phone_identity_id) {
+      throw new Error('Legacy Customer identity backfill did not preserve the existing relationship.');
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    await runtimeClient.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    await runtimeClient.end().catch(() => undefined);
+    await client.end();
+  }
+}
+
 async function login(agent: ReturnType<typeof request.agent>, email: string, password: string): Promise<SessionResponse> {
   const response = await agent.post('/api/v1/auth/login').send({ email, password }).expect(200);
   return response.body as SessionResponse;
@@ -70,6 +131,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
   let createdCustomerId: string;
   let alphaWorkspaceId: string;
   let alphaCompanyId: string;
+  let populatedLegacyUpgradeVerified = false;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -79,12 +141,29 @@ describe('Foundation Sprint 1 vertical slice', () => {
     resetEnvironmentForTests();
     await closePool();
     await resetTestDatabase();
+    await verifyPopulatedLegacyCustomerUpgrade();
+    populatedLegacyUpgradeVerified = true;
+    await resetTestDatabase();
     await runMigrations(migrationUrl);
     await seedDatabase(migrationUrl);
   });
 
   afterAll(async () => {
     await closePool();
+  });
+
+  it('backfills workspace identities for populated pre-0008 Customer data', () => {
+    expect(populatedLegacyUpgradeVerified).toBe(true);
+  });
+
+  it('refuses unsafe or production seed targets before connecting', () => {
+    const ownerDev = 'postgresql://tapra2_owner:placeholder@localhost:5432/tapra2_dev';
+    const appTest = 'postgresql://tapra2_app:placeholder@localhost:5432/tapra2_test';
+    expect(() => assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'production')).toThrow(/forbidden/);
+    expect(() => assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'test')).toThrow(/tapra2_test/);
+    expect(() => assertSafeSeedTarget('postgresql://postgres:placeholder@localhost:5432/tapra2_dev', 'tapra2_owner', 'development')).toThrow(/tapra2_owner/);
+    expect(assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'development')).toEqual({ database: 'tapra2_dev' });
+    expect(assertSafeSeedTarget(appTest, 'tapra2_app', 'test')).toEqual({ database: 'tapra2_test' });
   });
 
   it('rejects unauthenticated customer reads', async () => {
@@ -406,6 +485,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const reader = request.agent(createApp());
     let readerSession = await login(reader, 'alpha-only@tapra.local', 'TapraAlpha!2026');
     readerSession = await selectContext(reader, readerSession, 'tapra-alpha');
+    await reader.get('/api/v1/customer-imports').expect(403);
     await reader
       .post('/api/v1/customer-imports')
       .set('x-csrf-token', readerSession.csrfToken)
@@ -427,6 +507,38 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send('full_name,phone\nTenant Import,09128880002\nBeta Seed Phone,09120000002')
       .expect(201);
     expect(staged.body.import.counts).toMatchObject({ total: 2, valid: 2, exactMatch: 0 });
+    expect(staged.body.import.records).toBeUndefined();
+    expect(staged.body.import.fileSha256).toBeUndefined();
+
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_import_permission_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO role_permissions(role_id, permission_code)
+        VALUES ('60000000-0000-4000-8000-000000000003', 'customer.import.read')
+        ON CONFLICT DO NOTHING
+      `);
+      const importReader = request.agent(createApp());
+      let importReaderSession = await login(importReader, 'alpha-only@tapra.local', 'TapraAlpha!2026');
+      importReaderSession = await selectContext(importReader, importReaderSession, 'tapra-alpha');
+      const summaries = await importReader.get('/api/v1/customer-imports').expect(200);
+      const summary = summaries.body.imports.find((item: { id: string }) => item.id === staged.body.import.id);
+      expect(summary).toBeTruthy();
+      expect(summary.records).toBeUndefined();
+      expect(summary.fileSha256).toBeUndefined();
+      await importReader.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(403);
+    } finally {
+      await owner.query(`
+        DELETE FROM role_permissions
+        WHERE role_id = '60000000-0000-4000-8000-000000000003'
+          AND permission_code = 'customer.import.read'
+      `);
+      await owner.end();
+    }
+
+    const reviewerDetail = await manager.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(200);
+    expect(reviewerDetail.body.import.records).toHaveLength(2);
+    expect(reviewerDetail.body.import.records[0].rawData).toBeTruthy();
 
     await reader
       .post(`/api/v1/customer-imports/${staged.body.import.id}/apply-safe-decisions`)
@@ -568,5 +680,109 @@ describe('Foundation Sprint 1 vertical slice', () => {
       expect(body.customer.phones).toHaveLength(2);
       expect(body.customer.addresses).toHaveLength(2);
     });
+  });
+
+  it('shares Workspace identity without exposing Company-scoped Customer relationships', async () => {
+    const secondCompanyId = '20000000-0000-4000-8000-000000000003';
+    const secondMembershipId = '50000000-0000-4000-8000-000000000004';
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_multicompany_identity_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO companies(id, workspace_id, code, name)
+        VALUES ($1, '10000000-0000-4000-8000-000000000001', 'ALPHA-SECOND', 'شرکت آلفا - شعبه دوم')
+        ON CONFLICT (id) DO NOTHING
+      `, [secondCompanyId]);
+      await owner.query(`
+        INSERT INTO memberships(id, workspace_id, company_id, person_id)
+        VALUES ($1, '10000000-0000-4000-8000-000000000001', $2, '30000000-0000-4000-8000-000000000001')
+        ON CONFLICT (id) DO NOTHING
+      `, [secondMembershipId, secondCompanyId]);
+      await owner.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id)
+        VALUES ('10000000-0000-4000-8000-000000000001', $1, '60000000-0000-4000-8000-000000000001')
+        ON CONFLICT DO NOTHING
+      `, [secondMembershipId]);
+    } finally {
+      await owner.end();
+    }
+
+    const agent = request.agent(createApp());
+    let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
+    const selectCompany = async (companyId: string) => {
+      const membership = session.memberships.find((item) => item.company?.id === companyId);
+      if (!membership) throw new Error(`Membership for Company ${companyId} was not found.`);
+      const response = await agent
+        .post('/api/v1/session/context')
+        .set('x-csrf-token', session.csrfToken)
+        .send({ membershipId: membership.membershipId })
+        .expect(200);
+      session = response.body as SessionResponse;
+    };
+
+    await selectCompany('20000000-0000-4000-8000-000000000001');
+    const firstRelationship = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'رابطه مشتری شرکت اول', phonePrimary: '09126667788' })
+      .expect(201);
+
+    await selectCompany(secondCompanyId);
+    await agent
+      .post('/api/v1/customers/duplicates/check')
+      .set('x-csrf-token', session.csrfToken)
+      .send({ phone: '09126667788' })
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual({ match: 'NO_MATCH', candidates: [] }));
+    await agent.get(`/api/v1/customers/${firstRelationship.body.customer.id}`).expect(404);
+
+    const secondRelationship = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'رابطه مستقل همان مشتری در شرکت دوم', phonePrimary: '+98 912 666 7788' })
+      .expect(201);
+    expect(secondRelationship.body.customer.id).not.toBe(firstRelationship.body.customer.id);
+    await agent
+      .post(`/api/v1/customers/${secondRelationship.body.customer.id}/addresses`)
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ city: 'تهران', addressText: 'نشانی اختصاصی شرکت دوم' })
+      .expect(201);
+
+    await selectCompany('20000000-0000-4000-8000-000000000001');
+    await agent.get(`/api/v1/customers/${secondRelationship.body.customer.id}`).expect(404);
+    const firstProfile = await agent.get(`/api/v1/customers/${firstRelationship.body.customer.id}`).expect(200);
+    expect(firstProfile.body.customer.addresses).toHaveLength(0);
+
+    const verifier = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_multicompany_identity_verify' });
+    await verifier.connect();
+    try {
+      await verifier.query('BEGIN');
+      await verifier.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [
+        '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+      ]);
+      const firstIdentity = await verifier.query<{ identity_id: string }>(
+        'SELECT identity_id FROM customers WHERE id = $1', [firstRelationship.body.customer.id],
+      );
+      await verifier.query("SELECT set_config('app.company_id', $1, true)", [secondCompanyId]);
+      const secondIdentity = await verifier.query<{ identity_id: string }>(
+        'SELECT identity_id FROM customers WHERE id = $1', [secondRelationship.body.customer.id],
+      );
+      expect(firstIdentity.rows).toHaveLength(1);
+      expect(secondIdentity.rows).toHaveLength(1);
+      expect(secondIdentity.rows[0]?.identity_id).toBe(firstIdentity.rows[0]?.identity_id);
+      const centralPhones = await verifier.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM customer_identity_phones
+        WHERE workspace_id = '10000000-0000-4000-8000-000000000001'
+          AND normalized_value = '09126667788'
+      `);
+      expect(centralPhones.rows[0]?.count).toBe('1');
+      await verifier.query('COMMIT');
+    } finally {
+      await verifier.query('ROLLBACK').catch(() => undefined);
+      await verifier.end();
+    }
   });
 });

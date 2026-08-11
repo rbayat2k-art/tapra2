@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,7 +18,8 @@
 | Organization | `workspaces`, `companies` |
 | Identity | `persons`, `user_accounts`, `sessions` |
 | Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` |
-| Customer identity | `customers` به‌عنوان profile والد؛ `customer_phones` و `customer_addresses` برای داده چندتایی |
+| Workspace identity | `customer_identities` و `customer_identity_phones` برای هویت/شماره مرکزی و یکتا در Workspace |
+| Company relationship | `customers` رابطه Company با identity؛ `customer_phones` و `customer_addresses` observation و داده عملیاتی Company |
 | Provenance | `customer_sources` برای منبع، reference، زمان مشاهده/ورود، confidence و verification foundation |
 | Customer history | `customer_timeline_events` برای eventهای server-generated اجراشده |
 | Identity reconciliation | `customer_merge_operations` برای merge دارای lineage و unmerge واقعی بدون حذف profile بازنده |
@@ -26,7 +27,7 @@
 
 شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. همه جدول‌های Customer 360 و AuditEntry دارای PostgreSQL RLS اجباری هستند.
 
-شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و index یکتای `(workspace_id, normalized_value)` مانع تعلق بی‌صدای یک phone به دو profile در همان Workspace است. visibility همچنان Company-scoped است. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
+شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و `customer_identity_phones` مانع تعلق بی‌صدای یک phone به دو identity در همان Workspace است. یک identity می‌تواند برای چند Company رابطه جدا داشته باشد، اما هر Company فقط relationship و داده عملیاتی context خود را از طریق RLS می‌بیند. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
 
 در merge، phone/address/source روی Customer اصلی خود باقی می‌مانند و profile canonical آن‌ها را از رابطه merge فعال جمع می‌کند. `lineage_snapshot` و هر دو ردیف Customer حفظ می‌شوند؛ unmerge رابطه را reverse و profile بازنده را دوباره active می‌کند.
 
