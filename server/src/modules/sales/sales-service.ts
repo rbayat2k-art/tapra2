@@ -18,6 +18,9 @@ export const salesCallOutcomes = [
 ] as const;
 export type SalesCallOutcome = typeof salesCallOutcomes[number];
 
+export const salesMarketingLinkTypes = ['campaign', 'promotion'] as const;
+export type SalesMarketingLinkType = typeof salesMarketingLinkTypes[number];
+
 interface LeadRow {
   id: string;
   tracking_code: string;
@@ -31,6 +34,7 @@ interface LeadRow {
   priority: 'low' | 'normal' | 'high';
   status: SalesLeadStatus;
   campaign_reference: string | null;
+  promotion_reference: string | null;
   context_snapshot: Record<string, unknown>;
   current_assignee_membership_id: string | null;
   current_assignee_name: string | null;
@@ -71,6 +75,7 @@ export interface SalesLeadSummary {
   priority: 'low' | 'normal' | 'high';
   status: SalesLeadStatus;
   campaignReference: string | null;
+  promotionReference: string | null;
   context: Record<string, unknown>;
   currentAssignee: { membershipId: string; name: string } | null;
   firstAttemptAt: string | null;
@@ -85,8 +90,20 @@ export interface SalesLeadSummary {
 export interface SalesLeadDetail extends SalesLeadSummary {
   timeline: Array<{ id: string; type: string; summary: string; metadata: Record<string, unknown>; actorName: string; occurredAt: string }>;
   assignments: Array<{ id: string; type: 'assigned' | 'reassigned'; previousAssigneeName: string | null; assigneeName: string; assignedByName: string; reason: string | null; assignedAt: string }>;
-  calls: Array<{ id: string; salespersonName: string; companyName: string; campaignReference: string | null; context: Record<string, unknown>; startedAt: string; endedAt: string; outcome: SalesCallOutcome; effective: boolean; note: string | null; callbackAt: string | null }>;
+  calls: Array<{ id: string; salespersonName: string; companyName: string; campaignReference: string | null; marketingSnapshot: SalesMarketingLink[]; context: Record<string, unknown>; startedAt: string; endedAt: string; outcome: SalesCallOutcome; effective: boolean; note: string | null; callbackAt: string | null }>;
+  marketingLinks: SalesMarketingLink[];
   relationship: null | { id: string; status: 'active' | 'released'; lockMode: 'none' | 'until_reassigned' | 'duration'; ownerMembershipId: string | null; ownerName: string | null; lockAcquiredAt: string | null; lockExpiresAt: string | null; updatedAt: string };
+}
+
+export interface SalesMarketingLink {
+  id: string;
+  type: SalesMarketingLinkType;
+  referenceCode: string;
+  displayName: string | null;
+  context: Record<string, unknown>;
+  linkedByName: string;
+  linkedAt: string;
+  relationshipId: string | null;
 }
 
 export interface SalesAssignee {
@@ -101,6 +118,14 @@ export interface CreateSalesLeadInput {
   declaredInterest: string;
   priority: 'low' | 'normal' | 'high';
   campaignReference?: string;
+  promotionReference?: string;
+  context?: Record<string, unknown>;
+}
+
+export interface LinkSalesMarketingContextInput {
+  type: SalesMarketingLinkType;
+  referenceCode: string;
+  displayName?: string;
   context?: Record<string, unknown>;
 }
 
@@ -149,6 +174,7 @@ function mapLead(row: LeadRow): SalesLeadSummary {
     priority: row.priority,
     status: row.status,
     campaignReference: row.campaign_reference,
+    promotionReference: row.promotion_reference,
     context: row.context_snapshot ?? {},
     currentAssignee: row.current_assignee_membership_id && row.current_assignee_name
       ? { membershipId: row.current_assignee_membership_id, name: row.current_assignee_name }
@@ -167,6 +193,7 @@ const leadSelect = `
   SELECT lead.id, lead.tracking_code, lead.customer_id, lead.customer_identity_id,
     customer.full_name AS customer_name, lead.company_id, company.name AS company_name,
     lead.source, lead.declared_interest, lead.priority, lead.status, lead.campaign_reference,
+    lead.promotion_reference,
     lead.context_snapshot, lead.current_assignee_membership_id, assignee.full_name AS current_assignee_name,
     lead.first_attempt_at, lead.first_effective_contact_at, lead.last_call_outcome,
     lead.action_deadline, lead.created_at, lead.updated_at,
@@ -226,17 +253,30 @@ async function loadLeadDetail(client: PoolClient, leadId: string): Promise<Sales
     `, [leadId]);
   const calls = await client.query<{
       id: string; salesperson_name: string; company_name: string; campaign_reference: string | null;
-      context_snapshot: Record<string, unknown>; started_at: Date | string; ended_at: Date | string;
+      marketing_snapshot: SalesMarketingLink[]; context_snapshot: Record<string, unknown>; started_at: Date | string; ended_at: Date | string;
       outcome: SalesCallOutcome; effective: boolean; note: string | null; callback_at: Date | string | null;
     }>(`
       SELECT call_log.id, person.full_name AS salesperson_name, company.name AS company_name,
-        call_log.campaign_reference, call_log.context_snapshot, call_log.started_at, call_log.ended_at,
+        call_log.campaign_reference, call_log.marketing_snapshot, call_log.context_snapshot,
+        call_log.started_at, call_log.ended_at,
         call_log.outcome, call_log.effective, call_log.note, call_log.callback_at
       FROM sales_call_logs call_log
       JOIN user_accounts account ON account.id = call_log.actor_user_account_id
       JOIN persons person ON person.id = account.person_id
       JOIN companies company ON company.id = call_log.company_id
       WHERE call_log.lead_id = $1 ORDER BY call_log.created_at DESC, call_log.id DESC
+    `, [leadId]);
+  const marketingLinks = await client.query<{
+      id: string; link_type: SalesMarketingLinkType; reference_code: string; display_name: string | null;
+      context_snapshot: Record<string, unknown>; actor_name: string; linked_at: Date | string;
+      relationship_id: string | null;
+    }>(`
+      SELECT link.id, link.link_type, link.reference_code, link.display_name, link.context_snapshot,
+        person.full_name AS actor_name, link.linked_at, link.relationship_id
+      FROM sales_lead_marketing_links link
+      JOIN user_accounts account ON account.id = link.linked_by_user_account_id
+      JOIN persons person ON person.id = account.person_id
+      WHERE link.lead_id = $1 ORDER BY link.linked_at, link.id
     `, [leadId]);
   const relationship = await client.query<{
       id: string; status: 'active' | 'released'; lock_mode: 'none' | 'until_reassigned' | 'duration';
@@ -266,9 +306,14 @@ async function loadLeadDetail(client: PoolClient, leadId: string): Promise<Sales
     })),
     calls: calls.rows.map((row) => ({
       id: row.id, salespersonName: row.salesperson_name, companyName: row.company_name,
-      campaignReference: row.campaign_reference, context: row.context_snapshot ?? {},
+      campaignReference: row.campaign_reference, marketingSnapshot: row.marketing_snapshot ?? [], context: row.context_snapshot ?? {},
       startedAt: iso(row.started_at)!, endedAt: iso(row.ended_at)!, outcome: row.outcome,
       effective: row.effective, note: row.note, callbackAt: iso(row.callback_at),
+    })),
+    marketingLinks: marketingLinks.rows.map((row) => ({
+      id: row.id, type: row.link_type, referenceCode: row.reference_code,
+      displayName: row.display_name, context: row.context_snapshot ?? {}, linkedByName: row.actor_name,
+      linkedAt: iso(row.linked_at)!, relationshipId: row.relationship_id,
     })),
     relationship: relationshipRow ? {
       id: relationshipRow.id, status: relationshipRow.status, lockMode: relationshipRow.lock_mode,
@@ -368,20 +413,35 @@ export async function createSalesLead(
     await client.query(`
       INSERT INTO sales_leads(
         id, workspace_id, company_id, customer_identity_id, customer_id, tracking_code,
-        source, declared_interest, priority, campaign_reference, context_snapshot,
-        created_by_user_account_id, idempotency_key
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        source, declared_interest, priority, campaign_reference, promotion_reference,
+        context_snapshot, created_by_user_account_id, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `, [
       leadId, context.workspace.id, company.id, customerRow.identity_id, customerRow.id, trackingCode,
       input.source, input.declaredInterest, input.priority, input.campaignReference ?? null,
-      JSON.stringify(input.context ?? {}), session.userAccountId, idempotencyKey,
+      input.promotionReference ?? null, JSON.stringify(input.context ?? {}), session.userAccountId, idempotencyKey,
     ]);
+    const initialMarketingLinks: Array<{ type: SalesMarketingLinkType; referenceCode: string }> = [];
+    if (input.campaignReference) initialMarketingLinks.push({ type: 'campaign', referenceCode: input.campaignReference });
+    if (input.promotionReference) initialMarketingLinks.push({ type: 'promotion', referenceCode: input.promotionReference });
+    for (const link of initialMarketingLinks) {
+      await client.query(`
+        INSERT INTO sales_lead_marketing_links(
+          workspace_id, company_id, lead_id, link_type, reference_code, context_snapshot,
+          linked_by_user_account_id, idempotency_key
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        context.workspace.id, company.id, leadId, link.type, link.referenceCode,
+        JSON.stringify({ source: 'lead_creation' }), session.userAccountId, randomUUID(),
+      ]);
+    }
     await client.query(`
       INSERT INTO sales_lead_timeline_events(
         workspace_id, company_id, lead_id, actor_user_account_id, event_type, summary, metadata
       ) VALUES ($1, $2, $3, $4, 'lead_created', 'Lead برای رابطهٔ مشتری ایجاد شد.', $5)
     `, [context.workspace.id, company.id, leadId, session.userAccountId, JSON.stringify({
       source: input.source, campaignReference: input.campaignReference ?? null,
+      promotionReference: input.promotionReference ?? null,
     })]);
     await client.query(`
       INSERT INTO customer_timeline_events(
@@ -389,11 +449,105 @@ export async function createSalesLead(
       ) VALUES ($1, $2, $3, $4, 'sales_lead_created', 'Lead فروش برای مشتری ایجاد شد.', $5)
     `, [context.workspace.id, company.id, customerRow.id, session.userAccountId, JSON.stringify({
       leadId, trackingCode, source: input.source, campaignReference: input.campaignReference ?? null,
+      promotionReference: input.promotionReference ?? null,
     })]);
     await appendAuditEntry(client, {
       workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
       action: 'sales.lead.created', resourceType: 'sales_lead', resourceId: leadId, result: 'success',
-      newState: { customerId: customerRow.id, customerIdentityId: customerRow.identity_id, trackingCode }, correlationId,
+      newState: {
+        customerId: customerRow.id, customerIdentityId: customerRow.identity_id, trackingCode,
+        campaignReference: input.campaignReference ?? null, promotionReference: input.promotionReference ?? null,
+      }, correlationId,
+    });
+    return loadLeadDetail(client, leadId);
+  });
+}
+
+export async function linkSalesMarketingContext(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  leadId: string,
+  input: LinkSalesMarketingContextInput,
+  idempotencyKey: string,
+  correlationId: string,
+): Promise<SalesLeadDetail> {
+  if (!hasPermission(context, 'sales.marketing.link')) {
+    throw new AppError(403, 'permission_denied', 'Permission sales.marketing.link is required.');
+  }
+  const company = companyFrom(context);
+  return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    const repeated = await client.query<{ lead_id: string }>(`
+      SELECT lead_id FROM sales_lead_marketing_links WHERE idempotency_key = $1
+    `, [idempotencyKey]);
+    if (repeated.rows[0]) {
+      if (repeated.rows[0].lead_id !== leadId) {
+        throw new AppError(409, 'idempotency_key_reused', 'Idempotency key was used for another marketing link.');
+      }
+      return loadLeadDetail(client, leadId);
+    }
+
+    const lead = await assertLeadReadable(client, context, leadId, true);
+    const existing = await client.query<{ id: string }>(`
+      SELECT id FROM sales_lead_marketing_links
+      WHERE lead_id = $1 AND link_type = $2 AND lower(trim(reference_code)) = lower(trim($3))
+    `, [leadId, input.type, input.referenceCode]);
+    if (existing.rows[0]) return loadLeadDetail(client, leadId);
+
+    const relationship = await client.query<{ id: string }>(`
+      SELECT id FROM sales_customer_relationships WHERE customer_id = $1
+    `, [lead.customer_id]);
+    const relationshipId = relationship.rows[0]?.id ?? null;
+    const linkId = randomUUID();
+    await client.query(`
+      INSERT INTO sales_lead_marketing_links(
+        id, workspace_id, company_id, lead_id, relationship_id, link_type, reference_code,
+        display_name, context_snapshot, linked_by_user_account_id, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
+      linkId, context.workspace.id, company.id, leadId, relationshipId, input.type,
+      input.referenceCode, input.displayName ?? null, JSON.stringify(input.context ?? {}),
+      session.userAccountId, idempotencyKey,
+    ]);
+    await client.query(`
+      UPDATE sales_leads SET
+        campaign_reference = CASE WHEN $2 = 'campaign' THEN COALESCE(campaign_reference, $3) ELSE campaign_reference END,
+        promotion_reference = CASE WHEN $2 = 'promotion' THEN COALESCE(promotion_reference, $3) ELSE promotion_reference END,
+        updated_at = now(), version = version + 1
+      WHERE id = $1
+    `, [leadId, input.type, input.referenceCode]);
+    await client.query(`
+      INSERT INTO sales_lead_timeline_events(
+        workspace_id, company_id, lead_id, actor_user_account_id, event_type, summary, metadata
+      ) VALUES ($1, $2, $3, $4, 'marketing_linked', 'زمینهٔ Campaign/Promotion به Lead متصل شد.', $5)
+    `, [context.workspace.id, company.id, leadId, session.userAccountId, JSON.stringify({
+      linkId, type: input.type, referenceCode: input.referenceCode, displayName: input.displayName ?? null,
+      relationshipId,
+    })]);
+    await client.query(`
+      INSERT INTO customer_timeline_events(
+        workspace_id, company_id, customer_id, actor_user_account_id, event_type, summary, metadata
+      ) VALUES ($1, $2, $3, $4, 'sales_marketing_linked', 'زمینهٔ بازاریابی فروش به رابطهٔ مشتری متصل شد.', $5)
+    `, [context.workspace.id, company.id, lead.customer_id, session.userAccountId, JSON.stringify({
+      linkId, leadId, type: input.type, referenceCode: input.referenceCode,
+      displayName: input.displayName ?? null, relationshipId,
+    })]);
+    if (relationshipId) {
+      await client.query(`
+        INSERT INTO sales_customer_relationship_events(
+          workspace_id, company_id, relationship_id, lead_id, actor_user_account_id,
+          event_type, metadata
+        ) VALUES ($1, $2, $3, $4, $5, 'marketing_context_linked', $6)
+      `, [context.workspace.id, company.id, relationshipId, leadId, session.userAccountId, JSON.stringify({
+        linkId, type: input.type, referenceCode: input.referenceCode, displayName: input.displayName ?? null,
+      })]);
+    }
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      action: 'sales.marketing.linked', resourceType: 'sales_marketing_link', resourceId: linkId,
+      result: 'success', newState: {
+        leadId, relationshipId, type: input.type, referenceCode: input.referenceCode,
+        displayName: input.displayName ?? null, context: input.context ?? {},
+      }, correlationId,
     });
     return loadLeadDetail(client, leadId);
   });
@@ -590,16 +744,33 @@ export async function recordSalesCall(
       throw new AppError(409, 'customer_relationship_locked', 'Customer relationship is locked to another Sales member. A manager must reassign it.');
     }
 
+    const marketingLinks = await client.query<{
+      id: string; link_type: SalesMarketingLinkType; reference_code: string; display_name: string | null;
+      context_snapshot: Record<string, unknown>; linked_at: Date | string; relationship_id: string | null;
+      actor_name: string;
+    }>(`
+      SELECT link.id, link.link_type, link.reference_code, link.display_name, link.context_snapshot,
+        link.linked_at, link.relationship_id, person.full_name AS actor_name
+      FROM sales_lead_marketing_links link
+      JOIN user_accounts account ON account.id = link.linked_by_user_account_id
+      JOIN persons person ON person.id = account.person_id
+      WHERE link.lead_id = $1 ORDER BY link.linked_at, link.id
+    `, [lead.id]);
+    const marketingSnapshot: SalesMarketingLink[] = marketingLinks.rows.map((row) => ({
+      id: row.id, type: row.link_type, referenceCode: row.reference_code,
+      displayName: row.display_name, context: row.context_snapshot ?? {}, linkedByName: row.actor_name,
+      linkedAt: iso(row.linked_at)!, relationshipId: row.relationship_id,
+    }));
     const callId = randomUUID();
     await client.query(`
       INSERT INTO sales_call_logs(
         id, workspace_id, company_id, lead_id, customer_identity_id, customer_id,
-        salesperson_membership_id, actor_user_account_id, campaign_reference, context_snapshot,
-        started_at, outcome, effective, note, callback_at, idempotency_key
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        salesperson_membership_id, actor_user_account_id, campaign_reference, marketing_snapshot,
+        context_snapshot, started_at, outcome, effective, note, callback_at, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     `, [
       callId, context.workspace.id, company.id, lead.id, lead.customer_identity_id, lead.customer_id,
-      context.membershipId, session.userAccountId, lead.campaign_reference,
+      context.membershipId, session.userAccountId, lead.campaign_reference, JSON.stringify(marketingSnapshot),
       JSON.stringify({ ...lead.context_snapshot, ...input.context }), input.startedAt, input.outcome,
       effective, input.note ?? null, input.callbackAt ?? null, idempotencyKey,
     ]);
@@ -654,6 +825,23 @@ export async function recordSalesCall(
         relationshipEvent, relationshipBefore?.owner_membership_id ?? null, lockOwner,
         JSON.stringify({ policyVersion: policy.version, outcome: input.outcome }),
       ]);
+      await client.query(`
+        INSERT INTO sales_customer_relationship_events(
+          workspace_id, company_id, relationship_id, lead_id, call_log_id,
+          actor_user_account_id, event_type, metadata
+        )
+        SELECT link.workspace_id, link.company_id, $2, link.lead_id, $3, $4,
+          'marketing_context_linked', jsonb_build_object(
+            'linkId', link.id, 'type', link.link_type, 'referenceCode', link.reference_code,
+            'displayName', link.display_name, 'attachedByEffectiveCall', true
+          )
+        FROM sales_lead_marketing_links link
+        WHERE link.lead_id = $1 AND link.relationship_id IS NULL
+      `, [lead.id, relationshipId, callId, session.userAccountId]);
+      await client.query(`
+        UPDATE sales_lead_marketing_links SET relationship_id = $2
+        WHERE lead_id = $1 AND relationship_id IS NULL
+      `, [lead.id, relationshipId]);
     }
 
     await client.query(`
@@ -675,7 +863,8 @@ export async function recordSalesCall(
       JSON.stringify({
         callId, leadId: lead.id, outcome: input.outcome, effective,
         companyId: company.id, salespersonMembershipId: context.membershipId,
-        campaignReference: lead.campaign_reference, context: { ...lead.context_snapshot, ...input.context },
+        campaignReference: lead.campaign_reference, promotionReference: lead.promotion_reference,
+        marketingSnapshot, context: { ...lead.context_snapshot, ...input.context },
       }),
     ]);
     await appendAuditEntry(client, {
@@ -683,7 +872,7 @@ export async function recordSalesCall(
       action: 'sales.call.logged', resourceType: 'sales_call_log', resourceId: callId, result: 'success',
       previousState: { leadStatus: lead.status, assigneeMembershipId: lead.current_assignee_membership_id },
       newState: {
-        leadStatus: nextStatus, outcome: input.outcome, effective, relationshipId,
+        leadStatus: nextStatus, outcome: input.outcome, effective, relationshipId, marketingSnapshot,
         assigneeMembershipId: releaseFailedAssignment ? null : lead.current_assignee_membership_id,
       }, correlationId,
     });

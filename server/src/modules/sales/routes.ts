@@ -12,11 +12,13 @@ import {
 import {
   assignSalesLead,
   createSalesLead,
+  linkSalesMarketingContext,
   listSalesAssignees,
   listSalesLeads,
   readSalesLead,
   recordSalesCall,
   salesCallOutcomes,
+  salesMarketingLinkTypes,
 } from './sales-service.js';
 
 const uuid = z.string().uuid();
@@ -31,6 +33,13 @@ const createLeadInput = z.object({
   declaredInterest: z.string().trim().min(2).max(500),
   priority: z.enum(['low', 'normal', 'high']).default('normal'),
   campaignReference: z.string().trim().min(1).max(200).optional(),
+  promotionReference: z.string().trim().min(1).max(200).optional(),
+  context: contextSnapshot.optional(),
+});
+const marketingLinkInput = z.object({
+  type: z.enum(salesMarketingLinkTypes),
+  referenceCode: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().min(1).max(300).optional(),
   context: contextSnapshot.optional(),
 });
 const assignmentInput = z.object({
@@ -82,6 +91,13 @@ export function salesRoutes(): Router {
     response.status(201).json({ lead: await assignSalesLead(
       getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.leadId),
       assignmentInput.parse(request.body), requireIdempotencyKey(request), response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.post('/sales/leads/:leadId/marketing-links', requireCsrf, asyncHandler(async (request, response) => {
+    response.status(201).json({ lead: await linkSalesMarketingContext(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.leadId),
+      marketingLinkInput.parse(request.body), requireIdempotencyKey(request), response.locals.correlationId as string,
     ) });
   }));
 

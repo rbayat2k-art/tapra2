@@ -135,7 +135,8 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('sales.lead.read_all', 'Read all Sales Leads in the current Company context'),
         ('sales.lead.assign', 'Assign an unowned Sales Lead in the current Company'),
         ('sales.lead.reassign', 'Reassign an owned Sales Lead with a reason in the current Company'),
-        ('sales.call.create', 'Record a Call Log for an assigned Sales Lead')
+        ('sales.call.create', 'Record a Call Log for an assigned Sales Lead'),
+        ('sales.marketing.link', 'Link Campaign or Promotion context to a Sales Lead and Company relationship')
       ON CONFLICT (code) DO UPDATE SET description = EXCLUDED.description
     `);
     await client.query(`
@@ -152,12 +153,12 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($1, 'customer.identity.manage'), ($1, 'customer.merge'),
         ($1, 'customer.import.read'), ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
         ($1, 'sales.queue.read'), ($1, 'sales.lead.create'), ($1, 'sales.lead.read_all'),
-        ($1, 'sales.lead.assign'), ($1, 'sales.lead.reassign'), ($1, 'sales.call.create'),
+        ($1, 'sales.lead.assign'), ($1, 'sales.lead.reassign'), ($1, 'sales.call.create'), ($1, 'sales.marketing.link'),
         ($2, 'customer.read'), ($2, 'customer.create'),
         ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
         ($2, 'customer.import.read'), ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
         ($2, 'sales.queue.read'), ($2, 'sales.lead.create'), ($2, 'sales.lead.read_all'),
-        ($2, 'sales.lead.assign'), ($2, 'sales.lead.reassign'), ($2, 'sales.call.create'),
+        ($2, 'sales.lead.assign'), ($2, 'sales.lead.reassign'), ($2, 'sales.call.create'), ($2, 'sales.marketing.link'),
         ($3, 'customer.read'),
         ($4, 'customer.read'), ($4, 'sales.queue.read'), ($4, 'sales.call.create')
       ON CONFLICT DO NOTHING

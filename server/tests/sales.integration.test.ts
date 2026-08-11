@@ -110,8 +110,9 @@ describe('Sales Backend Vertical Slice 1', () => {
       `, [[
         'sales_policies', 'sales_leads', 'sales_lead_assignments', 'sales_lead_timeline_events',
         'sales_call_logs', 'sales_customer_relationships', 'sales_customer_relationship_events',
+        'sales_lead_marketing_links',
       ]]);
-      expect(tables.rows).toHaveLength(7);
+      expect(tables.rows).toHaveLength(8);
       expect(tables.rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
     } finally {
       await owner.end();
@@ -138,6 +139,7 @@ describe('Sales Backend Vertical Slice 1', () => {
       declaredInterest: 'پیگیری سرویس سازمانی',
       priority: 'high',
       campaignReference: 'CMP-SLICE-1',
+      promotionReference: 'PRM-SLICE-1',
       context: { channel: 'manual', campaign: 'CMP-SLICE-1' },
     };
     const created = await manager.post('/api/v1/sales/leads')
@@ -148,8 +150,15 @@ describe('Sales Backend Vertical Slice 1', () => {
       customerId: ids.customerAlpha,
       company: { id: ids.companyAlpha },
       campaignReference: 'CMP-SLICE-1',
+      promotionReference: 'PRM-SLICE-1',
       currentAssignee: null,
     });
+    expect(created.body.lead.marketingLinks.map((link: { type: string; referenceCode: string }) => ({
+      type: link.type, referenceCode: link.referenceCode,
+    }))).toEqual([
+      { type: 'campaign', referenceCode: 'CMP-SLICE-1' },
+      { type: 'promotion', referenceCode: 'PRM-SLICE-1' },
+    ]);
 
     const repeated = await manager.post('/api/v1/sales/leads')
       .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', key)
@@ -164,6 +173,9 @@ describe('Sales Backend Vertical Slice 1', () => {
     await sellerOne.post(`/api/v1/sales/leads/${leadId}/assignments`)
       .set('x-csrf-token', sellerOneSession.csrfToken).set('idempotency-key', randomUUID())
       .send({ targetMembershipId: ids.membershipSalesOne }).expect(403);
+    await sellerOne.post(`/api/v1/sales/leads/${leadId}/marketing-links`)
+      .set('x-csrf-token', sellerOneSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ type: 'promotion', referenceCode: 'SELLER-CANNOT-LINK' }).expect(403);
   });
 
   it('allows a manager to assign while keeping other sellers isolated from the open Lead', async () => {
@@ -212,6 +224,11 @@ describe('Sales Backend Vertical Slice 1', () => {
       relationship: { lockMode: 'until_reassigned', ownerMembershipId: ids.membershipSalesOne },
     });
     expect(response.body.lead.firstEffectiveContactAt).toBeTruthy();
+    expect(response.body.lead.marketingLinks.every((link: { relationshipId: string | null }) => (
+      link.relationshipId === response.body.lead.relationship.id
+    ))).toBe(true);
+    expect(response.body.lead.calls[0].marketingSnapshot.map((link: { referenceCode: string }) => link.referenceCode))
+      .toEqual(['CMP-SLICE-1', 'PRM-SLICE-1']);
 
     await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
       const timeline = await client.query<{ count: string }>(`
@@ -223,6 +240,40 @@ describe('Sales Backend Vertical Slice 1', () => {
       `);
       expect(Number(timeline.rows[0]?.count)).toBe(2);
       expect(Number(audit.rows[0]?.count)).toBe(2);
+    });
+  });
+
+  it('links an additional Promotion to the existing Lead/relationship with idempotent Audit/history', async () => {
+    const key = randomUUID();
+    const input = {
+      type: 'promotion', referenceCode: 'PRM-UPSELL-1', displayName: 'پیشنهاد مکمل اعتبارسنجی',
+      context: { source: 'integration-test' },
+    };
+    const linked = await manager.post(`/api/v1/sales/leads/${leadId}/marketing-links`)
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', key)
+      .send(input).expect(201);
+    expect(linked.body.lead.marketingLinks).toHaveLength(3);
+    expect(linked.body.lead.marketingLinks.at(-1)).toMatchObject({
+      type: 'promotion', referenceCode: 'PRM-UPSELL-1', displayName: 'پیشنهاد مکمل اعتبارسنجی',
+      relationshipId: linked.body.lead.relationship.id,
+    });
+
+    const repeated = await manager.post(`/api/v1/sales/leads/${leadId}/marketing-links`)
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', key)
+      .send(input).expect(201);
+    expect(repeated.body.lead.marketingLinks).toHaveLength(3);
+
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const audit = await client.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM audit_entries
+        WHERE action = 'sales.marketing.linked' AND resource_type = 'sales_marketing_link'
+      `);
+      const history = await client.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM customer_timeline_events
+        WHERE customer_id = $1 AND event_type = 'sales_marketing_linked'
+      `, [ids.customerAlpha]);
+      expect(audit.rows[0]?.count).toBe('1');
+      expect(history.rows[0]?.count).toBe('1');
     });
   });
 
@@ -269,6 +320,9 @@ describe('Sales Backend Vertical Slice 1', () => {
       .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
       .send({ targetMembershipId: betaSession.activeContext?.membershipId, reason: 'cross-company check' }).expect(400);
     await betaManager.get(`/api/v1/sales/leads/${leadId}`).expect(404);
+    await betaManager.post(`/api/v1/sales/leads/${leadId}/marketing-links`)
+      .set('x-csrf-token', betaSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ type: 'campaign', referenceCode: 'CROSS-COMPANY' }).expect(404);
     expect(betaSession.activeContext).not.toBeNull();
 
     await withTenantTransaction({ workspaceId: ids.workspaceBeta, companyId: ids.companyBeta }, async (client) => {
