@@ -3,15 +3,16 @@
 > Status: CURRENT
 > Source of truth: این فایل برای دستورالعمل‌های اجباری و مسیر ورود AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against fresh clone of `stable@fcc3523c`
 > Supersedes: none
 > Superseded by: none
 
 ## ترتیب شروع
 
-1. [docs/ai/start-here.md](docs/ai/start-here.md) را بخوانید.
-2. authority موضوع task را در [docs/README.md](docs/README.md) پیدا کنید.
-3. فقط همان سندهای مرتبط و code شاهد آن‌ها را باز کنید؛ کل درخت مستندات را بی‌دلیل بارگذاری نکنید.
+1. remote و base را مطابق [source-of-truth rule](docs/engineering/source-of-truth.md) تأیید کنید.
+2. [docs/ai/start-here.md](docs/ai/start-here.md) را بخوانید.
+3. authority موضوع task را در [docs/README.md](docs/README.md) پیدا کنید.
+4. فقط همان سندهای مرتبط و code شاهد آن‌ها را باز کنید؛ کل درخت مستندات را بی‌دلیل بارگذاری نکنید.
 
 ## قواعد اجباری
 
@@ -25,6 +26,7 @@
 - برای هر flow جدید، تمام نقش‌ها، دسترسی‌ها، انتقال مسئولیت، حالت انتظار، خطا و پایان flow بررسی شوند.
 - رابط محصول فارسی، RTL و مناسب کاربر غیر فنی باقی بماند؛ type safety پروژه حفظ شود.
 - هیچ secret، credential یا داده واقعی مشتری در repository یا مستندات commit نشود.
+- کار آینده از آخرین GitHub `stable` آغاز می‌شود؛ workspace قدیمی یا ZIP منبع branch جدید نیست.
 
 ## مسیرهای authoritative
 
@@ -37,6 +39,7 @@
 | Customer Import | [customer import](docs/domains/sales/customer-import.md) |
 | فروش آینده | [approved design](docs/domains/sales/approved-design.md) و [open questions](docs/domains/sales/open-questions.md) |
 | پوسته canonical و مرز SaaS/Prototype | [canonical product integration](docs/engineering/canonical-product-integration.md) |
+| Git lineage و شروع توسعه | [source of truth](docs/engineering/source-of-truth.md) |
 | معماری، داده و امنیت | [documentation index](docs/README.md) |
 | rationale و تاریخچه | [decision log](docs/decisions/DECISION_LOG.md) |
 
