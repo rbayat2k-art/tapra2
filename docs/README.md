@@ -109,6 +109,7 @@
 - [Migration traceability and legacy classification](archive/migration-traceability.md)
 - [Legacy product preservation and Legacy → SaaS map](archive/legacy-product-preservation-matrix.md)
 - [Permanent Sales Draft archive](archive/sales/README.md)
+- [PR #1 historical preservation and classification](archive/pr-1/README.md)
 
 Snapshot فقط برای بازیابی و تاریخچه است و نباید به‌عنوان مستندات فعال استفاده شود.
 

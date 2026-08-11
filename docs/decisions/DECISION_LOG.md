@@ -354,3 +354,21 @@ Customer به‌عنوان profile والد حفظ شد و phone/address چند�
 
 **Impact:**
 Customer 360 foundation اکنون `CURRENT` است و با PostgreSQL integration test پوشش دارد. fuzzy matching، cross-Workspace identity linking، AI resolution و import حجیم همچنان deferred هستند. Prototype و داده `localStorage` تغییری نکرده‌اند.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** PR #1 preserved without direct merge
+
+**Context:**
+PR #1 روی base قدیمی و موازی با مسیر canonical ساخته شده بود. کد امنیت/RBAC آن در canonical حفظ یا توسعه یافته، اما دو سند تحلیلی آن هنوز به‌صورت شاهد تاریخی مستقل در source-of-truth جدید وجود نداشتند.
+
+**Decision:**
+PR #1 مستقیماً merge نمی‌شود. دو سند یکتای آن در `docs/archive/pr-1/` با وضعیت `HISTORICAL` حفظ و نتیجه مقایسه کد در README همان پوشه ثبت شد. authorityهای فعلی و آینده در `docs/README.md` بدون تغییر مالکیت باقی می‌مانند.
+
+**Reason:**
+این روش دانش و rationale یکتا را حفظ می‌کند، ولی از بازگرداندن login محلی، اسناد legacy و مدل Prototype روی Foundation SaaS جلوگیری می‌کند.
+
+**Impact:**
+هیچ application code، package configuration یا runtime behavior تغییر نکرد. PR #1 پس از review انسانی می‌تواند بدون merge به‌عنوان superseded بسته شود؛ branch یا تاریخچه آن در این task حذف نمی‌شود.
