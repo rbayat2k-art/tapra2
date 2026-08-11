@@ -35,8 +35,8 @@ import { CustomerMergeReviewQueueView } from './components/CustomerMergeReviewQu
 import { PurchaseClaimReviewView } from './components/PurchaseClaimReviewView';
 import { RawContactRepositoryView } from './components/RawContactRepositoryView';
 import { CampaignsView } from './components/CampaignsView';
-import { LeadAssignmentView } from './components/LeadAssignmentView';
-import { SalesQueueView } from './components/SalesQueueView';
+import { SaasLeadAssignmentView } from './foundation/sales/SaasLeadAssignmentView';
+import { SaasSalesQueueView } from './foundation/sales/SaasSalesQueueView';
 import { ProductsView } from './components/ProductsView';
 import { ServicesView } from './components/ServicesView';
 import { PromotionsView } from './components/PromotionsView';
@@ -1353,28 +1353,11 @@ export default function App() {
                   )}
 
                   {tab.id === 'lead_assignment' && (
-                    <LeadAssignmentView
-                      leads={leads}
-                      onUpdateLeads={setLeads}
-                      users={users}
-                      currentUser={currentUser}
-                      roles={roles}
-                      effectivePermissions={effectivePermissions}
-                      impersonatorAdmin={impersonatorAdmin}
-                    />
+                    <SaasLeadAssignmentView />
                   )}
 
                   {tab.id === 'my_sales_queue' && (
-                    <SalesQueueView
-                      leads={leads}
-                      onUpdateLeads={setLeads}
-                      callLogs={callLogs}
-                      onUpdateCallLogs={setCallLogs}
-                      currentUser={currentUser}
-                      roles={roles}
-                      effectivePermissions={effectivePermissions}
-                      impersonatorAdmin={impersonatorAdmin}
-                    />
+                    <SaasSalesQueueView />
                   )}
 
                   {tab.id === 'products' && (

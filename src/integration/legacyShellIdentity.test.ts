@@ -36,4 +36,13 @@ describe('legacy shell identity adapter', () => {
     expect(user.id).toBe('legacy-admin');
     expect(user.fullName).toBe('کاربر سرور');
   });
+
+  it('maps server Sales permissions only to presentation navigation and actions', () => {
+    const seller = resolveLegacyShellUser(session('seller@tapra.local', ['sales.queue.read', 'sales.call.create']), users);
+    expect(seller.customPermissions).toEqual(expect.arrayContaining(['sales_access', 'view_sales_queue', 'log_call_outcome']));
+    expect(seller.customPermissions).not.toContain('assign_sales_lead');
+
+    const manager = resolveLegacyShellUser(session('manager@tapra.local', ['sales.lead.assign', 'sales.lead.reassign']), users);
+    expect(manager.customPermissions).toEqual(expect.arrayContaining(['assign_sales_lead', 'reassign_sales_lead']));
+  });
 });
