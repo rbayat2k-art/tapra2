@@ -372,3 +372,18 @@ PR #1 مستقیماً merge نمی‌شود. دو سند یکتای آن در `
 
 **Impact:**
 هیچ application code، package configuration یا runtime behavior تغییر نکرد. PR #1 پس از review انسانی می‌تواند بدون merge به‌عنوان superseded بسته شود؛ branch یا تاریخچه آن در این task حذف نمی‌شود.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** GitHub stable declared canonical source of truth
+
+**Decision:**
+پس از promotion مرحله‌ای PRهای #2 تا #6 و موفقیت fresh clone verification، branch `stable` در `https://github.com/rbayat2k-art/tapra2.git` تنها منبع رسمی کد و مستندات فعال Tapra2 است. همه کارهای آینده باید از آخرین `origin/stable` یا branch تأییدشده‌ای که مستقیماً بر آن مبتنی است آغاز شوند.
+
+**Evidence:**
+Fresh clone در `C:\Users\iLia\Documents\Tapra2\canonical` از `stable@fcc3523c` ساخته شد و install از lockfile، migration تکراری، typecheck، build، `416/416` test و visual validation کامل را گذراند.
+
+**Impact:**
+checkoutهای قدیمی و Codex workspaceهای قبلی source branch آینده نیستند. ZIP legacy و forensic extraction فقط archive/recovery evidence باقی می‌مانند. هیچ فایل محلی، branch یا داده PostgreSQL در این تصمیم حذف نشد.

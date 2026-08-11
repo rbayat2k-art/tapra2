@@ -3,15 +3,15 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against fresh clone of `stable@fcc3523c`
 > Supersedes: none
 > Superseded by: none
 
 این فایل نقطه ورود مرکزی مستندات پروژه است. هدف آن پیدا کردن سند مناسب با کمترین میزان مطالعه و جلوگیری از بارگذاری غیرضروری تمام مستندات است.
 
-## هشدار مهاجرت
+## وضعیت مستندات
 
-معماری مستندات در Phase 3 در حال مهاجرت به مدل `single source of truth` است. authorityهای برنامه‌ریزی‌شده اکنون ایجاد شده‌اند، اما اسناد legacy تا مراحل بعد برای traceability در جای خود باقی می‌مانند؛ وجود آن‌ها به معنی مرجع فعال بودن نیست.
+مهاجرت مستندات به مدل `single source of truth` کامل شده است. اسناد legacy و snapshot فقط برای traceability باقی مانده‌اند و وجود آن‌ها به معنی مرجع فعال بودن نیست.
 
 برای تشخیص وضعیت اطلاعات:
 
@@ -35,6 +35,7 @@
 | مدل داده فعلی | [data/current-data-model.md](data/current-data-model.md) |
 | Persistence فعلی | [data/persistence.md](data/persistence.md) |
 | راه‌اندازی محیط توسعه | [engineering/development.md](engineering/development.md) |
+| منبع GitHub و قاعده شروع توسعه | [engineering/source-of-truth.md](engineering/source-of-truth.md) |
 | وضعیت quality و test | [engineering/quality.md](engineering/quality.md) |
 | Engineering Gate A | [engineering/engineering-gate-a.md](engineering/engineering-gate-a.md) |
 | وضعیت ادغام محصول canonical | [engineering/canonical-product-integration.md](engineering/canonical-product-integration.md) |
@@ -68,6 +69,7 @@
 | مشتری فروش فعلی | [domains/sales/current-customer.md](domains/sales/current-customer.md) | `CURRENT` |
 | Customer Import و reconciliation | [domains/sales/customer-import.md](domains/sales/customer-import.md) | `CURRENT` |
 | Development workflow | [engineering/development.md](engineering/development.md) | `CURRENT` |
+| GitHub source of truth | [engineering/source-of-truth.md](engineering/source-of-truth.md) | `CURRENT` |
 | Quality status | [engineering/quality.md](engineering/quality.md) | `CURRENT` |
 | Engineering Gate A | [engineering/engineering-gate-a.md](engineering/engineering-gate-a.md) | `CURRENT` |
 | وضعیت ادغام محصول canonical | [engineering/canonical-product-integration.md](engineering/canonical-product-integration.md) | `CURRENT` |
@@ -167,6 +169,7 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | طراحی پذیرفته‌شده آینده sales | `docs/domains/sales/approved-design.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | future platform, decisions |
 | پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |
 | راه‌اندازی و development workflow | `docs/engineering/development.md` | `docs/engineering/development.md` | Engineering Owner | `ACTIVE` | `README.md`, AI instructions |
+| Git lineage و محل شروع توسعه | `docs/engineering/source-of-truth.md` | `docs/engineering/source-of-truth.md` | Engineering Owner | `ACTIVE` | `README.md`, `AGENTS.md`, AI instructions |
 | testing و quality gates | `docs/engineering/quality.md` | `docs/engineering/quality.md` | Engineering Owner | `ACTIVE` | development guide, release guidance |
 | کنترل‌های Engineering Gate A | `docs/engineering/engineering-gate-a.md` | `docs/engineering/engineering-gate-a.md` | Engineering Owner | `ACTIVE` | quality، security، CI guidance |
 | وضعیت canonical product integration | `docs/engineering/canonical-product-integration.md` | `docs/engineering/canonical-product-integration.md` | Product Integration | `ACTIVE` | module catalog، AI instructions، preservation matrix |
