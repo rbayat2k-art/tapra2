@@ -151,7 +151,7 @@ export function SaasSalesQueueView() {
             <div>
               <div className="font-semibold text-slate-800">{lead.trackingCode} — {lead.customerName}</div>
               <div className="mt-1 text-xs text-slate-500">{SALES_LEAD_STATUS_LABELS[lead.status]} — {lead.declaredInterest}</div>
-              <div className="mt-1 text-xs text-slate-400">{lead.company.name} · {lead.campaignReference ?? lead.source}</div>
+              <div className="mt-1 text-xs text-slate-400">{lead.company.name} · {[lead.campaignReference, lead.promotionReference].filter(Boolean).join(' · ') || lead.source}</div>
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => void openHistory(lead.id)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
@@ -165,10 +165,14 @@ export function SaasSalesQueueView() {
 
           {currentDetail && <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
             {currentDetail.relationship?.ownerName && <div className="flex items-center gap-2 text-emerald-700"><ShieldCheck className="h-4 w-4" />رابطه فعال: {currentDetail.relationship.ownerName} · policy: {currentDetail.relationship.lockMode}</div>}
+            {currentDetail.marketingLinks.length > 0 && <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-2 text-cyan-900">
+              زمینه فروش: {currentDetail.marketingLinks.map((link) => `${link.type === 'campaign' ? 'Campaign' : 'Promotion'} ${link.referenceCode}${link.displayName ? ` — ${link.displayName}` : ''}`).join('، ')}
+            </div>}
             {currentDetail.calls.length === 0 && <div className="text-slate-400">هنوز تماسی ثبت نشده است.</div>}
             {currentDetail.calls.map((call) => <div key={call.id} className="rounded-lg border border-slate-200 bg-white p-2">
               <div>{formatSalesDate(call.startedAt)} — {SALES_CALL_OUTCOME_LABELS[call.outcome]} {call.effective ? '· مؤثر' : '· ناموفق/غیرمؤثر'}</div>
               <div className="mt-1 text-slate-400">{call.companyName} · {call.salespersonName} · {call.campaignReference ?? 'بدون کمپین'}</div>
+              {call.marketingSnapshot.length > 0 && <div className="mt-1 text-slate-400">snapshot: {call.marketingSnapshot.map((link) => `${link.type}:${link.referenceCode}`).join('، ')}</div>}
               {call.note && <div className="mt-1">{call.note}</div>}
             </div>)}
             {currentDetail.assignments.length > 0 && <div className="border-t border-slate-200 pt-2">آخرین تخصیص: {currentDetail.assignments.at(-1)?.assigneeName} توسط {currentDetail.assignments.at(-1)?.assignedByName}</div>}

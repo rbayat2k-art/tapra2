@@ -147,6 +147,19 @@ export type SalesCallOutcome =
   | 'connected_no_time' | 'real_conversation' | 'callback_requested' | 'interested'
   | 'ready_for_invoice' | 'cancelled' | 'complaint';
 
+export type SalesMarketingLinkType = 'campaign' | 'promotion';
+
+export interface SalesMarketingLink {
+  id: string;
+  type: SalesMarketingLinkType;
+  referenceCode: string;
+  displayName: string | null;
+  context: Record<string, unknown>;
+  linkedByName: string;
+  linkedAt: string;
+  relationshipId: string | null;
+}
+
 export interface SalesLead {
   id: string;
   trackingCode: string;
@@ -159,6 +172,7 @@ export interface SalesLead {
   priority: 'low' | 'normal' | 'high';
   status: SalesLeadStatus;
   campaignReference: string | null;
+  promotionReference: string | null;
   context: Record<string, unknown>;
   currentAssignee: { membershipId: string; name: string } | null;
   firstAttemptAt: string | null;
@@ -173,7 +187,8 @@ export interface SalesLead {
 export interface SalesLeadDetail extends SalesLead {
   timeline: Array<{ id: string; type: string; summary: string; metadata: Record<string, unknown>; actorName: string; occurredAt: string }>;
   assignments: Array<{ id: string; type: 'assigned' | 'reassigned'; previousAssigneeName: string | null; assigneeName: string; assignedByName: string; reason: string | null; assignedAt: string }>;
-  calls: Array<{ id: string; salespersonName: string; companyName: string; campaignReference: string | null; context: Record<string, unknown>; startedAt: string; endedAt: string; outcome: SalesCallOutcome; effective: boolean; note: string | null; callbackAt: string | null }>;
+  calls: Array<{ id: string; salespersonName: string; companyName: string; campaignReference: string | null; marketingSnapshot: SalesMarketingLink[]; context: Record<string, unknown>; startedAt: string; endedAt: string; outcome: SalesCallOutcome; effective: boolean; note: string | null; callbackAt: string | null }>;
+  marketingLinks: SalesMarketingLink[];
   relationship: null | { id: string; status: 'active' | 'released'; lockMode: 'none' | 'until_reassigned' | 'duration'; ownerMembershipId: string | null; ownerName: string | null; lockAcquiredAt: string | null; lockExpiresAt: string | null; updatedAt: string };
 }
 

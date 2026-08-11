@@ -11,6 +11,7 @@ import type {
   SalesCallOutcome,
   SalesLead,
   SalesLeadDetail,
+  SalesMarketingLinkType,
 } from './contracts';
 
 export class FoundationApiError extends Error {
@@ -116,7 +117,7 @@ export const foundationApi = {
   listSalesAssignees: () => request<{ assignees: SalesAssignee[] }>('/sales/assignees'),
   createSalesLead: (input: {
     customerId: string; source: string; declaredInterest: string; priority: 'low' | 'normal' | 'high';
-    campaignReference?: string; context?: Record<string, unknown>;
+    campaignReference?: string; promotionReference?: string; context?: Record<string, unknown>;
   }, csrfToken: string) => request<{ lead: SalesLeadDetail }>('/sales/leads', {
     method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
   }, csrfToken),
@@ -124,6 +125,11 @@ export const foundationApi = {
     request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/assignments`, {
       method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
     }, csrfToken),
+  linkSalesMarketingContext: (leadId: string, input: {
+    type: SalesMarketingLinkType; referenceCode: string; displayName?: string; context?: Record<string, unknown>;
+  }, csrfToken: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/marketing-links`, {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
   recordSalesCall: (leadId: string, input: {
     outcome: SalesCallOutcome; startedAt: string; note?: string; callbackAt?: string; context?: Record<string, unknown>;
   }, csrfToken: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/calls`, {
