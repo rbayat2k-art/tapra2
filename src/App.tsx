@@ -24,7 +24,6 @@ import { LoginRegisterModal } from './components/LoginRegisterModal';
 import { PrintRequestModal } from './components/PrintRequestModal';
 import { VendorsView } from './components/VendorsView';
 import { VendorCategoriesView } from './components/VendorCategoriesView';
-import { CustomersView } from './components/CustomersView';
 import { ColleaguesView } from './components/ColleaguesView';
 import { SupportView } from './components/SupportView';
 import { LettersView } from './components/LettersView';
@@ -35,8 +34,14 @@ import { AssignedTasksView } from './components/AssignedTasksView';
 import { AllCommunicationsAuditView } from './components/AllCommunicationsAuditView';
 import { StyleSettingsView, AVAILABLE_FONTS } from './components/StyleSettingsView';
 import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
+import { useFoundationSession } from './foundation/auth/FoundationSessionContext';
+import { FoundationLogin } from './foundation/auth/FoundationLogin';
+import { ContextSelector } from './foundation/organization/ContextSelector';
+import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
+import { CustomerSourceView } from './foundation/customers/CustomerSourceView';
 
 export default function App() {
+  const foundation = useFoundationSession();
   const [currentUser, setCurrentUser] = useState<User | null>(() => storage.getCurrentUser());
 
   // Browser-like multi-tab navigation: every view the user opens stays mounted (App.tsx
@@ -711,7 +716,14 @@ export default function App() {
     return false;
   });
 
-  // Render dedicated Login/Register screen when logged out
+  if (foundation.loading) {
+    return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center dir-rtl">در حال برقراری نشست امن…</div>;
+  }
+
+  if (!foundation.session) return <FoundationLogin />;
+  if (!foundation.session.activeContext) return <ContextSelector />;
+
+  // The legacy prototype identity remains isolated from the server-side SaaS session.
   if (!currentUser) {
     return (
       <div className={`min-h-screen font-sans dir-rtl selection:bg-indigo-500 selection:text-white flex items-center justify-center p-4 relative overflow-hidden ${
@@ -744,11 +756,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenLogin={() => setIsLoginModalOpen(true)}
-        onLogout={() => {
-          storage.setCurrentUser(null);
-          setCurrentUser(null);
-          resetTabsToDashboard();
-        }}
+        onLogout={() => { void foundation.logout(); }}
         onSearchTrackingCode={handleSearchTrackingCode}
         onSelectNotificationRequest={handleSelectNotificationRequest}
         onSelectNotificationColleague={handleSelectNotificationColleague}
@@ -760,6 +768,8 @@ export default function App() {
           setIsSidebarCollapsed(prev => !prev);
         }}
       />
+
+      <FoundationContextBar />
 
       {/* Impersonation Banner (When Admin is testing as another user) */}
       {impersonatorAdmin && currentUser && (
@@ -988,7 +998,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'customers' && (
-                    <CustomersView
+                    <CustomerSourceView
                       customers={customers}
                       users={users}
                       currentUser={currentUser}
