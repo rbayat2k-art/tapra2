@@ -3,6 +3,7 @@ import { AppError } from '../../shared/errors.js';
 export const CUSTOMER_IMPORT_HEADERS = [
   'full_name', 'phone', 'phone_secondary', 'province', 'city', 'address', 'postal_code',
   'purchase_reference', 'purchase_date', 'purchase_amount', 'source_reference',
+  'purchased_item',
 ] as const;
 
 export type CustomerImportHeader = typeof CUSTOMER_IMPORT_HEADERS[number];

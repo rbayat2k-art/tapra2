@@ -106,6 +106,7 @@ export interface CustomerImportRecord {
   fullName: string | null;
   phone: string | null;
   normalizedPhone: string | null;
+  purchasedItem: string | null;
   classification: CustomerImportClassification;
   reasons: string[];
   candidateCustomerIds: string[];
@@ -124,9 +125,10 @@ export interface CustomerImportJob {
   fileSha256: string;
   schemaVersion: string;
   status: 'staged' | 'in_review' | 'approved' | 'failed';
-  counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number };
+  counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number; approved: number; rejected: number };
   createdAt: string;
   approvedAt: string | null;
+  completedAt: string | null;
   records?: CustomerImportRecord[];
   candidates?: Array<{ id: string; fullName: string; phonePrimary: string }>;
 }

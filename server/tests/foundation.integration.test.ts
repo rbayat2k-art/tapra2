@@ -424,8 +424,15 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('idempotency-key', randomUUID())
       .set('x-file-name', 'tenant-check.csv')
       .set('content-type', 'text/csv')
-      .send('full_name,phone\nTenant Import,09128880002')
+      .send('full_name,phone\nTenant Import,09128880002\nBeta Seed Phone,09120000002')
       .expect(201);
+    expect(staged.body.import.counts).toMatchObject({ total: 2, valid: 2, exactMatch: 0 });
+
+    await reader
+      .post(`/api/v1/customer-imports/${staged.body.import.id}/apply-safe-decisions`)
+      .set('x-csrf-token', readerSession.csrfToken)
+      .send({})
+      .expect(403);
 
     managerSession = await selectContext(manager, managerSession, 'tapra-beta');
     await manager.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(404);
@@ -445,12 +452,14 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const before = await agent.get('/api/v1/customers').expect(200);
 
     const csv = [
-      'full_name,phone,phone_secondary,province,city,address,postal_code,purchase_reference,purchase_date,purchase_amount,source_reference',
-      'Import New Person,09127770001,,Tehran,Tehran,First address,1234567890,ORDER-1,2026-01-10,1250000,legacy-sales',
-      'Import New Person,09127770001,,,,,,ORDER-2,2026-02-10,2500000,legacy-sales',
-      'Seed Exact Phone,09120000001,,,,,,ORDER-3,2026-03-10,300000,legacy-sales',
-      `${possibleName},09127770002,,,,,,ORDER-4,2026-04-10,400000,legacy-sales`,
-      'Invalid Import,12,,,,,,ORDER-5,2026-05-10,500000,legacy-sales',
+      'full_name,phone,phone_secondary,province,city,address,postal_code,purchase_reference,purchase_date,purchase_amount,source_reference,purchased_item',
+      'Import New Person,09127770001,,Tehran,Tehran,First address,1234567890,ORDER-1,2026-01-10,1250000,legacy-sales,Test service one',
+      'Import New Person,09127770001,,,,,,ORDER-2,2026-02-10,2500000,legacy-sales,Test service two',
+      'Seed Exact Phone,09120000001,,,,,,ORDER-3,2026-03-10,300000,legacy-sales,Test product three',
+      `${possibleName},09127770002,,,,,,ORDER-4,2026-04-10,400000,legacy-sales,Test product four`,
+      'Invalid Import,12,,,,,,ORDER-5,2026-05-10,500000,legacy-sales,Invalid test item',
+      'Invalid Import Date,09127770003,,,,,,ORDER-6,2026-02-30,600000,legacy-sales,Invalid date item',
+      'Invalid Import Amount,09127770004,,,,,,ORDER-7,2026-05-12,not-a-number,legacy-sales,Invalid amount item',
     ].join('\n');
     const key = randomUUID();
     const staged = await agent
@@ -462,7 +471,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('content-type', 'text/csv')
       .send(csv)
       .expect(201);
-    expect(staged.body.import.counts).toMatchObject({ total: 5, valid: 1, invalid: 1, exactMatch: 2, possibleDuplicate: 1 });
+    expect(staged.body.import.counts).toMatchObject({ total: 7, valid: 1, invalid: 3, exactMatch: 2, possibleDuplicate: 1 });
     const afterStaging = await agent.get('/api/v1/customers').expect(200);
     expect(afterStaging.body.customers).toHaveLength(before.body.customers.length);
 
@@ -501,6 +510,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send({})
       .expect(200);
     expect(approved.body.import.status).toBe('approved');
+    expect(approved.body.import.counts).toMatchObject({ approved: 4, rejected: 3 });
+    expect(approved.body.import.completedAt).toBeTruthy();
     const approvedAgain = await agent
       .post(`/api/v1/customer-imports/${staged.body.import.id}/approve`)
       .set('x-csrf-token', session.csrfToken)
@@ -513,6 +524,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
     expect(linkedRecord.appliedCustomerId).toBe(createdRecord.appliedCustomerId);
     const profile = await agent.get(`/api/v1/customers/${createdRecord.appliedCustomerId}`).expect(200);
     expect(profile.body.customer.sources.filter((source: { importReference: string | null }) => source.importReference)).toHaveLength(2);
+    expect(profile.body.customer.sources.some((source: { metadata: { purchasedItem?: string } }) => source.metadata.purchasedItem === 'Test service one')).toBe(true);
     expect(profile.body.customer.timeline.map((event: { eventType: string }) => event.eventType)).toEqual(expect.arrayContaining(['customer_imported', 'import_data_linked']));
     const afterApproval = await agent.get('/api/v1/customers').expect(200);
     expect(afterApproval.body.customers).toHaveLength(before.body.customers.length + 2);

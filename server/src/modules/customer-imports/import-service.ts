@@ -44,6 +44,7 @@ interface ImportRecordRow {
   purchase_reference: string | null;
   purchase_date: Date | string | null;
   purchase_amount: string | null;
+  purchased_item: string | null;
   source_reference: string | null;
   classification: ImportClassification;
   reasons: string[];
@@ -71,8 +72,11 @@ interface ImportJobRow {
   exact_match_rows: number;
   possible_duplicate_rows: number;
   review_required_rows: number;
+  approved_rows: number;
+  rejected_rows: number;
   created_at: Date;
   approved_at: Date | null;
+  completed_at: Date | null;
 }
 
 export interface ImportRecord {
@@ -91,6 +95,7 @@ export interface ImportRecord {
   purchaseReference: string | null;
   purchaseDate: string | null;
   purchaseAmount: number | null;
+  purchasedItem: string | null;
   sourceReference: string | null;
   classification: ImportClassification;
   reasons: string[];
@@ -112,9 +117,10 @@ export interface ImportJob {
   fileSha256: string;
   schemaVersion: string;
   status: ImportJobRow['status'];
-  counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number };
+  counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number; approved: number; rejected: number };
   createdAt: string;
   approvedAt: string | null;
+  completedAt: string | null;
   records?: ImportRecord[];
   candidates?: Array<{ id: string; fullName: string; phonePrimary: string }>;
 }
@@ -134,7 +140,7 @@ function mapRecord(row: ImportRecordRow): ImportRecord {
     phone: row.phone, normalizedPhone: row.normalized_phone, phoneSecondary: row.phone_secondary,
     address: row.address_text, province: row.province, city: row.city, postalCode: row.postal_code,
     purchaseReference: row.purchase_reference, purchaseDate,
-    purchaseAmount: row.purchase_amount === null ? null : Number(row.purchase_amount),
+    purchaseAmount: row.purchase_amount === null ? null : Number(row.purchase_amount), purchasedItem: row.purchased_item,
     sourceReference: row.source_reference, classification: row.classification, reasons: row.reasons,
     candidateCustomerIds: row.candidate_customer_ids, duplicateOfRecordId: row.duplicate_of_record_id,
     proposedAction: row.proposed_action, decidedAction: row.decided_action,
@@ -152,8 +158,10 @@ function mapJob(row: ImportJobRow): ImportJob {
       total: row.total_rows, valid: row.valid_rows, invalid: row.invalid_rows,
       exactMatch: row.exact_match_rows, possibleDuplicate: row.possible_duplicate_rows,
       reviewRequired: row.review_required_rows,
+      approved: row.approved_rows, rejected: row.rejected_rows,
     },
     createdAt: row.created_at.toISOString(), approvedAt: row.approved_at?.toISOString() ?? null,
+    completedAt: row.completed_at?.toISOString() ?? null,
   };
 }
 
@@ -178,7 +186,8 @@ function normalizedRow(row: ParsedCustomerImportRow) {
     reasons.push('invalid_secondary_phone');
   }
   if (phoneSecondary && normalizedPrimary === normalizedSecondary) reasons.push('duplicate_phone_fields');
-  if (row.purchase_date && !validIsoDate(row.purchase_date)) reasons.push('invalid_purchase_date');
+  const purchaseDateValid = !row.purchase_date || validIsoDate(row.purchase_date);
+  if (!purchaseDateValid) reasons.push('invalid_purchase_date');
   const amountText = row.purchase_amount.replace(/,/g, '');
   const amount = amountText === '' ? null : Number(amountText);
   if (amount !== null && (!Number.isFinite(amount) || amount < 0)) reasons.push('invalid_purchase_amount');
@@ -187,7 +196,9 @@ function normalizedRow(row: ParsedCustomerImportRow) {
     normalizedPhone: normalizedPrimary, phoneSecondary, normalizedSecondary,
     province: normalizeText(row.province), city: normalizeText(row.city), address: normalizeText(row.address),
     postalCode: normalizeText(row.postal_code), purchaseReference: normalizeText(row.purchase_reference),
-    purchaseDate: row.purchase_date, purchaseAmount: amount,
+    purchasedItem: normalizeText(row.purchased_item),
+    purchaseDate: purchaseDateValid ? row.purchase_date || null : null,
+    purchaseAmount: amount !== null && Number.isFinite(amount) && amount >= 0 ? amount : null,
     sourceReference: normalizeText(row.source_reference), reasons,
   };
 }
@@ -196,7 +207,7 @@ async function readJob(client: PoolClient, jobId: string): Promise<ImportJob> {
   const jobRow = (await client.query<ImportJobRow>(`
     SELECT id, file_name, source_name, file_sha256, schema_version, status, total_rows,
       valid_rows, invalid_rows, exact_match_rows, possible_duplicate_rows,
-      review_required_rows, created_at, approved_at
+      review_required_rows, approved_rows, rejected_rows, created_at, approved_at, completed_at
     FROM customer_import_jobs WHERE id = $1
   `, [jobId])).rows[0];
   if (!jobRow) throw new AppError(404, 'customer_import_not_found', 'Customer import was not found in the active context.');
@@ -322,11 +333,11 @@ export async function stageCustomerImport(
           workspace_id, company_id, import_job_id, row_number, raw_data, full_name,
           normalized_full_name, phone, normalized_phone, phone_secondary, address_text,
           province, city, postal_code, purchase_reference, purchase_date, purchase_amount,
-          source_reference, classification, reasons, candidate_customer_ids,
+          purchased_item, source_reference, classification, reasons, candidate_customer_ids,
           duplicate_of_record_id, proposed_action, target_customer_id, target_record_id
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+          $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
         ) RETURNING id
       `, [
         context.workspace.id, company.id, job.rows[0]!.id, item.row.rowNumber, JSON.stringify(item.row),
@@ -334,7 +345,7 @@ export async function stageCustomerImport(
         item.normalizedPhone || null, item.phoneSecondary || null, item.address || null,
         item.province || null, item.city || null, item.postalCode || null,
         item.purchaseReference || null, item.purchaseDate || null, item.purchaseAmount,
-        item.sourceReference || null, item.classification, item.reasons, item.candidates,
+        item.purchasedItem || null, item.sourceReference || null, item.classification, item.reasons, item.candidates,
         duplicateOf, item.proposedAction, item.proposedAction === 'LINK_TO_EXISTING' ? item.candidates[0] : null,
         item.proposedAction === 'LINK_TO_STAGED' ? duplicateOf : null,
       ]);
@@ -356,7 +367,7 @@ export async function listCustomerImports(context: MembershipContext): Promise<I
     const jobs = await client.query<ImportJobRow>(`
       SELECT id, file_name, source_name, file_sha256, schema_version, status, total_rows,
         valid_rows, invalid_rows, exact_match_rows, possible_duplicate_rows,
-        review_required_rows, created_at, approved_at
+      review_required_rows, approved_rows, rejected_rows, created_at, approved_at, completed_at
       FROM customer_import_jobs ORDER BY created_at DESC, id DESC LIMIT 50
     `);
     return jobs.rows.map(mapJob);
@@ -444,7 +455,7 @@ function sourceForRecord(job: ImportJob, record: ImportRecord): SourceInput {
     metadata: {
       importJobId: job.id, importRecordId: record.id, fileSha256: job.fileSha256,
       purchaseReference: record.purchaseReference, purchaseDate: record.purchaseDate,
-      purchaseAmount: record.purchaseAmount,
+      purchaseAmount: record.purchaseAmount, purchasedItem: record.purchasedItem,
     },
   };
 }
@@ -497,10 +508,13 @@ export async function approveCustomerImport(
         result: 'success', newState: { action, customerId }, correlationId,
       });
     }
+    const approvedRows = records.filter((record) => record.decidedAction !== 'REJECT').length;
+    const rejectedRows = records.length - approvedRows;
     await client.query(`
-      UPDATE customer_import_jobs SET status = 'approved', approved_by_user_account_id = $1, approved_at = now()
+      UPDATE customer_import_jobs SET status = 'approved', approved_by_user_account_id = $1, approved_at = now(),
+        approved_rows = $3, rejected_rows = $4, completed_at = now()
       WHERE id = $2
-    `, [session.userAccountId, jobId]);
+    `, [session.userAccountId, jobId, approvedRows, rejectedRows]);
     await appendAuditEntry(client, {
       workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
       action: 'customer_import.approved', resourceType: 'CustomerImportJob', resourceId: jobId,

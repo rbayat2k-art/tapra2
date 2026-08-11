@@ -105,8 +105,9 @@ export function CustomerImportView() {
       {active ? <article className="min-w-0 space-y-4">
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-extrabold">{active.fileName}</h3><p className="text-xs text-slate-400">منبع: {active.sourceName} · schema: {active.schemaVersion}</p></div>{active.status === 'approved' ? <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300"><CheckCircle2 size={16} />تأییدشده</span> : <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-3 py-1 text-sm text-amber-200"><AlertTriangle size={16} />{unresolved} تصمیم باز</span>}</div>
-          <div className="mt-4 grid grid-cols-3 gap-2 md:grid-cols-6">
+          <div className="mt-4 grid grid-cols-4 gap-2 md:grid-cols-8">
             <Count label="کل" value={active.counts.total} /><Count label="معتبر" value={active.counts.valid} /><Count label="نامعتبر" value={active.counts.invalid} /><Count label="دقیق" value={active.counts.exactMatch} /><Count label="احتمالی" value={active.counts.possibleDuplicate} /><Count label="بررسی" value={active.counts.reviewRequired} />
+            <Count label="تأییدشده" value={active.counts.approved} /><Count label="ردشده" value={active.counts.rejected} />
           </div>
           {active.status !== 'approved' && <div className="mt-4 flex flex-wrap gap-2">
             {canReview && <button type="button" disabled={busy} onClick={() => session && void mutate(() => foundationApi.applySafeCustomerImportDecisions(active.id, session.csrfToken))} className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-bold text-emerald-300">اعمال تصمیم‌های کم‌ریسک</button>}
