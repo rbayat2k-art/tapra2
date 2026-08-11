@@ -56,6 +56,7 @@ function Badge({ children, tone = "slate" }) {
   };
   return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${tones[tone]}`}>{children}</span>;
 }
+
 export default function TapraPreview() {
   const [users, setUsers] = useState(USERS_SEED);
   const [requests, setRequests] = useState(REQUESTS_SEED);
