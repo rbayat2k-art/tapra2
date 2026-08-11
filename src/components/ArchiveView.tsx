@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { PaymentRequest, Company, CostCenter, User, SupportCase, Letter, Vendor } from '../types';
+import React, { useState, useMemo } from 'react';
+import { PaymentRequest, Company, CostCenter, User, SupportCase, Letter, Vendor, SystemRole } from '../types';
 import { formatRial } from '../utils/numberToWords';
+import { computeVisibleUserIds } from '../utils/orgHierarchy';
+import { toTreasuryPaymentSourceView, getTreasuryVisibleSourceRequests, TreasuryPaymentSourceView } from '../utils/treasurySourceView';
 import * as XLSX from 'xlsx';
-import { 
-  Archive, Search, Filter, Printer, 
+import {
+  Archive, Search, Filter, Printer,
   Building, MapPin, Calendar, CheckCircle2, FileSpreadsheet, Eye,
   ShieldCheck, LifeBuoy, Mail, Users, FileText, Download, Sparkles
 } from 'lucide-react';
@@ -13,6 +15,7 @@ interface ArchiveViewProps {
   companies: Company[];
   costCenters: CostCenter[];
   currentUser: User | null;
+  roles?: SystemRole[];
   supportCases?: SupportCase[];
   letters?: Letter[];
   vendors?: Vendor[];
@@ -41,8 +44,19 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
   const [selectedCostCenterId, setSelectedCostCenterId] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
+  const [selectedSourceUnit, setSelectedSourceUnit] = useState('all');
 
   const isAdmin = currentUser?.role === 'admin';
+  const isTreasury = currentUser?.role === 'treasury_executor';
+
+  // Territory: which user ids currentUser is allowed to see records "belonging to",
+  // per their active role(s) scope (own/direct_reports/subtree/company/branch — see
+  // src/utils/orgHierarchy.ts). Replaces the old broad "same cost center" checks below —
+  // being in the same branch no longer implies visibility on its own.
+  const visibleUserIds = useMemo(
+    () => (currentUser ? computeVisibleUserIds(currentUser, users) : []),
+    [currentUser, users]
+  );
 
   // Available branches for current user
   const availableCostCenters = costCenters.filter(cc => {
@@ -65,26 +79,30 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
 
     // Requestors ONLY see their own requests (created by them)
     if (currentUser.role === 'requestor' && !currentUser.isDualRole) {
-      return req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
+      return req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
     }
 
-    // Approvers (Branch Managers / Supervisors) see requests created by themselves, assigned to them, in their cost center branch, or where they acted
+    // Approvers (Branch Managers / Supervisors) see requests created by themselves, assigned
+    // to them, requests from users within their computed territory (own/subordinates per
+    // their active role scope — NOT merely "same branch"), or where they acted.
     if (currentUser.role === 'approver' || currentUser.isDualRole) {
-      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
+      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
       const isAssigned = req.currentApproverId === currentUser.id;
-      const isMyBranch = currentUser.allowedCostCenterIds?.includes(req.costCenterId) || req.costCenterId === currentUser.costCenterId;
+      const isInTerritory = visibleUserIds.includes(req.requestorId);
       const isInTimeline = req.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
-      return isMyOwn || isAssigned || isMyBranch || isInTimeline;
+      return isMyOwn || isAssigned || isInTerritory || isInTimeline;
     }
 
-    // Treasury Executors see requests in treasury stages, assigned to them, created by them, or in their cost center branch
+    // Treasury Executors see requests in treasury stages, assigned to them, created by them,
+    // or within their computed territory. Full SupportCase detail is never exposed to
+    // treasury regardless — see the separate treasury-safe support view below.
     if (currentUser.role === 'treasury_executor') {
-      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName || req.createdById === currentUser.id;
+      const isMyOwn = req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
       const isAssigned = req.currentApproverId === currentUser.id;
-      const isTreasuryStage = ['approved_pending_payment', 'paid', 'completed'].includes(req.status);
-      const isMyBranch = currentUser.allowedCostCenterIds?.includes(req.costCenterId) || req.costCenterId === currentUser.costCenterId;
+      const isTreasuryStage = ['approved_awaiting_payment_assignment', 'approved_pending_payment', 'emergency_pending_payment', 'paid', 'completed'].includes(req.status);
+      const isInTerritory = visibleUserIds.includes(req.requestorId);
       const isInTimeline = req.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
-      return isMyOwn || isAssigned || isTreasuryStage || isMyBranch || isInTimeline;
+      return isMyOwn || isAssigned || isTreasuryStage || isInTerritory || isInTimeline;
     }
 
     return req.requestorId === currentUser.id || req.requestorName === currentUser.fullName;
@@ -104,28 +122,41 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
     const matchesCostCenter = selectedCostCenterId === 'all' || req.costCenterId === selectedCostCenterId;
     const matchesStatus = selectedStatus === 'all' || req.status === selectedStatus;
     const matchesType = selectedType === 'all' || req.requestType === selectedType;
+    const matchesSourceUnit = selectedSourceUnit === 'all' || req.sourceType === selectedSourceUnit;
 
-    return matchesSearch && matchesCompany && matchesCostCenter && matchesStatus && matchesType;
+    return matchesSearch && matchesCompany && matchesCostCenter && matchesStatus && matchesType && matchesSourceUnit;
   });
+
+  // Treasury-safe minimal view of support-refund-sourced requests — used only for the
+  // 'support' section when the current user is treasury_executor (never the raw SupportCase).
+  const treasurySourceRequests: TreasuryPaymentSourceView[] = useMemo(
+    () => getTreasuryVisibleSourceRequests(accessibleRequests).map(toTreasuryPaymentSourceView),
+    [accessibleRequests]
+  );
 
   // -------------------------------------------------------------
   // 2. FILTERING SUPPORT CASES
   // -------------------------------------------------------------
+  // Treasury never receives the full SupportCase (complaint text, call history, contact
+  // details, satisfaction, internal notes) — see the minimal treasurySourceRequests view
+  // built above instead. Everyone else sees only their own territory (own record by
+  // default, or their computed subordinate territory if their role scope grants it) —
+  // being in the same branch no longer implies visibility on its own.
   const accessibleSupportCases = supportCases.filter(c => {
-    if (!currentUser || isAdmin || currentUser.role === 'treasury_executor') return true;
-    if (currentUser.role === 'support') return true;
-    const isMyBranch = currentUser.allowedCostCenterIds?.includes(c.costCenterId) || c.costCenterId === currentUser.costCenterId;
-    return isMyBranch;
+    if (!currentUser) return false;
+    if (isAdmin) return true;
+    if (isTreasury) return false;
+    return visibleUserIds.includes(c.operatorId);
   });
 
   const filteredSupportCases = accessibleSupportCases.filter(c => {
     const q = searchQuery.toLowerCase();
     return (
       c.trackingCode.toLowerCase().includes(q) ||
-      c.customerName.toLowerCase().includes(q) ||
+      c.customerFullName.toLowerCase().includes(q) ||
       c.customerPhone.includes(q) ||
       (c.complaintDetail && c.complaintDetail.toLowerCase().includes(q)) ||
-      (c.reasonTitle && c.reasonTitle.toLowerCase().includes(q))
+      (c.reasonForContact && c.reasonForContact.toLowerCase().includes(q))
     );
   });
 
@@ -134,7 +165,7 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
   // -------------------------------------------------------------
   const accessibleLetters = letters.filter(l => {
     if (!currentUser || isAdmin) return true;
-    const isMyOwn = l.creatorId === currentUser.id || l.toUserId === currentUser.id;
+    const isMyOwn = l.fromUserId === currentUser.id || l.toUserId === currentUser.id;
     return isMyOwn;
   });
 
@@ -143,7 +174,7 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
     return (
       l.letterNumber.toLowerCase().includes(q) ||
       l.subject.toLowerCase().includes(q) ||
-      l.creatorName.toLowerCase().includes(q) ||
+      l.fromUserName.toLowerCase().includes(q) ||
       l.body.toLowerCase().includes(q)
     );
   });
@@ -177,33 +208,46 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
         'توضیحات': req.description
       }));
     } else if (activeSection === 'support') {
-      sheetName = 'پرونده‌های_پشتیبانی';
-      fileName = `بایگانی_شکایات_پشتیبانی_${Date.now()}.xlsx`;
-      excelData = filteredSupportCases.map(c => ({
-        'کد پیگیری پرونده': c.trackingCode,
-        'نام مشتری': c.customerName,
-        'شماره تماس': c.customerPhone,
-        'استان / شهر': `${c.province || ''} - ${c.city || ''}`,
-        'علت مراجعه': c.reasonTitle,
-        'مرجع شکایت': c.complaintReference || '-',
-        'مسدودی حساب شرکت با شکایت مشتری': c.accountBlocked ? 'بله' : 'خیر',
-        'حساب‌های مسدود شده شرکت': (c.blockedAccountCompanyNames || []).join(' ، '),
-        'وضعیت شکایت': c.complaintStatus,
-        'اپراتور ثبت‌کننده': c.createdByName,
-        'تاریخ ثبت': c.createdAt,
-        'شرح کامل شکایت': c.complaintDetail || '-'
-      }));
+      if (isTreasury) {
+        sheetName = 'مرجع_پرداخت_خزانه';
+        fileName = `بایگانی_مرجع_پرداخت_خزانه_${Date.now()}.xlsx`;
+        excelData = treasurySourceRequests.map(v => ({
+          'کد پیگیری درخواست': v.requestTrackingCode,
+          'مرجع صادرکننده': v.issuingUnitName,
+          'کد مرجع منبع': v.sourceReferenceCode,
+          'ذینفع': v.beneficiaryName,
+          'مبلغ (ریال)': v.amount,
+          'وضعیت': v.status,
+          'تاریخ واریز': v.paidAt || '-'
+        }));
+      } else {
+        sheetName = 'پرونده‌های_پشتیبانی';
+        fileName = `بایگانی_شکایات_پشتیبانی_${Date.now()}.xlsx`;
+        excelData = filteredSupportCases.map(c => ({
+          'کد پیگیری پرونده': c.trackingCode,
+          'نام مشتری': c.customerFullName,
+          'شماره تماس': c.customerPhone,
+          'استان / شهر': `${c.province || ''} - ${c.city || ''}`,
+          'علت مراجعه': c.reasonForContact,
+          'مرجع شکایت': c.complaintReference || '-',
+          'مسدودی حساب شرکت با شکایت مشتری': c.accountBlocked ? 'بله' : 'خیر',
+          'حساب‌های مسدود شده شرکت': (c.blockedAccountCompanyNames || []).join(' ، '),
+          'وضعیت شکایت': c.complaintStatus,
+          'اپراتور ثبت‌کننده': c.operatorName,
+          'تاریخ ثبت': c.createdAt,
+          'شرح کامل شکایت': c.complaintDetail || '-'
+        }));
+      }
     } else if (activeSection === 'letters') {
       sheetName = 'مکاتبات_اداری';
       fileName = `بایگانی_مکاتبات_و_نامه‌ها_${Date.now()}.xlsx`;
       excelData = filteredLetters.map(l => ({
         'شماره نامه': l.letterNumber,
         'عنوان / موضوع': l.subject,
-        'واحد فرستنده': l.fromUnit,
-        'امضاکننده / نویسنده': l.creatorName,
-        'واحد/شخص گیرنده': l.toUnit,
-        'طبقه بندی': l.classification,
-        'تاریخ ایجاد': l.createdAt,
+        'سمت فرستنده': l.fromRoleTitle,
+        'فرستنده': l.fromUserName,
+        'واحد/شخص گیرنده': l.toUserName || l.toUnit,
+        'تاریخ ایجاد': l.date,
         'متن نامه': l.body
       }));
     } else if (activeSection === 'vendors') {
@@ -211,10 +255,10 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
       fileName = `لیست_تامین_کنندگان_${Date.now()}.xlsx`;
       excelData = vendors.map(v => ({
         'نام فروشنده / شرکت': v.name,
-        'دسته‌بندی': v.categoryName || '-',
+        'دسته‌بندی': v.category || '-',
         'شماره تماس': v.phone || '-',
         'کد ملی / شناسه ملی': v.nationalCode || '-',
-        'شماره حساب / شبا': v.bankAccount || '-',
+        'شماره حساب / شبا': v.shebaNumber || v.accountNumber || v.cardNumber || '-',
         'نام بانک': v.bankName || '-'
       }));
     } else if (activeSection === 'cost_centers') {
@@ -223,9 +267,9 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
       excelData = availableCostCenters.map(cc => ({
         'کد مرکز هزینه': cc.code,
         'نام شعبه / مرکز هزینه': cc.name,
-        'سقف اعتباری تنخواه (ریال)': cc.pettyCashLimit,
-        'نام سرپرست / مدیر شعبه': cc.managerName,
-        'آدرس': cc.address || '-'
+        'بودجه ماهانه مصوب (ریال)': cc.monthlyBudget ?? '-',
+        'دوره بودجه': cc.budgetPeriod || '-',
+        'توضیحات': cc.description || '-'
       }));
     }
 
@@ -301,7 +345,7 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
           }`}
         >
           <LifeBuoy className="w-4 h-4" />
-          <span>شکایات و پشتیبانی ({filteredSupportCases.length})</span>
+          <span>شکایات و پشتیبانی ({isTreasury ? treasurySourceRequests.length : filteredSupportCases.length})</span>
         </button>
 
         <button
@@ -396,10 +440,27 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                 >
                   <option value="all">همه وضعیت‌ها</option>
                   <option value="pending_approval">در انتظار تایید</option>
+                  <option value="approved_awaiting_payment_assignment">آماده ارجاع پرداخت</option>
                   <option value="approved_pending_payment">تایید شده - در انتظار واریز</option>
+                  <option value="emergency_pending_payment">پرداخت فوری - در انتظار واریز</option>
                   <option value="paid">واریز شده (دارای فیش)</option>
                   <option value="returned">عودت داده شده</option>
+                  <option value="cancelled">لغو شده</option>
                   <option value="rejected">رد شده</option>
+                </select>
+              </div>
+
+              {/* Source Unit (Issuing Reference) Filter */}
+              <div>
+                <select
+                  value={selectedSourceUnit}
+                  onChange={(e) => setSelectedSourceUnit(e.target.value)}
+                  className="w-full bg-slate-800 text-white text-xs rounded-xl px-2 py-2.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="all">همه مراجع صادرکننده</option>
+                  <option value="support_refund">عودت وجه (خدمات پس از فروش)</option>
+                  <option value="sales_invoice">فاکتور فروش</option>
+                  <option value="manual">ثبت دستی</option>
                 </select>
               </div>
             </>
@@ -493,8 +554,43 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
           </div>
         )}
 
-        {/* 2. Support Cases Table */}
-        {activeSection === 'support' && (
+        {/* 2a. Treasury-safe minimal payment-source view — never the raw SupportCase */}
+        {activeSection === 'support' && isTreasury && (
+          <div className="overflow-x-auto">
+            <div className="p-3 text-[11px] text-amber-300 bg-amber-500/10 border-b border-amber-500/20">
+              خزانه‌داری فقط به اطلاعات پرداختی مرجع عودت وجه دسترسی دارد؛ شرح شکایت، سوابق تماس و اطلاعات کامل پرونده پشتیبانی برای این نقش نمایش داده نمی‌شود.
+            </div>
+            <table className="w-full text-right text-xs text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
+                <tr>
+                  <th className="p-3.5">کد پیگیری درخواست</th>
+                  <th className="p-3.5">مرجع صادرکننده</th>
+                  <th className="p-3.5">کد مرجع منبع</th>
+                  <th className="p-3.5">ذینفع</th>
+                  <th className="p-3.5">مبلغ (ریال)</th>
+                  <th className="p-3.5">وضعیت</th>
+                  <th className="p-3.5">تاریخ واریز</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {treasurySourceRequests.map((v) => (
+                  <tr key={v.requestTrackingCode} className="hover:bg-slate-800/50 transition">
+                    <td className="p-3.5 font-mono font-bold text-amber-400">{v.requestTrackingCode}</td>
+                    <td className="p-3.5 text-slate-200">{v.issuingUnitName}</td>
+                    <td className="p-3.5 font-mono text-slate-300">{v.sourceReferenceCode}</td>
+                    <td className="p-3.5 font-bold text-white">{v.beneficiaryName}</td>
+                    <td className="p-3.5 font-mono font-bold text-emerald-400">{formatRial(v.amount)}</td>
+                    <td className="p-3.5 text-slate-300">{v.status}</td>
+                    <td className="p-3.5 text-slate-400 text-[10px]">{v.paidAt || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 2b. Support Cases Table (non-treasury roles only) */}
+        {activeSection === 'support' && !isTreasury && (
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs text-slate-300">
               <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
@@ -512,9 +608,9 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                 {filteredSupportCases.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-800/50 transition">
                     <td className="p-3.5 font-mono font-bold text-amber-400">{c.trackingCode}</td>
-                    <td className="p-3.5 font-bold text-white">{c.customerName}</td>
+                    <td className="p-3.5 font-bold text-white">{c.customerFullName}</td>
                     <td className="p-3.5 font-mono text-slate-300">{c.customerPhone}</td>
-                    <td className="p-3.5 text-slate-200">{c.reasonTitle}</td>
+                    <td className="p-3.5 text-slate-200">{c.reasonForContact}</td>
                     <td className="p-3.5">
                       {c.accountBlocked ? (
                         <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px] border border-rose-500/30">
@@ -524,7 +620,7 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                         <span className="text-slate-500 text-[10px]">خیر</span>
                       )}
                     </td>
-                    <td className="p-3.5 text-slate-300">{c.createdByName}</td>
+                    <td className="p-3.5 text-slate-300">{c.operatorName}</td>
                     <td className="p-3.5 text-slate-400 text-[10px]">{c.createdAt}</td>
                   </tr>
                 ))}
@@ -551,8 +647,8 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                   <tr key={l.id} className="hover:bg-slate-800/50 transition">
                     <td className="p-3.5 font-mono font-bold text-indigo-400">{l.letterNumber}</td>
                     <td className="p-3.5 font-bold text-white">{l.subject}</td>
-                    <td className="p-3.5 text-slate-200">{l.creatorName}</td>
-                    <td className="p-3.5 text-amber-300">{l.toUnit}</td>
+                    <td className="p-3.5 text-slate-200">{l.fromUserName}</td>
+                    <td className="p-3.5 text-amber-300">{l.toUserName || l.toUnit}</td>
                     <td className="p-3.5 text-slate-400 text-[10px]">{l.createdAt}</td>
                   </tr>
                 ))}
@@ -578,9 +674,9 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                 {vendors.map((v) => (
                   <tr key={v.id} className="hover:bg-slate-800/50 transition">
                     <td className="p-3.5 font-bold text-white">{v.name}</td>
-                    <td className="p-3.5 text-amber-300">{v.categoryName || '-'}</td>
+                    <td className="p-3.5 text-amber-300">{v.category || '-'}</td>
                     <td className="p-3.5 font-mono text-slate-300">{v.phone || '-'}</td>
-                    <td className="p-3.5 font-mono text-emerald-400">{v.bankAccount || '-'}</td>
+                    <td className="p-3.5 font-mono text-emerald-400">{v.shebaNumber || v.accountNumber || v.cardNumber || '-'}</td>
                     <td className="p-3.5 text-slate-400">{v.bankName || '-'}</td>
                   </tr>
                 ))}
@@ -597,8 +693,8 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                 <tr>
                   <th className="p-3.5">کد مرکز هزینه</th>
                   <th className="p-3.5">نام شعبه</th>
-                  <th className="p-3.5">سقف تنخواه</th>
-                  <th className="p-3.5">سرپرست شعبه</th>
+                  <th className="p-3.5">بودجه ماهانه مصوب</th>
+                  <th className="p-3.5">دوره بودجه</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
@@ -606,8 +702,8 @@ export const ArchiveView: React.FC<ArchiveViewProps> = ({
                   <tr key={cc.id} className="hover:bg-slate-800/50 transition">
                     <td className="p-3.5 font-mono font-bold text-indigo-400">{cc.code}</td>
                     <td className="p-3.5 font-bold text-white">{cc.name}</td>
-                    <td className="p-3.5 font-mono font-bold text-emerald-400">{formatRial(cc.pettyCashLimit)}</td>
-                    <td className="p-3.5 text-slate-200">{cc.managerName}</td>
+                    <td className="p-3.5 font-mono font-bold text-emerald-400">{cc.monthlyBudget != null ? formatRial(cc.monthlyBudget) : '-'}</td>
+                    <td className="p-3.5 text-slate-200">{cc.budgetPeriod || '-'}</td>
                   </tr>
                 ))}
               </tbody>

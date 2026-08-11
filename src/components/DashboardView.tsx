@@ -1,19 +1,40 @@
 import React from 'react';
-import { PaymentRequest, User, Company, CostCenter } from '../types';
+import {
+  PaymentRequest, User, Company, CostCenter, SystemRole, SystemPermission, Lead,
+  SalesInvoice, CoordinationCase, SalesFinancialReviewCase, SalesOverpaymentCase
+} from '../types';
 import { formatRial } from '../utils/numberToWords';
+import { formatPortalMoney } from '../utils/operationalFormat';
 import { storage } from '../utils/storage';
 import { TAB_DEFINITIONS } from './TabBar';
+import { SectionCard, StatusBadge, type StatusTone } from './ui/primitives';
 import {
   CreditCard, CheckCircle2, Clock, RefreshCw,
   Building, MapPin, PlusCircle, Archive, ArrowUpRight,
-  TrendingUp, Layers, Users, Sparkles, ShieldCheck
+  TrendingUp, Layers, Users, Sparkles, ShieldCheck, XCircle, Zap,
+  PhoneCall, FileSpreadsheet, Headset, BadgeCheck, AlertTriangle
 } from 'lucide-react';
+import {
+  getOwnedOpenLeads,
+  getVisibleCoordinationCases,
+  getVisibleSalesFinancialCases,
+  getVisibleSalesInvoices,
+  resolveDashboardDomain,
+  type DashboardDomain
+} from '../utils/dashboardProfile';
 
 interface DashboardViewProps {
   requests: PaymentRequest[];
   currentUser: User | null;
   companies: Company[];
   costCenters: CostCenter[];
+  roles: SystemRole[];
+  effectivePermissions: SystemPermission[] | null;
+  leads: Lead[];
+  salesInvoices: SalesInvoice[];
+  coordinationCases: CoordinationCase[];
+  financialCases: SalesFinancialReviewCase[];
+  overpaymentCases: SalesOverpaymentCase[];
   onOpenNewRequest: () => void;
   onNavigateTab: (tab: string) => void;
   onSelectRequest: (req: PaymentRequest) => void;
@@ -24,21 +45,46 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentUser,
   companies,
   costCenters,
+  roles,
+  effectivePermissions,
+  leads,
+  salesInvoices,
+  coordinationCases,
+  financialCases,
+  overpaymentCases,
   onOpenNewRequest,
   onNavigateTab,
   onSelectRequest
 }) => {
+  const dashboardDomain = resolveDashboardDomain(currentUser, roles, effectivePermissions);
+
+  if (dashboardDomain !== 'treasury') {
+    return (
+      <OperationalDashboard
+        domain={dashboardDomain}
+        currentUser={currentUser}
+        effectivePermissions={effectivePermissions}
+        leads={leads}
+        salesInvoices={salesInvoices}
+        coordinationCases={coordinationCases}
+        financialCases={financialCases}
+        overpaymentCases={overpaymentCases}
+        onNavigateTab={onNavigateTab}
+      />
+    );
+  }
+
   // Filter accessible requests according to user role
   const userAccessibleRequests = requests.filter(r => {
     if (!currentUser) return false;
     if (currentUser.role === 'admin') return true;
 
     if (currentUser.role === 'requestor' && !currentUser.isDualRole) {
-      return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
     }
 
     if (currentUser.role === 'approver' || currentUser.isDualRole) {
-      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
       const isAssigned = r.currentApproverId === currentUser.id;
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
       const isInTimeline = r.timeline?.some(t => t.actorId === currentUser.id || t.actorName === currentUser.fullName);
@@ -46,9 +92,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
 
     if (currentUser.role === 'treasury_executor') {
-      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName || r.createdById === currentUser.id;
+      const isMyOwn = r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
       const isAssigned = r.currentApproverId === currentUser.id;
-      const isTreasuryStage = ['approved_pending_payment', 'paid', 'completed'].includes(r.status);
+      const isTreasuryStage = ['approved_awaiting_payment_assignment', 'approved_pending_payment', 'emergency_pending_payment', 'paid', 'completed'].includes(r.status);
       const isMyBranch = currentUser.allowedCostCenterIds?.includes(r.costCenterId) || r.costCenterId === currentUser.costCenterId;
       return isMyOwn || isAssigned || isTreasuryStage || isMyBranch;
     }
@@ -56,10 +102,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return r.requestorId === currentUser.id || r.requestorName === currentUser.fullName;
   });
 
-  const pendingCount = userAccessibleRequests.filter(r => r.status === 'pending_approval' || r.status === 'approved_pending_payment').length;
+  const pendingCount = userAccessibleRequests.filter(r =>
+    r.status === 'pending_approval' || r.status === 'approved_awaiting_payment_assignment' ||
+    r.status === 'approved_pending_payment' || r.status === 'emergency_pending_payment'
+  ).length;
   const paidRequests = userAccessibleRequests.filter(r => r.status === 'paid');
   const totalPaidAmount = paidRequests.reduce((sum, r) => sum + r.amount, 0);
   const returnedCount = userAccessibleRequests.filter(r => r.status === 'returned').length;
+  const cancelledCount = userAccessibleRequests.filter(r => r.status === 'cancelled').length;
+  const emergencyPendingCount = userAccessibleRequests.filter(r => r.status === 'emergency_pending_payment').length;
 
   // "پرکاربردترین منوهای شما" widget data — read this user's per-tab open counts
   // (recorded by App.tsx's openTab -> storage.recordTabUsage) and rank them. Only tab
@@ -85,23 +136,85 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return true;
   });
 
+  const kpiCards: Array<{ key: string; label: string; icon: React.ElementType; tone: StatusTone; value: React.ReactNode; hint: string; onClick: () => void }> = [
+    {
+      key: 'pending',
+      label: 'در انتظار بررسی / واریز',
+      icon: Clock,
+      tone: 'warning',
+      value: <>{pendingCount} <span className="text-xs text-[var(--text-muted)] font-normal">درخواست</span></>,
+      hint: 'نیازمند تایید یا واریز خزانه‌داری',
+      onClick: () => onNavigateTab('approval_inbox')
+    },
+    {
+      key: 'paid',
+      label: 'مجموع واریزی‌های انجام شده',
+      icon: CheckCircle2,
+      tone: 'success',
+      value: <span className="text-lg font-mono truncate block">{formatRial(totalPaidAmount)}</span>,
+      hint: `${paidRequests.length} درخواست نهایی با فیش واریزی`,
+      onClick: () => onNavigateTab('archive')
+    },
+    {
+      key: 'returned',
+      label: 'نیازمند اصلاح (عودت شده)',
+      icon: RefreshCw,
+      tone: 'warning',
+      value: <>{returnedCount} <span className="text-xs text-[var(--text-muted)] font-normal">درخواست</span></>,
+      hint: 'علت ایراد در جزئیات ذکر شده است',
+      onClick: () => {
+        const canCreate = currentUser?.role === 'admin' || (currentUser?.canCreateRequests !== false);
+        onNavigateTab(canCreate ? 'my_requests' : 'approval_inbox');
+      }
+    },
+    {
+      key: 'cancelled',
+      label: 'لغوشده / پرداخت فوری',
+      icon: XCircle,
+      tone: 'danger',
+      value: (
+        <span className="flex items-center gap-2">
+          {cancelledCount}
+          <span className="text-xs text-[var(--text-muted)] font-normal">لغوشده</span>
+          {emergencyPendingCount > 0 && (
+            <span className="text-xs font-bold text-[var(--warning)] flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5" />
+              {emergencyPendingCount} فوری
+            </span>
+          )}
+        </span>
+      ),
+      hint: 'درخواست‌های لغوشده (بایگانی می‌مانند) و در انتظار پرداخت فوری',
+      onClick: () => onNavigateTab('archive')
+    },
+    {
+      key: 'companies',
+      label: 'مراکز هزینه و شرکت‌ها',
+      icon: Building,
+      tone: 'info',
+      value: '۶ شرکت | ۸ شعبه',
+      hint: 'tapra store، شرکت فروش و شعب',
+      onClick: () => onNavigateTab('workflow')
+    }
+  ];
+
   return (
     <div className="space-y-6 dir-rtl">
-      
-      {/* Welcome Hero Banner */}
-      <div className="p-6 sm:p-8 bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 border border-emerald-700/50 dark:border-slate-800 rounded-3xl shadow-xl relative overflow-hidden text-white">
+
+      {/* Welcome Hero Banner — یکی از معدود نقاط مجاز Gradient برند (بند ۸ مأموریت) */}
+      <div className="p-6 sm:p-8 bg-[var(--primary)] dark:bg-gradient-to-l dark:from-[var(--primary)] dark:to-[var(--primary-hover)] rounded-[14px] shadow-md relative overflow-hidden text-white">
         <div className="absolute top-0 left-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-emerald-100 text-xs font-bold border border-white/20 backdrop-blur-sm">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-white text-xs font-bold border border-white/20 backdrop-blur-sm">
+              <Sparkles className="w-3.5 h-3.5" />
               <span>سامانه یکپارچه خزانه‌داری tapra</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
               خوش آمدید، {currentUser?.fullName || 'مدیر گرامی'}
             </h2>
-            <p className="text-xs sm:text-sm text-emerald-100 dark:text-slate-200 leading-relaxed font-medium">
+            <p className="text-xs sm:text-sm text-white/90 leading-relaxed font-medium">
               مدیریت و تایید درخواست‌های پرداخت شعبه‌های فروش (سعادت آباد، پونک، مخبری، آزادی، فخار مقدم)، شرکت‌های هلدینگ و بایگانی فیش‌های واریزی خزانه‌داری.
             </p>
           </div>
@@ -110,119 +223,62 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        
-        {/* Pending Card */}
-        <div 
-          onClick={() => onNavigateTab('approval_inbox')}
-          className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">در انتظار بررسی / واریز</span>
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-              <Clock className="w-5 h-5" />
+        {kpiCards.map((card) => (
+          <div
+            key={card.key}
+            onClick={card.onClick}
+            className="p-5 bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)] rounded-[14px] shadow-sm transition cursor-pointer"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-[var(--text-secondary)]">{card.label}</span>
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{
+                  backgroundColor: `color-mix(in srgb, var(--${card.tone}) 15%, transparent)`,
+                  color: `var(--${card.tone})`
+                }}
+              >
+                <card.icon className="w-5 h-5" />
+              </div>
             </div>
+            <div className="text-2xl font-black text-[var(--text-primary)]">{card.value}</div>
+            <p className="text-[11px] text-[var(--text-muted)] mt-2">{card.hint}</p>
           </div>
-          <div className="text-2xl font-black text-amber-600 dark:text-amber-300">{pendingCount} <span className="text-xs text-slate-400 font-normal">درخواست</span></div>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">نیازمند تایید یا واریز خزانه‌داری</p>
-        </div>
-
-        {/* Total Paid Amount */}
-        <div 
-          onClick={() => onNavigateTab('archive')}
-          className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">مجموع واریزی‌های انجام شده</span>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-lg font-mono font-black text-emerald-600 dark:text-emerald-400 truncate">{formatRial(totalPaidAmount)}</div>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">{paidRequests.length} درخواست نهایی با فیش واریزی</p>
-        </div>
-
-        {/* Returned Count */}
-        <div 
-          onClick={() => {
-            const canCreate = currentUser?.role === 'admin' || (currentUser?.canCreateRequests !== false);
-            if (canCreate) {
-              onNavigateTab('my_requests');
-            } else {
-              onNavigateTab('approval_inbox');
-            }
-          }}
-          className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-orange-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">نیازمند اصلاح (عودت شده)</span>
-            <div className="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold">
-              <RefreshCw className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-orange-600 dark:text-orange-300">{returnedCount} <span className="text-xs text-slate-400 font-normal">درخواست</span></div>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">علت ایراد در جزئیات ذکر شده است</p>
-        </div>
-
-        {/* Companies Count */}
-        <div 
-          onClick={() => onNavigateTab('workflow')}
-          className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 rounded-2xl shadow-sm transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">مراکز هزینه و شرکت‌ها</span>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-              <Building className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-slate-800 dark:text-indigo-300">۶ شرکت | ۸ شعبه</div>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">tapra store، شرکت فروش و شعب</p>
-        </div>
-
+        ))}
       </div>
 
       {/* Most-Used Menus Widget (per-user tab open counts) */}
       {topUsedTabs.length >= 3 && (
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm space-y-3">
-          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>پرکاربردترین منوهای شما</span>
-          </h3>
+        <SectionCard title="پرکاربردترین منوهای شما">
           <div className="flex flex-wrap gap-2">
             {topUsedTabs.map(({ tabId, label, icon: Icon }) => (
               <button
                 key={tabId}
                 onClick={() => onNavigateTab(tabId)}
-                className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-950/70 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/40 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-300 transition cursor-pointer"
+                className="flex items-center gap-2 px-3 py-2 bg-[var(--surface-muted)] hover:bg-[var(--primary-soft)] border border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--primary)] transition cursor-pointer"
               >
-                <Icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{label}</span>
               </button>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {/* Cost Centers Breakdown Cards with Budget vs. Actual Variance */}
-      <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-2">
-          <div className="space-y-1">
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-emerald-500" />
-              <span>کنترل و انحراف بودجه شعب (Budget vs. Actual Variance)</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              مقایسه بودجه مصوب ماهانه با مصارف واقعی و واریز شده هر شعبه (دوره جاری)
-            </p>
-          </div>
+      <SectionCard
+        title="کنترل و انحراف بودجه شعب (Budget vs. Actual Variance)"
+        description="مقایسه بودجه مصوب ماهانه با مصارف واقعی و واریز شده هر شعبه (دوره جاری)"
+        actions={
           <button
             onClick={() => onNavigateTab('cost_centers')}
-            className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+            className="text-xs text-[var(--primary)] font-bold hover:underline flex items-center gap-1 cursor-pointer"
           >
             <span>مدیریت سقف بودجه شعب</span>
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
-        </div>
-
+        }
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {displayedCostCenters.map((cc) => {
             const ccApprovedRequests = requests.filter(r => r.costCenterId === cc.id && (r.status === 'paid' || r.status === 'approved_pending_payment'));
@@ -232,44 +288,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             const isOverBudget = usagePercent >= 100;
             const isWarningBudget = usagePercent >= 80 && usagePercent < 100;
 
-            let barColor = 'bg-emerald-500';
-            let badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-            if (isOverBudget) {
-              barColor = 'bg-rose-500';
-              badgeBg = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
-            } else if (isWarningBudget) {
-              barColor = 'bg-amber-500';
-              badgeBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-            }
+            const tone: StatusTone = isOverBudget ? 'danger' : isWarningBudget ? 'warning' : 'success';
+            const barColorVar = isOverBudget ? 'var(--danger)' : isWarningBudget ? 'var(--warning)' : 'var(--success)';
 
             return (
-              <div key={cc.id} className="p-4 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 rounded-2xl space-y-3">
+              <div key={cc.id} className="p-4 bg-[var(--surface-muted)] border border-[var(--border)] rounded-[12px] space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="text-xs font-black text-[var(--text-primary)] flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[var(--primary)]" />
                     {cc.name}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${badgeBg}`}>
-                    {usagePercent}% مصرف
-                  </span>
+                  <StatusBadge label={`${usagePercent}% مصرف`} tone={tone} />
                 </div>
 
                 {/* Progress Bar */}
                 <div className="space-y-1">
-                  <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full ${barColor} transition-all duration-500 rounded-full`}
-                      style={{ width: `${Math.min(usagePercent, 100)}%` }}
+                  <div className="w-full bg-[var(--border)] h-2 rounded-full overflow-hidden">
+                    <div
+                      className="h-full transition-all duration-500 rounded-full"
+                      style={{ width: `${Math.min(usagePercent, 100)}%`, backgroundColor: barColorVar }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center justify-between text-[11px] font-mono font-bold text-[var(--text-muted)]">
                     <span>مصرف: {formatRial(usedAmount)}</span>
                     <span>بودجه: {formatRial(budget)}</span>
                   </div>
                 </div>
 
                 {isOverBudget && (
-                  <div className="text-[10px] font-bold text-rose-500 flex items-center gap-1 pt-1 border-t border-slate-200 dark:border-slate-800/60">
+                  <div className="text-[11px] font-bold text-[var(--danger)] flex items-center gap-1 pt-1 border-t border-[var(--border)]">
                     <span>⚠️ هشدار: عبور از سقف بودجه مصوب شعبه!</span>
                   </div>
                 )}
@@ -277,8 +324,167 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             );
           })}
         </div>
-      </div>
+      </SectionCard>
 
+    </div>
+  );
+};
+
+interface OperationalDashboardProps {
+  domain: Exclude<DashboardDomain, 'treasury'>;
+  currentUser: User | null;
+  effectivePermissions: SystemPermission[] | null;
+  leads: Lead[];
+  salesInvoices: SalesInvoice[];
+  coordinationCases: CoordinationCase[];
+  financialCases: SalesFinancialReviewCase[];
+  overpaymentCases: SalesOverpaymentCase[];
+  onNavigateTab: (tab: string) => void;
+}
+
+interface OperationalKpi {
+  key: string;
+  label: string;
+  value: string;
+  hint: string;
+  icon: React.ElementType;
+  tone: StatusTone;
+  tabId?: string;
+}
+
+const DOMAIN_COPY: Record<Exclude<DashboardDomain, 'treasury'>, { badge: string; title: string; description: string }> = {
+  sales: {
+    badge: 'میز کار فروش',
+    title: 'خلاصه عملکرد فروش',
+    description: 'Leadها، پیگیری‌ها و فاکتورهای قابل مشاهده در قلمرو واقعی شما'
+  },
+  registration: {
+    badge: 'واحد ثبت',
+    title: 'کارتابل ثبت فاکتور',
+    description: 'فاکتورهای در انتظار بررسی ثبت و موارد عودت‌شده برای اصلاح'
+  },
+  coordination: {
+    badge: 'واحد هماهنگی',
+    title: 'خلاصه هماهنگی فاکتور',
+    description: 'پرونده‌های تخصیص‌یافته، تماس مجدد و موارد نیازمند تصمیم'
+  },
+  sales_finance: {
+    badge: 'تأیید مالی فروش',
+    title: 'خلاصه بررسی واریزی‌های فروش',
+    description: 'فقط پرونده‌ها و واریزی‌های فروش در قلمرو تأیید مالی شما'
+  },
+  generic: {
+    badge: 'میز کار شخصی',
+    title: 'داشبورد فعالیت‌ها',
+    description: 'برای این نقش هنوز داشبورد تخصصی تعریف نشده است؛ از منوی مجاز خود استفاده کنید.'
+  }
+};
+
+const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
+  domain,
+  currentUser,
+  effectivePermissions,
+  leads,
+  salesInvoices,
+  coordinationCases,
+  financialCases,
+  overpaymentCases,
+  onNavigateTab
+}) => {
+  const copy = DOMAIN_COPY[domain];
+  const visibleInvoices = getVisibleSalesInvoices(salesInvoices, currentUser, effectivePermissions);
+  const ownedLeads = currentUser ? getOwnedOpenLeads(leads, currentUser.id) : [];
+  const visibleCoordination = getVisibleCoordinationCases(coordinationCases, currentUser, effectivePermissions);
+  const visibleFinancial = getVisibleSalesFinancialCases(financialCases, currentUser, effectivePermissions);
+  const hasPermission = (permission: SystemPermission) =>
+    effectivePermissions === null || !!effectivePermissions?.includes(permission);
+
+  const activeInvoiceStatuses = new Set([
+    'draft', 'awaiting_registration_review', 'awaiting_supervisor_approval', 'registered',
+    'partial_payment', 'awaiting_coordination_manager', 'coordination_assigned',
+    'coordination_in_progress', 'coordination_callback_scheduled', 'awaiting_financial_confirmation',
+    'financial_suspicious_hold', 'returned_for_correction', 'returned_to_salesperson'
+  ]);
+  const confirmedStatuses = new Set(['financial_confirmed', 'fulfillment_in_progress', 'completed']);
+
+  let kpis: OperationalKpi[] = [];
+  if (domain === 'sales') {
+    const callbackCount = ownedLeads.filter((lead) => ['callback_scheduled', 'overdue'].includes(lead.status)).length;
+    const openInvoices = visibleInvoices.filter((invoice) => activeInvoiceStatuses.has(invoice.status));
+    const confirmedInvoices = visibleInvoices.filter((invoice) => confirmedStatuses.has(invoice.status));
+    kpis = [
+      { key: 'leads', label: 'Lead باز من', value: String(ownedLeads.length), hint: 'شماره‌های نیازمند اقدام شما', icon: PhoneCall, tone: 'info', tabId: 'my_sales_queue' },
+      { key: 'callbacks', label: 'تماس مجدد / عقب‌افتاده', value: String(callbackCount), hint: 'پیگیری‌های زمان‌دار فروش', icon: Clock, tone: callbackCount ? 'warning' : 'success', tabId: 'my_sales_queue' },
+      { key: 'invoices', label: 'فاکتور باز قابل مشاهده', value: String(openInvoices.length), hint: 'در قلمرو شخصی یا زنجیره فروش شما', icon: FileSpreadsheet, tone: 'info', tabId: 'sales_invoices' },
+      { key: 'sales', label: 'فروش تأییدشده', value: formatPortalMoney(confirmedInvoices.reduce((sum, item) => sum + item.finalAmount, 0)), hint: `${confirmedInvoices.length} فاکتور تأیید مالی‌شده`, icon: TrendingUp, tone: 'success', tabId: 'sales_invoices' }
+    ];
+  } else if (domain === 'registration') {
+    const registrationInvoices = salesInvoices.filter((invoice) => invoice.registeredByUserId === currentUser?.id);
+    kpis = [
+      { key: 'open', label: 'باز برای تکمیل', value: String(registrationInvoices.filter((item) => ['draft', 'awaiting_registration_review'].includes(item.status)).length), hint: 'پرداخت/اطلاعات ناقص یا رکورد قدیمی', icon: Clock, tone: 'warning', tabId: 'sales_invoices' },
+      { key: 'supervisor', label: 'ارسال‌شده به سرپرست', value: String(registrationInvoices.filter((item) => item.status === 'awaiting_supervisor_approval').length), hint: 'بدون Gate میانی واحد ثبت', icon: FileSpreadsheet, tone: 'info', tabId: 'sales_invoices' },
+      { key: 'returned', label: 'عودت برای اصلاح', value: String(registrationInvoices.filter((item) => ['returned_for_correction', 'returned_to_salesperson'].includes(item.status)).length), hint: 'نیازمند توضیح و اصلاح نسخه جدید', icon: RefreshCw, tone: 'warning', tabId: 'sales_invoices' },
+      { key: 'submitted', label: 'ثبت‌شده توسط من', value: String(salesInvoices.filter((item) => item.registeredByUserId === currentUser?.id).length), hint: 'تاریخچه ثبت نیابتی شما', icon: CheckCircle2, tone: 'success', tabId: 'sales_invoices' }
+    ];
+  } else if (domain === 'coordination') {
+    const active = visibleCoordination.filter((item) => item.status !== 'closed');
+    kpis = [
+      { key: 'pending', label: 'در انتظار تخصیص', value: String(active.filter((item) => item.status === 'pending_assignment').length), hint: 'بسته به روش توزیع مدیر', icon: Users, tone: 'warning', tabId: 'coordination_inbox' },
+      { key: 'working', label: 'تخصیص‌یافته / در حال کار', value: String(active.filter((item) => ['assigned', 'in_progress'].includes(item.status)).length), hint: 'پرونده‌های فعال قابل مشاهده', icon: Headset, tone: 'info', tabId: 'coordination_inbox' },
+      { key: 'callback', label: 'تماس مجدد', value: String(active.filter((item) => item.status === 'callback_scheduled').length), hint: 'پیگیری زمان‌دار مشتری', icon: Clock, tone: 'warning', tabId: 'coordination_inbox' },
+      { key: 'exception', label: 'نیازمند تصمیم مدیر', value: String(active.filter((item) => item.status === 'exception').length), hint: 'مغایرت یا استثنای هماهنگی', icon: AlertTriangle, tone: 'danger', tabId: 'coordination_inbox' }
+    ];
+  } else if (domain === 'sales_finance') {
+    const active = visibleFinancial.filter((item) => item.status !== 'closed');
+    const canManage = hasPermission('manage_sales_financial_distribution');
+    kpis = [
+      { key: 'pending', label: 'در انتظار تخصیص', value: String(active.filter((item) => item.status === 'pending_assignment').length), hint: 'پرونده‌های مالی فروش', icon: Users, tone: 'warning', tabId: 'sales_financial_confirmation' },
+      { key: 'working', label: 'در حال بررسی', value: String(active.filter((item) => ['assigned', 'in_progress'].includes(item.status)).length), hint: 'تخصیص‌یافته یا Claim‌شده', icon: BadgeCheck, tone: 'info', tabId: 'sales_financial_confirmation' },
+      { key: 'suspicious', label: 'توقف مشکوک', value: String(active.filter((item) => item.status === 'suspicious_hold').length), hint: 'تا تعیین تکلیف مدیر متوقف است', icon: ShieldCheck, tone: 'danger', tabId: 'sales_financial_confirmation' },
+      { key: 'overpayment', label: canManage ? 'اضافه‌واریزی باز' : 'عودت برای اصلاح', value: String(canManage ? overpaymentCases.filter((item) => item.status !== 'closed').length : active.filter((item) => item.status === 'returned_for_correction').length), hint: canManage ? 'فقط در سطح مدیر تأیید مالی' : 'پرونده‌های ارجاع‌شده به مبدأ', icon: canManage ? PlusCircle : RefreshCw, tone: 'warning', tabId: 'sales_financial_confirmation' }
+    ];
+  }
+
+  return (
+    <div className="space-y-5 sm:space-y-6 dir-rtl">
+      <section className="relative overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm sm:p-7">
+        <div className="pointer-events-none absolute -left-12 -top-16 h-48 w-48 rounded-full bg-[var(--primary-soft)] blur-3xl" />
+        <div className="relative space-y-2">
+          <StatusBadge label={copy.badge} tone="info" />
+          <h2 className="text-xl font-black text-[var(--text-primary)] sm:text-2xl">
+            {copy.title} — {currentUser?.fullName || 'کاربر'}
+          </h2>
+          <p className="max-w-3xl text-sm leading-7 text-[var(--text-secondary)]">{copy.description}</p>
+        </div>
+      </section>
+
+      {kpis.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {kpis.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => card.tabId && onNavigateTab(card.tabId)}
+              className="min-h-[132px] rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 text-right shadow-sm transition hover:border-[var(--primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-[var(--text-secondary)]">{card.label}</span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-[var(--primary)]">
+                  <card.icon className="h-5 w-5" />
+                </span>
+              </div>
+              <div className="break-words text-xl font-black text-[var(--text-primary)]">{card.value}</div>
+              <p className="mt-2 text-[11px] leading-5 text-[var(--text-muted)]">{card.hint}</p>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <SectionCard title="داشبورد تخصصی این نقش">
+          <div className="rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] p-6 text-center text-sm text-[var(--text-secondary)]">
+            اطلاعات خزانه‌داری و فروش برای این نقش نمایش داده نمی‌شود. فقط منوهایی که مجوز آن‌ها را دارید در دسترس هستند.
+          </div>
+        </SectionCard>
+      )}
     </div>
   );
 };

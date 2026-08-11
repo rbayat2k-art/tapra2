@@ -11,6 +11,26 @@
     --card-bg: #ffffff;
     --card-border: #e2e8f0;
     --accent-emerald: #059669;
+
+    /* Design tokens (مأموریت بازطراحی UI Foundation) — نسخهٔ اولیهٔ حداقلی برای Sidebar/TabBar
+       جدید؛ مجموعهٔ کامل (surface-elevated/info/warning/... + حذف !importantهای زیر) در
+       مرحلهٔ ۲ همین مأموریت تکمیل می‌شود. */
+    --canvas: #f1f5f9;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-muted: #f1f5f9;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text-secondary: #334155;
+    --primary: #059669;
+    --primary-hover: #047857;
+    --primary-soft: #ecfdf5;
+    --focus-ring: #059669;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #e11d48;
+    --danger-soft: #fff1f2;
+    --info: #4f46e5;
   }
 
   .dark {
@@ -20,7 +40,33 @@
     --card-bg: #0f172a;
     --card-border: #1e293b;
     --accent-emerald: #10b981;
+
+    --canvas: #020617;
+    --surface: #0f172a;
+    --surface-elevated: #1e293b;
+    --surface-muted: rgba(30, 41, 59, 0.6);
+    --border: #1e293b;
+    --border-strong: #334155;
+    --text-secondary: #cbd5e1;
+    --primary: #10b981;
+    --primary-hover: #059669;
+    --primary-soft: rgba(16, 185, 129, 0.15);
+    --focus-ring: #10b981;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #f43f5e;
+    --danger-soft: rgba(244, 63, 94, 0.15);
+    --info: #6366f1;
   }
+
+  /* Accent override (بند ۸ مأموریت) — StyleSettingsView از data-accent روی <html> استفاده
+     می‌کند تا --primary/--primary-hover/--primary-soft/--focus-ring واقعاً تغییر کنند. */
+  :root[data-accent="indigo"] { --primary: #4f46e5; --primary-hover: #4338ca; --primary-soft: #eef2ff; --focus-ring: #4f46e5; }
+  .dark[data-accent="indigo"] { --primary: #6366f1; --primary-hover: #4f46e5; --primary-soft: rgba(99, 102, 241, 0.18); --focus-ring: #6366f1; }
+  :root[data-accent="rose"] { --primary: #e11d48; --primary-hover: #be123c; --primary-soft: #fff1f2; --focus-ring: #e11d48; }
+  .dark[data-accent="rose"] { --primary: #f43f5e; --primary-hover: #e11d48; --primary-soft: rgba(244, 63, 94, 0.18); --focus-ring: #f43f5e; }
+  :root[data-accent="amber"] { --primary: #d97706; --primary-hover: #b45309; --primary-soft: #fffbeb; --focus-ring: #d97706; }
+  .dark[data-accent="amber"] { --primary: #f59e0b; --primary-hover: #d97706; --primary-soft: rgba(245, 158, 11, 0.18); --focus-ring: #f59e0b; }
 
   * {
     font-family: var(--app-font-family), system-ui, -apple-system, sans-serif !important;
@@ -171,6 +217,19 @@ html:not(.dark) {
   input::placeholder, textarea::placeholder {
     color: #94a3b8 !important;
   }
+}
+
+/* Typography floor (بند ۸ مأموریت بازطراحی UI) — محتوای عملیاتی هرگز کوچک‌تر از ~۱۲px دیده
+   نشود؛ جایگزینی دستی تک‌تک text-[9px]/[10px]/[11px] در ۵۰ فایل کامپوننت به Pass بصری صفحه‌به‌صفحه
+   (خارج از محدودهٔ همین مرحله) موکول شده — این یک کف ایمن فوری و بدون‌ریسک روی همان کلاس‌های
+   خام Tailwind arbitrary-value موجود است، نه تغییر JSX هر صفحه. */
+.text-\[9px\], .text-\[10px\] {
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+.text-\[11px\] {
+  font-size: 12.5px !important;
+  line-height: 1.45 !important;
 }
 
 /* Custom Scrollbars */

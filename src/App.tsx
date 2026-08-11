@@ -4,10 +4,16 @@ import {
   User, Company, CompanyBankAccount, CostCenter, PaymentRequest, 
   WorkflowStepRule, SystemNotification, ChatMessage, DirectMessage, SupportCase, Letter 
 } from './types';
-import { storage } from './utils/storage';
-import { getJalaliNow } from './utils/persianDate';
+import { storage, DEFAULT_CUSTOMER_ENTRY_CONFLICTS } from './utils/storage';
+import { getJalaliNow, getJalaliNowWithSeconds } from './utils/persianDate';
+import { executeDueSalespersonTransfers } from './utils/salesPersonnelLifecycle';
 import { numberToPersianWords, formatRial } from './utils/numberToWords';
+import { getEffectiveUserPermissions, hasPermission, isSystemAdmin, useEffectivePermissions } from './utils/permissions';
+import { canApproveSupportRefundRow, validateSupportRefundSubmission } from './utils/supportRefundWorkflow';
+import { canStartImpersonation } from './utils/auth';
+import { logAudit } from './utils/auditLog';
 import { Navbar } from './components/Navbar';
+import { StatusBadge, DangerButton } from './components/ui/primitives';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { NewRequestModal } from './components/NewRequestModal';
@@ -20,10 +26,27 @@ import { AdminPanel } from './components/AdminPanel';
 import { CompaniesView } from './components/CompaniesView';
 import { CostCentersView } from './components/CostCentersView';
 import { RolesAndPermissionsView } from './components/RolesAndPermissionsView';
-import { LoginRegisterModal } from './components/LoginRegisterModal';
 import { PrintRequestModal } from './components/PrintRequestModal';
 import { VendorsView } from './components/VendorsView';
 import { VendorCategoriesView } from './components/VendorCategoriesView';
+import { CustomersView } from './components/CustomersView';
+import { CustomerMergeCandidatesView } from './components/CustomerMergeCandidatesView';
+import { CustomerMergeReviewQueueView } from './components/CustomerMergeReviewQueueView';
+import { PurchaseClaimReviewView } from './components/PurchaseClaimReviewView';
+import { RawContactRepositoryView } from './components/RawContactRepositoryView';
+import { CampaignsView } from './components/CampaignsView';
+import { LeadAssignmentView } from './components/LeadAssignmentView';
+import { SalesQueueView } from './components/SalesQueueView';
+import { ProductsView } from './components/ProductsView';
+import { ServicesView } from './components/ServicesView';
+import { PromotionsView } from './components/PromotionsView';
+import { SalesInvoiceView } from './components/SalesInvoiceView';
+import { BatchInvoiceImportView } from './components/BatchInvoiceImportView';
+import { SalesPersonnelLifecycleView } from './components/SalesPersonnelLifecycleView';
+import { SalesOrganizationView } from './components/SalesOrganizationView';
+import { SalesFinancialConfirmationView } from './components/SalesFinancialConfirmationView';
+import { CoordinationInboxView } from './components/CoordinationInboxView';
+import { FulfillmentCasesView } from './components/FulfillmentCasesView';
 import { ColleaguesView } from './components/ColleaguesView';
 import { SupportView } from './components/SupportView';
 import { LettersView } from './components/LettersView';
@@ -34,15 +57,17 @@ import { AssignedTasksView } from './components/AssignedTasksView';
 import { AllCommunicationsAuditView } from './components/AllCommunicationsAuditView';
 import { StyleSettingsView, AVAILABLE_FONTS } from './components/StyleSettingsView';
 import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
+import { NAV_ITEMS, isNavItemVisible } from './config/navigationRegistry';
 import { useFoundationSession } from './foundation/auth/FoundationSessionContext';
 import { FoundationLogin } from './foundation/auth/FoundationLogin';
 import { ContextSelector } from './foundation/organization/ContextSelector';
 import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
-import { CustomerSourceView } from './foundation/customers/CustomerSourceView';
+import { SaasCustomerWorkspace } from './foundation/customers/SaasCustomerWorkspace';
+import { resolveLegacyShellUser } from './integration/legacyShellIdentity';
 
 export default function App() {
   const foundation = useFoundationSession();
-  const [currentUser, setCurrentUser] = useState<User | null>(() => storage.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Browser-like multi-tab navigation: every view the user opens stays mounted (App.tsx
   // toggles visibility with CSS, see the main content section below) instead of being
@@ -152,6 +177,14 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('shavaz_accent_color', accentColor);
+    // بند ۸ مأموریت بازطراحی UI: انتخاب Accent باید واقعاً --primary/--primary-hover/
+    // --primary-soft/--focus-ring را عوض کند، نه فقط ذخیره شود — data-accent روی <html>
+    // توسط index.css's :root[data-accent="..."] مصرف می‌شود.
+    if (accentColor === 'emerald') {
+      document.documentElement.removeAttribute('data-accent');
+    } else {
+      document.documentElement.setAttribute('data-accent', accentColor);
+    }
   }, [accentColor]);
 
   // App Datasets
@@ -163,6 +196,34 @@ export default function App() {
   const [vendors, setVendors] = useState(() => storage.getVendors());
   const [vendorCategories, setVendorCategories] = useState(() => storage.getVendorCategories());
   const [customers, setCustomers] = useState(() => storage.getCustomers());
+  const [customerMergeRequests, setCustomerMergeRequests] = useState(() => storage.getCustomerMergeRequests());
+  const [customerMergeEvents, setCustomerMergeEvents] = useState(() => storage.getCustomerMergeEvents());
+  const [customerSplitEvents, setCustomerSplitEvents] = useState(() => storage.getCustomerSplitEvents());
+  // بذر Demo تعارض ورود اطلاعات (بند ۲۱ مأموریت فروش) فقط وقتی هیچ تعارضی هنوز ذخیره نشده اعمال
+  // می‌شود — عمداً در سطح getCustomerEntryConflicts خودِ storage.ts قرار نگرفت تا رفتار Rollback
+  // «بازگشت به کاملاً غایب» در تست‌های اتمیک saveCustomerIdentityTransaction دست‌نخورده بماند.
+  const [customerEntryConflicts, setCustomerEntryConflicts] = useState(() => {
+    const existing = storage.getCustomerEntryConflicts();
+    return existing.length === 0 ? DEFAULT_CUSTOMER_ENTRY_CONFLICTS : existing;
+  });
+  const [claimedPurchases, setClaimedPurchases] = useState(() => storage.getClaimedPurchases());
+  const [rawContacts, setRawContacts] = useState(() => storage.getRawContacts());
+  const [importJobs, setImportJobs] = useState(() => storage.getImportJobs());
+  const [campaigns, setCampaigns] = useState(() => storage.getCampaigns());
+  const [leads, setLeads] = useState(() => storage.getLeads());
+  const [callLogs, setCallLogs] = useState(() => storage.getCallLogs());
+  const [products, setProducts] = useState(() => storage.getProducts());
+  const [services, setServices] = useState(() => storage.getServices());
+  const [promotions, setPromotions] = useState(() => storage.getPromotions());
+  const [salesInvoices, setSalesInvoices] = useState(() => storage.getSalesInvoices());
+  const [productFulfillmentCases, setProductFulfillmentCases] = useState(() => storage.getProductFulfillmentCases());
+  const [serviceFulfillmentCases, setServiceFulfillmentCases] = useState(() => storage.getServiceFulfillmentCases());
+  const [coordinationCases, setCoordinationCases] = useState(() => storage.getCoordinationCases());
+  const [salesFinancialReviewCases, setSalesFinancialReviewCases] = useState(() => storage.getSalesFinancialReviewCases());
+  const [salesFinancialReviewEvents, setSalesFinancialReviewEvents] = useState(() => storage.getSalesFinancialReviewEvents());
+  const [salesFinancialSettings, setSalesFinancialSettings] = useState(() => storage.getSalesFinancialSettings());
+  const [salesOverpaymentCases, setSalesOverpaymentCases] = useState(() => storage.getSalesOverpaymentCases());
+  const [mergeCandidatesTargetCustomerId, setMergeCandidatesTargetCustomerId] = useState<string | null>(null);
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>(() => storage.getDirectMessages());
   const [colleagueChatTarget, setColleagueChatTarget] = useState<string | null>(null);
   const [supportCases, setSupportCases] = useState<SupportCase[]>(() => storage.getSupportCases());
@@ -173,19 +234,105 @@ export default function App() {
   const [notifications, setNotifications] = useState<SystemNotification[]>(() => storage.getNotifications(currentUser?.id));
   const [messages, setMessages] = useState<ChatMessage[]>(() => storage.getMessages());
 
+  // بند ۲۱ AGENTS.md: چون Worker واقعی زمان‌بندی‌شده در این Prototype وجود ندارد (محدودیت صریح
+  // مستندشده)، انتقال‌های تأییدشده/زمان‌بندی‌شدهٔ سررسیده فقط در لحظهٔ Initialization برنامه اجرا
+  // می‌شوند — نه با هر Refresh (که هزینهٔ محاسباتی غیرضروری روی هر re-render می‌ساخت). این خود
+  // useEffect با هر Mount (شامل هر Refresh/Reload واقعی مرورگر) دوباره اجرا می‌شود، پس بازیابی
+  // انتقال سررسیده بعد از Refresh تضمین است. بدهی #A مأموریت تکمیل چرخهٔ عمر: پیش‌تر اینجا
+  // به‌اشتباه یک رشتهٔ نمایشی شمسی (`getJalaliNow()`) به‌جای Timestamp ISO واقعی پاس داده
+  // می‌شد؛ چون `new Date(نمایش‌شمسی)` همیشه Invalid Date/NaN می‌دهد، مقایسهٔ سررسید همیشه false
+  // بود و هیچ انتقال زمان‌بندی‌شده‌ای در برنامهٔ واقعی هرگز خودکار اجرا نمی‌شد — با ISO واقعی رفع شد.
+  useEffect(() => {
+    const dueRequests = storage.getSalespersonTransferRequests();
+    const nowIso = new Date().toISOString();
+    const hasDue = dueRequests.some((r) =>
+      (r.status === 'approved' || r.status === 'scheduled') && !!r.effectiveAtIso &&
+      new Date(r.effectiveAtIso).getTime() <= new Date(nowIso).getTime()
+    );
+    if (!hasDue) return;
+    const result = executeDueSalespersonTransfers(
+      dueRequests, storage.getUsers(), storage.getSalesOrgAssignments(), storage.getLeads(),
+      storage.getSalesBranches(), storage.getSalesChains(), storage.getRoles(),
+      { id: 'system_scheduler', fullName: 'اجرای خودکار انتقال‌های زمان‌بندی‌شده' }, nowIso
+    );
+    if (result.executedCount === 0) return;
+    const tx = storage.saveCustomerIdentityTransaction({
+      users: result.updatedUsers, salesOrgAssignments: result.updatedAssignments, leads: result.updatedLeads,
+      salespersonTransferRequests: result.updatedRequests,
+      salesOrgAssignmentEvents: [...storage.getSalesOrgAssignmentEvents(), ...result.events]
+    });
+    if (tx.ok === true) {
+      setUsers(result.updatedUsers);
+      setLeads(result.updatedLeads);
+      logAudit({ action: 'salesperson_due_transfers_executed', effectiveUser: { id: 'system_scheduler', fullName: 'اجرای خودکار انتقال‌های زمان‌بندی‌شده' } as User, roles, details: `${result.executedCount} انتقال زمان‌بندی‌شده اجرا شد` });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Impersonation (Admin Login as User) State
-  const [impersonatorAdmin, setImpersonatorAdmin] = useState<User | null>(() => {
-    const saved = localStorage.getItem('shavaz_impersonator_admin');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [impersonatorAdmin, setImpersonatorAdmin] = useState<User | null>(null);
+
+  useEffect(() => {
+    const session = foundation.session;
+    if (!session?.activeContext) {
+      setCurrentUser(null);
+      return;
+    }
+
+    // The mature shell receives presentation identity from the trusted Foundation session.
+    // It is deliberately not persisted as a local login and cannot authorize an API request.
+    setCurrentUser(resolveLegacyShellUser(session, users));
+    setImpersonatorAdmin(null);
+    localStorage.removeItem('shavaz_impersonator_admin');
+    resetTabsToDashboard();
+  }, [foundation.session?.user.id, foundation.session?.activeContext?.membershipId, users]);
+
+  // Effective permissions of the REAL logged-in identity (never affected by whichever user is
+  // currently being viewed while impersonating) — the ONLY thing consulted to authorize
+  // starting/continuing Impersonation. Effective permissions of whoever is CURRENTLY being
+  // viewed (impersonated user, or the logged-in user otherwise) drive menu/tab/data/operations.
+  const realActor = impersonatorAdmin || currentUser;
+  const realActorPermissions = useEffectivePermissions(realActor, roles);
+  const effectivePermissions = useEffectivePermissions(currentUser, roles);
+
+  const endOpenImpersonationLogEntry = (adminId: string, targetUserId: string) => {
+    const log = storage.getImpersonationLog();
+    const idx = [...log].reverse().findIndex((e) => e.adminId === adminId && e.targetUserId === targetUserId && !e.endedAt);
+    if (idx === -1) return;
+    const realIdx = log.length - 1 - idx;
+    const updated = [...log];
+    updated[realIdx] = { ...updated[realIdx], endedAt: getJalaliNow() };
+    storage.saveImpersonationLog(updated);
+  };
 
   const handleImpersonateUser = (targetUser: User) => {
-    if (!impersonatorAdmin && currentUser?.role === 'admin') {
-      setImpersonatorAdmin(currentUser);
-      localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(currentUser));
+    // Hardened gate: realActor must be a genuine admin (role === 'admin', not merely a
+    // permission grant) AND hold impersonate_users, target must exist/be active, and no
+    // Impersonation session may already be open (fully blocks nested Impersonation). This
+    // check runs on every call regardless of current state, so even a direct call to this
+    // handler (e.g. from devtools) with a non-admin/unauthorized identity is rejected.
+    const gate = canStartImpersonation(realActor, impersonatorAdmin, targetUser, realActorPermissions);
+    if (gate.ok === false) {
+      alert(gate.reason);
+      return;
     }
+
+    setImpersonatorAdmin(realActor);
+    localStorage.setItem('shavaz_impersonator_admin', JSON.stringify(realActor));
     setCurrentUser(targetUser);
     storage.setCurrentUser(targetUser);
+
+    const log = storage.getImpersonationLog();
+    storage.saveImpersonationLog([...log, {
+      id: `imp_${Date.now()}`,
+      adminId: realActor!.id,
+      adminName: realActor!.fullName,
+      targetUserId: targetUser.id,
+      targetUserName: targetUser.fullName,
+      startedAt: getJalaliNow()
+    }]);
+    logAudit({ action: 'impersonation_start', effectiveUser: realActor!, roles, permissionUsed: 'impersonate_users', targetId: targetUser.id, details: `شروع مشاهده به‌جای ${targetUser.fullName}` });
+
     resetTabsToDashboard();
     if (targetUser.role === 'requestor') {
       openTab('my_requests');
@@ -196,6 +343,10 @@ export default function App() {
 
   const handleExitImpersonation = () => {
     if (impersonatorAdmin) {
+      if (currentUser) {
+        endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
+        logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان مشاهده به‌جای ${currentUser.fullName}` });
+      }
       setCurrentUser(impersonatorAdmin);
       storage.setCurrentUser(impersonatorAdmin);
       setImpersonatorAdmin(null);
@@ -205,9 +356,33 @@ export default function App() {
     }
   };
 
+  // Aggressive Tab Guard: whenever the open tab set or the current user's effective
+  // permissions change, ACTIVELY close (not just block opening) any already-open tab the
+  // user is no longer authorized for — defense in depth beyond Sidebar hiding the menu item
+  // and beyond resetTabsToDashboard() on identity change (which only fires at the five
+  // identity-change points, not on every permission/role edit while already logged in).
+  // Reads the exact same Navigation Registry (single source of label/icon/Permission — مأموریت
+  // بازطراحی UI Foundation) that Sidebar.tsx renders from, so a tab can never stay open after
+  // Sidebar would already hide its menu item.
+  useEffect(() => {
+    if (!currentUser) return;
+    const isAdminUser = currentUser.role === 'admin';
+    for (const tab of openTabs) {
+      if (tab.id === 'dashboard') continue;
+      const navItem = NAV_ITEMS.find((i) => i.id === tab.id);
+      // یک id باز که دیگر در Registry نیست (نباید پیش بیاید) به‌صورت ایمن دست‌نخورده می‌ماند —
+      // فقط idهای شناخته‌شده‌ای که واقعاً دیگر مجاز نیستند بسته می‌شوند.
+      if (!navItem) continue;
+      const allowed = isNavItemVisible(navItem, { currentUser, effectivePermissions, isAdmin: isAdminUser });
+      if (!allowed) {
+        closeTab(tab.id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTabs, effectivePermissions, currentUser]);
+
   // Modals
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [selectedDetailRequest, setSelectedDetailRequest] = useState<PaymentRequest | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedPrintRequest, setSelectedPrintRequest] = useState<PaymentRequest | null>(null);
@@ -227,6 +402,79 @@ export default function App() {
   useEffect(() => {
     storage.saveCustomers(customers);
   }, [customers]);
+
+  useEffect(() => {
+    storage.saveCustomerMergeRequests(customerMergeRequests);
+  }, [customerMergeRequests]);
+
+  useEffect(() => {
+    storage.saveCustomerMergeEvents(customerMergeEvents);
+  }, [customerMergeEvents]);
+
+  useEffect(() => {
+    storage.saveCustomerSplitEvents(customerSplitEvents);
+  }, [customerSplitEvents]);
+
+  useEffect(() => {
+    storage.saveCustomerEntryConflicts(customerEntryConflicts);
+  }, [customerEntryConflicts]);
+
+  useEffect(() => {
+    storage.saveClaimedPurchases(claimedPurchases);
+  }, [claimedPurchases]);
+
+  useEffect(() => {
+    storage.saveRawContacts(rawContacts);
+  }, [rawContacts]);
+
+  useEffect(() => {
+    storage.saveImportJobs(importJobs);
+  }, [importJobs]);
+
+  useEffect(() => {
+    storage.saveCampaigns(campaigns);
+  }, [campaigns]);
+
+  useEffect(() => {
+    storage.saveLeads(leads);
+  }, [leads]);
+
+  useEffect(() => {
+    storage.saveCallLogs(callLogs);
+  }, [callLogs]);
+
+  useEffect(() => {
+    storage.saveProducts(products);
+  }, [products]);
+
+  useEffect(() => {
+    storage.saveServices(services);
+  }, [services]);
+
+  useEffect(() => {
+    storage.savePromotions(promotions);
+  }, [promotions]);
+
+  useEffect(() => {
+    storage.saveSalesInvoices(salesInvoices);
+  }, [salesInvoices]);
+
+  useEffect(() => {
+    storage.saveProductFulfillmentCases(productFulfillmentCases);
+  }, [productFulfillmentCases]);
+
+  useEffect(() => {
+    storage.saveServiceFulfillmentCases(serviceFulfillmentCases);
+  }, [serviceFulfillmentCases]);
+
+  useEffect(() => {
+    storage.saveCoordinationCases(coordinationCases);
+  }, [coordinationCases]);
+
+  useEffect(() => { storage.saveSalesFinancialReviewCases(salesFinancialReviewCases); }, [salesFinancialReviewCases]);
+  useEffect(() => { storage.saveSalesFinancialReviewEvents(salesFinancialReviewEvents); }, [salesFinancialReviewEvents]);
+  useEffect(() => { storage.saveSalesFinancialSettings(salesFinancialSettings); }, [salesFinancialSettings]);
+  useEffect(() => { storage.saveSalesOverpaymentCases(salesOverpaymentCases); }, [salesOverpaymentCases]);
 
   useEffect(() => {
     storage.saveDirectMessages(directMessages);
@@ -252,13 +500,27 @@ export default function App() {
           const linked = requests.find((r) => r.id === row.paymentRequestId);
           if (linked && (linked.status === 'paid' || linked.status === 'completed')) {
             caseChanged = true;
-            return { ...row, status: 'paid' as const, paidAt: linked.updatedAt };
+            return { ...row, status: 'paid' as const, paidAt: linked.updatedAt || getJalaliNowWithSeconds() };
           }
           return row;
         });
         if (caseChanged) {
           changed = true;
-          return { ...c, transactions: updatedTransactions };
+          const paidRows = updatedTransactions.filter((row) => row.status === 'paid' && c.transactions.find((old) => old.id === row.id)?.status !== 'paid');
+          return {
+            ...c,
+            transactions: updatedTransactions,
+            timeline: paidRows.reduce((timeline, row) => [...timeline, {
+              id: `stl_paid_${row.id}_${Date.now()}`,
+              actorId: 'system_payment_sync',
+              actorName: 'همگام‌سازی پرداخت خزانه',
+              actorRole: 'سیستم',
+              action: 'paid' as const,
+              actionTitle: `ثبت پرداخت عودت فاکتور ${row.invoiceCode}`,
+              comment: `درخواست پرداخت ${row.paymentRequestTrackingCode || row.paymentRequestId} در خزانه پرداخت‌شده ثبت شد.`,
+              timestamp: getJalaliNowWithSeconds()
+            }], c.timeline)
+          };
         }
         return c;
       });
@@ -328,11 +590,40 @@ export default function App() {
     setSelectedDetailRequest(updatedReq);
   };
 
-  const handleDeleteRequest = (requestId: string) => {
-    setRequests(prev => prev.filter(r => r.id !== requestId));
+  // Never physically deletes a PaymentRequest — status becomes 'cancelled' and the record
+  // stays in `requests` (and therefore in the archive's "لغوشده‌ها" filter) forever. Physical
+  // removal is out of scope until the cleanup-request/approve flow is fully designed; even a
+  // cleanup approval (see RequestDetailModal.tsx) only sets a flag, never calls this array out.
+  const handleCancelRequest = (requestId: string) => {
+    if (!currentUser) return;
+    setRequests(prev => prev.map(r => {
+      if (r.id !== requestId) return r;
+      const updatedTimeline = [
+        ...r.timeline,
+        {
+          id: `tl_${Date.now()}`,
+          actorId: currentUser.id,
+          actorName: currentUser.fullName,
+          actorRole: currentUser.roleTitle,
+          action: 'cancelled' as const,
+          actionTitle: 'لغو درخواست توسط درخواست‌کننده',
+          timestamp: getJalaliNow(),
+          comment: 'درخواست پیش از هرگونه اقدام تاییدکننده توسط خودِ درخواست‌کننده لغو شد.'
+        }
+      ];
+      return {
+        ...r,
+        status: 'cancelled' as const,
+        cancelledByUserId: currentUser.id,
+        cancelledByName: currentUser.fullName,
+        cancelledAt: getJalaliNow(),
+        updatedAt: getJalaliNow(),
+        timeline: updatedTimeline
+      };
+    }));
     setIsDetailModalOpen(false);
     setSelectedDetailRequest(null);
-    alert('درخواست با موفقیت لغو و از سیستم حذف گردید.');
+    alert('درخواست با موفقیت لغو شد و در آرشیو (بخش لغوشده‌ها) باقی می‌ماند.');
   };
 
   // Search & Navigation
@@ -392,10 +683,16 @@ export default function App() {
 
   // خدمات پس از فروش، پشتیبانی و شکایات
   const handleCreateSupportCase = (newCase: SupportCase) => {
+    if (!currentUser || !hasPermission(effectivePermissions, ['manage_support_cases'])) {
+      alert('شما مجوز ثبت پرونده خدمات پس از فروش را ندارید.');
+      return;
+    }
     setSupportCases(prev => [newCase, ...prev]);
 
     // Notify all financial approvers + admin that a new case is waiting for review
-    const targets = users.filter(u => u.role === 'financial_approver' || u.role === 'admin');
+    const targets = users.filter((user) => user.isActive && (
+      isSystemAdmin(user, roles) || getEffectiveUserPermissions(user, roles).includes('financial_approve_support')
+    ));
     const newNotifs: SystemNotification[] = targets.map(u => ({
       id: `notif_support_${Date.now()}_${u.id}`,
       userId: u.id,
@@ -409,13 +706,27 @@ export default function App() {
   };
 
   const handleUpdateSupportCase = (updated: SupportCase) => {
+    if (!currentUser || !hasPermission(effectivePermissions, ['manage_support_cases', 'financial_approve_support'])) {
+      alert('شما مجوز تغییر این پرونده را ندارید.');
+      return;
+    }
     setSupportCases(prev => prev.map(c => c.id === updated.id ? updated : c));
   };
 
   const handleSendApprovedRowsToTreasury = (caseId: string, rowIds: string[], closeCaseAfter: boolean) => {
     if (!currentUser || rowIds.length === 0) return;
+    if (!hasPermission(effectivePermissions, ['financial_approve_support'])) {
+      alert('شما مجوز ارسال عودت تاییدشده به خزانه را ندارید.');
+      return;
+    }
     const targetCase = supportCases.find(c => c.id === caseId);
     if (!targetCase) return;
+
+    const validation = validateSupportRefundSubmission(targetCase, rowIds, requests);
+    if (!validation.ok) {
+      alert(validation.errors.length > 0 ? validation.errors.join('\n') : 'هیچ ردیف مجاز و آماده‌ای برای ارسال وجود ندارد.');
+      return;
+    }
 
     const seniorSupervisor = users.find(u => u.isSeniorTreasurySupervisor) || users.find(u => u.role === 'admin');
     if (!seniorSupervisor) {
@@ -425,7 +736,7 @@ export default function App() {
 
     const branch = costCenters.find(cc => cc.id === targetCase.branchId);
     const company = companies.find(co => co.id === branch?.companyId);
-    const now = getJalaliNow();
+    const now = getJalaliNowWithSeconds();
 
     // Keep counting from however many rows of THIS case have already been sent,
     // so codes stay sequential (S50001-1, S50001-2, ...) even across multiple batches over time.
@@ -434,7 +745,7 @@ export default function App() {
     const newPaymentRequests: PaymentRequest[] = [];
     const rowUpdates: Record<string, { trackingCode: string; paymentRequestId: string }> = {};
 
-    for (const rowId of rowIds) {
+    for (const rowId of validation.eligibleRowIds) {
       const row = targetCase.transactions.find(t => t.id === rowId);
       if (!row || row.status !== 'approved_pending_send') continue;
 
@@ -513,24 +824,9 @@ export default function App() {
       }]
     };
 
-    if (closeCaseAfter) {
-      updatedCase = {
-        ...updatedCase,
-        status: 'closed',
-        complaintStatus: 'closed',
-        completedAt: now,
-        timeline: [...updatedCase.timeline, {
-          id: `stl_${Date.now()}_close`,
-          actorId: currentUser.id,
-          actorName: currentUser.fullName,
-          actorRole: currentUser.roleTitle,
-          action: 'case_closed' as const,
-          actionTitle: 'بستن پرونده توسط تایید مالی',
-          comment: 'پرونده پس از ارسال ردیف‌های تایید‌شده به خزانه، بسته شد.',
-          timestamp: now
-        }]
-      };
-    }
+    // Sending a refund to treasury is not completion. The case remains open until the linked
+    // request is actually paid (or every row is finally rejected) and support closes it.
+    void closeCaseAfter;
 
     setSupportCases(prev => prev.map(c => c.id === caseId ? updatedCase : c));
 
@@ -552,10 +848,18 @@ export default function App() {
   // actual sending happens as an explicit batch action so nothing reaches the treasury by accident)
   const handleMarkSupportRowApproved = (caseId: string, rowId: string, note: string) => {
     if (!currentUser) return;
+    if (!hasPermission(effectivePermissions, ['financial_approve_support'])) {
+      alert('شما مجوز تایید مالی عودت را ندارید.');
+      return;
+    }
     const targetCase = supportCases.find(c => c.id === caseId);
     const row = targetCase?.transactions.find(t => t.id === rowId);
     if (!targetCase || !row) return;
-    const now = getJalaliNow();
+    if (!canApproveSupportRefundRow(row) || requests.some((request) => request.sourceSupportTransactionId === row.id)) {
+      alert('این ردیف قبلاً تصمیم‌گیری یا به درخواست پرداخت خزانه متصل شده است.');
+      return;
+    }
+    const now = getJalaliNowWithSeconds();
 
     const updatedCase: SupportCase = {
       ...targetCase,
@@ -723,40 +1027,28 @@ export default function App() {
   if (!foundation.session) return <FoundationLogin />;
   if (!foundation.session.activeContext) return <ContextSelector />;
 
-  // The legacy prototype identity remains isolated from the server-side SaaS session.
+  // Identity is derived after the trusted Foundation session/context is ready.
   if (!currentUser) {
-    return (
-      <div className={`min-h-screen font-sans dir-rtl selection:bg-indigo-500 selection:text-white flex items-center justify-center p-4 relative overflow-hidden ${
-        theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-900 text-slate-100'
-      }`}>
-        <div className="absolute inset-0 bg-gradient-to-tr from-indigo-950/40 via-slate-950 to-slate-950 pointer-events-none" />
-        <LoginRegisterModal
-          isOpen={true}
-          isStandalone={true}
-          onLoginSuccess={(u) => {
-            setCurrentUser(u);
-            resetTabsToDashboard();
-          }}
-          companies={companies}
-          costCenters={costCenters}
-        />
-      </div>
-    );
+    return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center dir-rtl">در حال آماده‌سازی محیط کاری…</div>;
   }
 
   return (
-    <div className={`min-h-screen font-sans dir-rtl selection:bg-indigo-500 selection:text-white transition-colors duration-300 ${
-      theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
-    }`}>
-      
+    <div className="min-h-screen font-sans dir-rtl selection:bg-[var(--primary)] selection:text-white transition-colors duration-300 bg-[var(--canvas)] text-[var(--text-primary)]">
+
       {/* Top Header Navbar */}
       <Navbar
         currentUser={currentUser}
         notifications={notifications}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onLogout={() => { void foundation.logout(); }}
+        onOpenLogin={() => undefined}
+        onLogout={() => {
+          setImpersonatorAdmin(null);
+          localStorage.removeItem('shavaz_impersonator_admin');
+          setCurrentUser(null);
+          resetTabsToDashboard();
+          void foundation.logout();
+        }}
         onSearchTrackingCode={handleSearchTrackingCode}
         onSelectNotificationRequest={handleSelectNotificationRequest}
         onSelectNotificationColleague={handleSelectNotificationColleague}
@@ -764,8 +1056,14 @@ export default function App() {
         activeTab={activeTabId}
         onOpenTab={openTab}
         onToggleSidebar={() => {
-          setIsMobileSidebarOpen(prev => !prev);
-          setIsSidebarCollapsed(prev => !prev);
+          // اصلاح باگ preexisting: قبلاً این دکمه هم‌زمان Collapse دسکتاپ و Drawer موبایل را
+          // toggle می‌کرد (باعث نمایش هم‌زمان دو نمونهٔ Sidebar/دو نشانگر «کاربران» می‌شد). حالا
+          // فقط حالت متناظر با عرض واقعی صفحه toggle می‌شود.
+          if (window.matchMedia('(min-width: 768px)').matches) {
+            setIsSidebarCollapsed(prev => !prev);
+          } else {
+            setIsMobileSidebarOpen(prev => !prev);
+          }
         }}
       />
 
@@ -773,20 +1071,20 @@ export default function App() {
 
       {/* Impersonation Banner (When Admin is testing as another user) */}
       {impersonatorAdmin && currentUser && (
-        <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-bold px-4 py-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs dir-rtl sticky top-16 z-30 border-b border-amber-600">
+        <div className="bg-[var(--warning)] text-white font-bold px-4 py-2.5 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs dir-rtl sticky top-16 z-30">
           <div className="flex items-center gap-2">
-            <span className="p-1.5 bg-slate-950 text-amber-400 rounded-lg shrink-0 shadow-sm">
+            <span className="p-1.5 bg-black/20 text-white rounded-lg shrink-0">
               <ShieldAlert className="w-4 h-4" />
             </span>
             <span>
-              شما هم‌اکنون در حالت شبیه‌سازی دسترسی با حساب کاربر <strong className="underline decoration-slate-900">{currentUser.fullName} ({currentUser.roleTitle})</strong> هستید.
+              در حال مشاهده سیستم به‌جای کاربر <strong className="underline">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
             </span>
           </div>
           <button
             onClick={handleExitImpersonation}
-            className="px-3 py-1.5 bg-slate-950 hover:bg-slate-900 text-amber-300 font-black rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer border border-amber-500/40 hover:scale-105 active:scale-95"
+            className="px-3 py-1.5 bg-black/20 hover:bg-black/30 text-white font-black rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer"
           >
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <Clock className="w-3.5 h-3.5" />
             <span>خروج و بازگشت به حساب ادمین ارشد ({impersonatorAdmin.fullName})</span>
           </button>
         </div>
@@ -794,95 +1092,61 @@ export default function App() {
 
       {/* Main Layout Body - Full Screen Container */}
       <div className="flex-1 w-full flex flex-col md:flex-row min-h-[calc(100vh-4rem)] relative">
-        
-        {/* Desktop Sidebar (Collapsible) */}
-        <div className="hidden md:flex shrink-0">
-          <Sidebar
-            activeTab={activeTabId}
-            onOpenTab={(tabId, label) => {
-              if (tabId === 'new_request') {
-                setIsNewRequestModalOpen(true);
-              } else {
-                openTab(tabId, label);
-              }
-            }}
-            currentUser={currentUser}
-            pendingApprovalCount={pendingApprovalRequests.length}
-            myRequestsCount={myRequests.length}
-            users={users}
-            directMessages={directMessages}
-            roles={roles}
-            letters={letters}
-            onSelectColleague={(userId) => setColleagueChatTarget(userId || null)}
-            isCollapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
-          />
-        </div>
 
-        {/* Mobile Slide-over Drawer Sidebar */}
-        {isMobileSidebarOpen && (
-          <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-start dir-rtl animate-fade-in">
-            <div className="w-4/5 max-w-xs h-full bg-slate-900 overflow-y-auto shadow-2xl">
-              <Sidebar
-                activeTab={activeTabId}
-                onOpenTab={(tabId, label) => {
-                  if (tabId === 'new_request') {
-                    setIsNewRequestModalOpen(true);
-                  } else {
-                    openTab(tabId, label);
-                  }
-                  setIsMobileSidebarOpen(false);
-                }}
-                currentUser={currentUser}
-                pendingApprovalCount={pendingApprovalRequests.length}
-                myRequestsCount={myRequests.length}
-                users={users}
-                directMessages={directMessages}
-                roles={roles}
-                letters={letters}
-                onSelectColleague={(userId) => setColleagueChatTarget(userId || null)}
-                isCollapsed={false}
-                onCloseMobile={() => setIsMobileSidebarOpen(false)}
-              />
-            </div>
-            {/* Click outside to close backdrop */}
-            <div 
-              className="flex-1 h-full cursor-pointer" 
-              onClick={() => setIsMobileSidebarOpen(false)} 
-            />
-          </div>
-        )}
+        {/* Single Sidebar instance — خودش با CSS واکنش‌گرا بین حالت دسکتاپ (Expanded/Collapsed)
+            و Drawer موبایل (isMobileOpen) سوییچ می‌کند؛ اصلاح باگ preexisting دو نمونهٔ همزمان
+            Sidebar (یکی برای دسکتاپ، یکی برای موبایل) که هر دو هم‌زمان در DOM بودند. */}
+        <Sidebar
+          activeTab={activeTabId}
+          onOpenTab={(tabId, label) => {
+            if (tabId === 'new_request') {
+              setIsNewRequestModalOpen(true);
+            } else {
+              openTab(tabId, label);
+            }
+            setIsMobileSidebarOpen(false);
+          }}
+          currentUser={currentUser}
+          pendingApprovalCount={pendingApprovalRequests.length}
+          myRequestsCount={myRequests.length}
+          users={users}
+          directMessages={directMessages}
+          roles={roles}
+          letters={letters}
+          onSelectColleague={(userId) => setColleagueChatTarget(userId || null)}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
+          isMobileOpen={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        />
 
         {/* Main Content View - Full Screen */}
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
           
           {currentUser && currentUser.isActive === false ? (
-            <div className="max-w-2xl mx-auto my-8 p-8 bg-slate-900 border border-amber-500/40 rounded-3xl shadow-2xl text-center space-y-6 dir-rtl">
-              <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-3xl border border-amber-500/30 flex items-center justify-center mx-auto">
+            <div className="max-w-2xl mx-auto my-8 p-8 bg-[var(--surface)] border border-[var(--border)] rounded-[14px] shadow-sm text-center space-y-6 dir-rtl">
+              <div className="w-16 h-16 bg-[color-mix(in_srgb,var(--warning)_15%,transparent)] text-[var(--warning)] rounded-2xl flex items-center justify-center mx-auto">
                 <Clock className="w-8 h-8" />
               </div>
               <div className="space-y-3">
-                <span className="px-3 py-1 bg-amber-500/20 text-amber-300 font-extrabold text-xs rounded-full border border-amber-500/30">
-                  در انتظار تایید مدیریت سیستم
-                </span>
-                <h2 className="text-2xl font-black text-white">حساب کاربری شما هنوز فعال نشده است</h2>
-                <p className="text-sm text-slate-300 leading-relaxed max-w-lg mx-auto">
-                  جناب <strong className="text-amber-300">{currentUser.fullName}</strong>، حساب کاربری شما با موفقیت در سامانه ثبت گردیده است اما جهت دسترسی به منوها، مشاهده گزارشات مالی و ثبت درخواست، نیازمند تایید ارشد توسط ادمین سیستم (رضا بیات) است.
+                <StatusBadge label="در انتظار تایید مدیریت سیستم" tone="warning" />
+                <h2 className="text-2xl font-black text-[var(--text-primary)]">حساب کاربری شما هنوز فعال نشده است</h2>
+                <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-lg mx-auto">
+                  جناب <strong className="text-[var(--warning)]">{currentUser.fullName}</strong>، حساب کاربری شما با موفقیت در سامانه ثبت گردیده است اما جهت دسترسی به منوها، مشاهده گزارشات مالی و ثبت درخواست، نیازمند تایید ارشد توسط ادمین سیستم (رضا بیات) است.
                 </p>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-[var(--text-muted)]">
                   پس از بررسی و فعال‌سازی توسط مدیر سیستم، تمامی بخش‌های سامانه خزانه‌داری به صورت خودکار برای شما فعال خواهند شد.
                 </p>
               </div>
-              <div className="pt-6 border-t border-slate-800 flex items-center justify-center gap-4">
-                <button
+              <div className="pt-6 border-t border-[var(--border)] flex items-center justify-center gap-4">
+                <DangerButton
                   onClick={() => {
                     storage.setCurrentUser(null);
                     setCurrentUser(null);
                   }}
-                  className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-lg shadow-rose-600/20"
                 >
                   خروج از حساب کاربری
-                </button>
+                </DangerButton>
               </div>
             </div>
           ) : (
@@ -905,6 +1169,13 @@ export default function App() {
                       currentUser={currentUser}
                       companies={companies}
                       costCenters={costCenters}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      leads={leads}
+                      salesInvoices={salesInvoices}
+                      coordinationCases={coordinationCases}
+                      financialCases={salesFinancialReviewCases}
+                      overpaymentCases={salesOverpaymentCases}
                       onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
                       onNavigateTab={openTab}
                       onSelectRequest={(req) => {
@@ -950,6 +1221,8 @@ export default function App() {
                     <ApprovalInboxView
                       requests={requests}
                       currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
                       companies={companies}
                       costCenters={costCenters}
                       onSelectRequest={(req) => {
@@ -998,11 +1271,257 @@ export default function App() {
                   )}
 
                   {tab.id === 'customers' && (
-                    <CustomerSourceView
+                    <SaasCustomerWorkspace />
+                  )}
+
+                  {tab.id === 'customer_merge_candidates' && (
+                    <CustomerMergeCandidatesView
                       customers={customers}
                       users={users}
                       currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      mergeRequests={customerMergeRequests}
+                      onUpdateMergeRequests={setCustomerMergeRequests}
+                      impersonatorAdmin={impersonatorAdmin}
+                      initialTargetCustomerId={mergeCandidatesTargetCustomerId}
+                    />
+                  )}
+
+                  {tab.id === 'customer_merge_queue' && (
+                    <CustomerMergeReviewQueueView
+                      customers={customers}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      mergeRequests={customerMergeRequests}
+                      onUpdateMergeRequests={setCustomerMergeRequests}
+                      mergeEvents={customerMergeEvents}
+                      onUpdateMergeEvents={setCustomerMergeEvents}
+                      splitEvents={customerSplitEvents}
+                      onUpdateSplitEvents={setCustomerSplitEvents}
+                      entryConflicts={customerEntryConflicts}
+                      onUpdateEntryConflicts={setCustomerEntryConflicts}
                       onUpdateCustomers={setCustomers}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'purchase_claim_review' && (
+                    <PurchaseClaimReviewView
+                      claims={claimedPurchases}
+                      onUpdateClaims={setClaimedPurchases}
+                      customers={customers}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'raw_contact_repository' && (
+                    <RawContactRepositoryView
+                      rawContacts={rawContacts}
+                      onUpdateRawContacts={setRawContacts}
+                      importJobs={importJobs}
+                      onUpdateImportJobs={setImportJobs}
+                      customers={customers}
+                      onUpdateCustomers={setCustomers}
+                      entryConflicts={customerEntryConflicts}
+                      onUpdateEntryConflicts={setCustomerEntryConflicts}
+                      campaigns={campaigns}
+                      leads={leads}
+                      onUpdateLeads={setLeads}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'campaigns' && (
+                    <CampaignsView
+                      campaigns={campaigns}
+                      onUpdateCampaigns={setCampaigns}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'lead_assignment' && (
+                    <LeadAssignmentView
+                      leads={leads}
+                      onUpdateLeads={setLeads}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'my_sales_queue' && (
+                    <SalesQueueView
+                      leads={leads}
+                      onUpdateLeads={setLeads}
+                      callLogs={callLogs}
+                      onUpdateCallLogs={setCallLogs}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'products' && (
+                    <ProductsView
+                      products={products}
+                      onUpdateProducts={setProducts}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'services' && (
+                    <ServicesView
+                      services={services}
+                      onUpdateServices={setServices}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'promotions' && (
+                    <PromotionsView
+                      promotions={promotions}
+                      onUpdatePromotions={setPromotions}
+                      products={products}
+                      services={services}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'sales_invoices' && (
+                    <SalesInvoiceView
+                      salesInvoices={salesInvoices}
+                      onUpdateSalesInvoices={setSalesInvoices}
+                      coordinationCases={coordinationCases}
+                      onUpdateCoordinationCases={setCoordinationCases}
+                      customers={customers}
+                      leads={leads}
+                      products={products}
+                      services={services}
+                      promotions={promotions}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'batch_invoice_import' && (
+                    <BatchInvoiceImportView
+                      salesInvoices={salesInvoices}
+                      onUpdateSalesInvoices={setSalesInvoices}
+                      customers={customers}
+                      onUpdateCustomers={setCustomers}
+                      products={products}
+                      services={services}
+                      promotions={promotions}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'sales_personnel_lifecycle' && (
+                    <SalesPersonnelLifecycleView
+                      users={users}
+                      onUpdateUsers={setUsers}
+                      leads={leads}
+                      onUpdateLeads={setLeads}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'sales_organization' && (
+                    <SalesOrganizationView
+                      users={users}
+                      currentUser={currentUser}
+                      effectivePermissions={effectivePermissions}
+                    />
+                  )}
+
+                  {tab.id === 'coordination_inbox' && (
+                    <CoordinationInboxView
+                      coordinationCases={coordinationCases}
+                      onUpdateCoordinationCases={setCoordinationCases}
+                      salesInvoices={salesInvoices}
+                      onUpdateSalesInvoices={setSalesInvoices}
+                      customers={customers}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'sales_financial_confirmation' && (
+                    <SalesFinancialConfirmationView
+                      salesInvoices={salesInvoices}
+                      onUpdateSalesInvoices={setSalesInvoices}
+                      productFulfillmentCases={productFulfillmentCases}
+                      onUpdateProductFulfillmentCases={setProductFulfillmentCases}
+                      serviceFulfillmentCases={serviceFulfillmentCases}
+                      onUpdateServiceFulfillmentCases={setServiceFulfillmentCases}
+                      customers={customers}
+                      users={users}
+                      financialCases={salesFinancialReviewCases}
+                      onUpdateFinancialCases={setSalesFinancialReviewCases}
+                      financialEvents={salesFinancialReviewEvents}
+                      onUpdateFinancialEvents={setSalesFinancialReviewEvents}
+                      financialSettings={salesFinancialSettings}
+                      onUpdateFinancialSettings={setSalesFinancialSettings}
+                      overpaymentCases={salesOverpaymentCases}
+                      onUpdateOverpaymentCases={setSalesOverpaymentCases}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
+                    />
+                  )}
+
+                  {tab.id === 'fulfillment_cases' && (
+                    <FulfillmentCasesView
+                      salesInvoices={salesInvoices}
+                      onUpdateSalesInvoices={setSalesInvoices}
+                      productFulfillmentCases={productFulfillmentCases}
+                      onUpdateProductFulfillmentCases={setProductFulfillmentCases}
+                      serviceFulfillmentCases={serviceFulfillmentCases}
+                      onUpdateServiceFulfillmentCases={setServiceFulfillmentCases}
+                      users={users}
+                      currentUser={currentUser}
+                      roles={roles}
+                      effectivePermissions={effectivePermissions}
+                      impersonatorAdmin={impersonatorAdmin}
                     />
                   )}
 
@@ -1024,6 +1543,7 @@ export default function App() {
                       users={users}
                       companies={companies}
                       costCenters={costCenters}
+                      effectivePermissions={effectivePermissions}
                       onCreateCase={handleCreateSupportCase}
                       onUpdateCase={handleUpdateSupportCase}
                       onMarkRowApproved={handleMarkSupportRowApproved}
@@ -1059,6 +1579,7 @@ export default function App() {
                       companies={companies}
                       costCenters={costCenters}
                       currentUser={currentUser}
+                      roles={roles}
                       supportCases={supportCases}
                       letters={letters}
                       vendors={vendors}
@@ -1134,10 +1655,12 @@ export default function App() {
                       requests={requests}
                       roles={roles}
                       currentUser={currentUser}
+                      realActor={realActor}
+                      impersonatorAdmin={impersonatorAdmin}
+                      realActorPermissions={realActorPermissions}
                       onUpdateUsers={setUsers}
                       onUpdateCompanies={setCompanies}
                       onUpdateCostCenters={setCostCenters}
-                      onImpersonateUser={handleImpersonateUser}
                     />
                   )}
                 </div>
@@ -1166,24 +1689,15 @@ export default function App() {
         onClose={() => setIsDetailModalOpen(false)}
         currentUser={currentUser}
         users={users}
+        roles={roles}
+        effectivePermissions={effectivePermissions}
+        impersonatorAdmin={impersonatorAdmin}
         onUpdateRequest={handleUpdateRequest}
-        onDeleteRequest={handleDeleteRequest}
+        onDeleteRequest={handleCancelRequest}
         onOpenPrintModal={(req) => {
           setSelectedPrintRequest(req);
           setIsPrintModalOpen(true);
         }}
-      />
-
-      <LoginRegisterModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={(u) => {
-          setCurrentUser(u);
-          resetTabsToDashboard();
-          setIsLoginModalOpen(false);
-        }}
-        companies={companies}
-        costCenters={costCenters}
       />
 
       <PrintRequestModal

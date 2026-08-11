@@ -171,7 +171,9 @@ export const SupportCaseFormModal: React.FC<SupportCaseFormModalProps> = ({
       const updatedCase: SupportCase = {
         ...editingCase,
         ...sharedFields,
-        transactions: transactions.map((r) => ({ ...r, status: 'pending_financial_approval' as const })),
+        // ویرایش عمومی پرونده هرگز تصمیم مالی یا اتصال خزانه را بازنشانی نمی‌کند؛ اصلاح مالی
+        // فقط از مسیر ردیف «نیاز به اصلاح» و با شرح اجباری انجام می‌شود.
+        transactions,
         timeline: [
           ...editingCase.timeline,
           {

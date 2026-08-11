@@ -36,6 +36,7 @@ export function CustomerImportView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const permissions = session?.activeContext?.permissions ?? [];
+  const canCreate = permissions.includes('customer.import.create');
   const canReview = permissions.includes('customer.import.review');
   const canApprove = permissions.includes('customer.import.approve');
 
@@ -85,7 +86,7 @@ export function CustomerImportView() {
       <div className="flex items-center gap-3"><div className="rounded-2xl bg-emerald-500/15 p-3 text-emerald-400"><FileUp /></div><div><h2 className="text-lg font-extrabold">ورود کنترل‌شده Customer از CSV</h2><p className="mt-1 text-xs text-slate-400">فایل ابتدا بررسی و staging می‌شود؛ هیچ Customer بدون تصمیم و تأیید نهایی ساخته نمی‌شود.</p></div></div>
     </header>
 
-    <form onSubmit={upload} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_1fr_auto]">
+    {canCreate && <form onSubmit={upload} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_1fr_auto]">
       <label className="grid gap-1 text-xs text-slate-400">فایل UTF-8 CSV
         <input aria-label="فایل CSV مشتریان" type="file" accept=".csv,text/csv" required onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="rounded-xl border border-slate-700 bg-slate-950 p-2 text-sm text-slate-200 file:ml-3 file:rounded-lg file:border-0 file:bg-emerald-700 file:px-3 file:py-2 file:text-white" />
       </label>
@@ -93,13 +94,13 @@ export function CustomerImportView() {
         <input aria-label="نام منبع Import" value={sourceName} onChange={(event) => setSourceName(event.target.value)} minLength={1} maxLength={200} required className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-200" />
       </label>
       <button disabled={busy || !file} className="self-end rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:opacity-50">{busy ? <Loader2 className="mx-auto animate-spin" size={18} /> : 'بررسی و ثبت در staging'}</button>
-    </form>
+    </form>}
     <Notice error={error} />
 
     <div className="grid gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
       <aside className="self-start overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-800 p-3"><strong className="text-sm">Importهای اخیر</strong><button type="button" onClick={() => void loadJobs()} title="بازخوانی"><RefreshCw size={16} /></button></div>
-        {jobs.length === 0 ? <p className="p-5 text-sm text-slate-500">هنوز فایلی ثبت نشده است.</p> : jobs.map((job) => <button type="button" key={job.id} onClick={() => void openJob(job.id)} className={`block w-full border-b border-slate-800 p-3 text-right text-sm last:border-0 hover:bg-slate-800 ${active?.id === job.id ? 'bg-emerald-500/10' : ''}`}><strong className="block truncate">{job.fileName}</strong><span className="text-xs text-slate-400">{job.counts.total} ردیف · {job.status === 'approved' ? 'تأییدشده' : 'در انتظار بررسی'}</span></button>)}
+        {jobs.length === 0 ? <p className="p-5 text-sm text-slate-500">هنوز فایلی ثبت نشده است.</p> : jobs.map((job) => <button type="button" key={job.id} disabled={!canReview} title={canReview ? 'مشاهده جزئیات Import' : 'نمایش خلاصه؛ جزئیات خام نیازمند مجوز بررسی است'} onClick={() => canReview && void openJob(job.id)} className={`block w-full border-b border-slate-800 p-3 text-right text-sm last:border-0 enabled:hover:bg-slate-800 disabled:cursor-default ${active?.id === job.id ? 'bg-emerald-500/10' : ''}`}><strong className="block truncate">{job.fileName}</strong><span className="text-xs text-slate-400">{job.counts.total} ردیف · {job.status === 'approved' ? 'تأییدشده' : 'در انتظار بررسی'}</span></button>)}
       </aside>
 
       {active ? <article className="min-w-0 space-y-4">

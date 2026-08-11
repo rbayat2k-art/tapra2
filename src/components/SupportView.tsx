@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { SupportCase, User, Company, CostCenter } from '../types';
+import { SupportCase, User, Company, CostCenter, SystemPermission } from '../types';
 import { formatRial } from '../utils/numberToWords';
+import { hasPermission } from '../utils/permissions';
 import { SupportCaseFormModal } from './SupportCaseFormModal';
 import { SupportCaseDetailModal } from './SupportCaseDetailModal';
 import {
@@ -14,6 +15,7 @@ interface SupportViewProps {
   users: User[];
   companies: Company[];
   costCenters: CostCenter[];
+  effectivePermissions: SystemPermission[] | null;
   onCreateCase: (newCase: SupportCase) => void;
   onUpdateCase: (updated: SupportCase) => void;
   onMarkRowApproved: (caseId: string, rowId: string, note: string) => void;
@@ -26,21 +28,32 @@ const priorityBadge = (p: SupportCase['priority']) => {
   return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700 text-slate-300">عادی</span>;
 };
 
+const transactionStatusLabel = (status: SupportCase['transactions'][number]['status']): string => ({
+  pending_financial_approval: 'در انتظار تایید مالی',
+  approved_pending_send: 'تاییدشده، آماده ارسال به خزانه',
+  financial_approved: 'ارسال‌شده به خزانه',
+  financial_rejected: 'رد نهایی مالی',
+  needs_correction: 'نیازمند اصلاح پشتیبانی',
+  pending_treasury_payment: 'در انتظار پرداخت خزانه',
+  paid: 'پرداخت‌شده'
+}[status]);
+
 export const SupportView: React.FC<SupportViewProps> = ({
   cases,
   currentUser,
   users,
   companies,
   costCenters,
+  effectivePermissions,
   onCreateCase,
   onUpdateCase,
   onMarkRowApproved,
   onSendApprovedRowsToTreasury
 }) => {
-  const isAdmin = currentUser?.role === 'admin';
-  const isSupportAgent = currentUser?.role === 'support_agent' || isAdmin || !!currentUser?.customPermissions?.includes('manage_support_cases');
-  const isFinancialApprover = currentUser?.role === 'financial_approver' || isAdmin || !!currentUser?.customPermissions?.includes('financial_approve_support');
-  const canViewReports = isAdmin || !!currentUser?.customPermissions?.includes('view_support_reports');
+  const isAdmin = effectivePermissions === null;
+  const isSupportAgent = hasPermission(effectivePermissions, ['manage_support_cases']);
+  const isFinancialApprover = hasPermission(effectivePermissions, ['financial_approve_support']);
+  const canViewReports = hasPermission(effectivePermissions, ['view_support_reports']);
 
   const [tab, setTab] = useState<'cases' | 'financial_queue' | 'reports'>(
     isSupportAgent ? 'cases' : isFinancialApprover ? 'financial_queue' : 'cases'
@@ -149,7 +162,7 @@ export const SupportView: React.FC<SupportViewProps> = ({
         row.customerRefundCardNumber || '', row.customerRefundShebaNumber, row.description || '',
         row.totalDeductions || 0, row.litigationCost || 0, row.extraCost || 0, row.doorDeliveryAmount || 0, row.finalRefundAmount,
         row.refundCorrection || '', row.refundDateAnnouncedToCustomer || '', customFieldsText,
-        row.status, row.financialApproverName || '', row.financialApproverNote || '', row.financialActionAt || '',
+        transactionStatusLabel(row.status), row.financialApproverName || '', row.financialApproverNote || '', row.financialActionAt || '',
         row.paymentRequestTrackingCode || '', row.paidAt || '',
         logText
       ];
@@ -243,7 +256,7 @@ export const SupportView: React.FC<SupportViewProps> = ({
           <div className="space-y-2">
             {myCases.map((c) => {
               const isOwner = isAdmin || currentUser?.id === c.operatorId;
-              const untouchedByFinance = !c.transactions.some((t) => ['approved_pending_send', 'financial_approved', 'pending_treasury_payment', 'paid'].includes(t.status));
+              const untouchedByFinance = c.transactions.every((t) => t.status === 'pending_financial_approval');
               const canEditThisCase = isSupportAgent && isOwner && untouchedByFinance && c.status !== 'closed';
 
               return (
@@ -366,7 +379,8 @@ export const SupportView: React.FC<SupportViewProps> = ({
                     <th className="p-3 text-right">مبلغ نهایی</th>
                     <th className="p-3 text-right">وضعیت</th>
                     <th className="p-3 text-right">اپراتور</th>
-                    <th className="p-3 text-right">تاریخ</th>
+                    <th className="p-3 text-right">آخرین مسئول/اقدام</th>
+                    <th className="p-3 text-right">تاریخ و ساعت ثبت</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -376,8 +390,11 @@ export const SupportView: React.FC<SupportViewProps> = ({
                       <td className="p-3 text-white">{c.customerFullName}</td>
                       <td className="p-3 text-slate-400">{row.invoiceCode}</td>
                       <td className="p-3 text-emerald-400 font-bold">{formatRial(row.finalRefundAmount)}</td>
-                      <td className="p-3 text-slate-400">{row.status}</td>
+                      <td className="p-3 text-slate-400">{transactionStatusLabel(row.status)}</td>
                       <td className="p-3 text-slate-400">{c.operatorName}</td>
+                      <td className="p-3 text-slate-400">
+                        {c.timeline.length > 0 ? `${c.timeline[c.timeline.length - 1].actorName} — ${c.timeline[c.timeline.length - 1].actionTitle}` : '—'}
+                      </td>
                       <td className="p-3 text-slate-500">{c.createdAt}</td>
                     </tr>
                   ))}
@@ -406,6 +423,7 @@ export const SupportView: React.FC<SupportViewProps> = ({
         <SupportCaseDetailModal
           supportCase={cases.find((c) => c.id === selectedCase.id) || selectedCase}
           currentUser={currentUser}
+          effectivePermissions={effectivePermissions}
           onClose={() => setSelectedCase(null)}
           onUpdateCase={onUpdateCase}
           onMarkRowApproved={onMarkRowApproved}
