@@ -74,7 +74,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('customer.read', 'Read Customers in the active context'),
         ('customer.create', 'Create Customers in the active context'),
         ('customer.identity.manage', 'Manage Customer identity details in the active context'),
-        ('customer.merge', 'Merge and unmerge Customers in the active context')
+        ('customer.merge', 'Merge and unmerge Customers in the active context'),
+        ('customer.import.create', 'Create a staged Customer CSV import in the active context'),
+        ('customer.import.review', 'Review and reconcile staged Customer import records'),
+        ('customer.import.approve', 'Approve a reconciled Customer import into Customer 360')
       ON CONFLICT (code) DO UPDATE SET description = EXCLUDED.description
     `);
     await client.query(`
@@ -88,8 +91,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       INSERT INTO role_permissions(role_id, permission_code) VALUES
         ($1, 'customer.read'), ($1, 'customer.create'),
         ($1, 'customer.identity.manage'), ($1, 'customer.merge'),
+        ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
         ($2, 'customer.read'), ($2, 'customer.create'),
         ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
+        ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
         ($3, 'customer.read')
       ON CONFLICT DO NOTHING
     `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader]);
