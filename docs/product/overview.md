@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current product purpose and scope
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
 > Supersedes: none
 > Superseded by: none
 
@@ -27,6 +27,7 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 
 - یک Foundation server-backed برای login، Workspace/Company context، membership/permission و Customer create/read وجود دارد.
 - Foundation از Express و PostgreSQL استفاده می‌کند و Customer create را همراه AuditEntry ثبت می‌کند.
+- Customer 360 اکنون ورود محدود CSV با staging، reconciliation و Approval صریح دارد؛ جزئیات در [Customer Import](../domains/sales/customer-import.md) است.
 - سایر domainهای محصول هنوز client-side هستند و عمدتاً از `localStorage` استفاده می‌کنند.
 - مسیرهای SaaS و Prototype در دوره migration جدا هستند و داده قدیمی حذف نمی‌شود.
 - این سند ادعای `Production-Ready` بودن، امنیت enterprise یا persistence سروری ندارد.
