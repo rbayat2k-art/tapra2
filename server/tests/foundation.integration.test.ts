@@ -7,7 +7,7 @@ import { createApp } from '../src/app/create-app.js';
 import { resetEnvironmentForTests } from '../src/config/env.js';
 import { closePool, withTenantTransaction } from '../src/infrastructure/database/pool.js';
 import { runMigrations } from '../scripts/migrate.js';
-import { seedDatabase } from '../scripts/seed.js';
+import { assertSafeSeedTarget, seedDatabase } from '../scripts/seed.js';
 import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '../src/modules/customer-imports/csv-parser.js';
 
 interface SessionResponse {
@@ -85,6 +85,16 @@ describe('Foundation Sprint 1 vertical slice', () => {
 
   afterAll(async () => {
     await closePool();
+  });
+
+  it('refuses unsafe or production seed targets before connecting', () => {
+    const ownerDev = 'postgresql://tapra2_owner:placeholder@localhost:5432/tapra2_dev';
+    const appTest = 'postgresql://tapra2_app:placeholder@localhost:5432/tapra2_test';
+    expect(() => assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'production')).toThrow(/forbidden/);
+    expect(() => assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'test')).toThrow(/tapra2_test/);
+    expect(() => assertSafeSeedTarget('postgresql://postgres:placeholder@localhost:5432/tapra2_dev', 'tapra2_owner', 'development')).toThrow(/tapra2_owner/);
+    expect(assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'development')).toEqual({ database: 'tapra2_dev' });
+    expect(assertSafeSeedTarget(appTest, 'tapra2_app', 'test')).toEqual({ database: 'tapra2_test' });
   });
 
   it('rejects unauthenticated customer reads', async () => {

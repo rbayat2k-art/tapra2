@@ -28,8 +28,36 @@ const ids = {
   customerBeta: '70000000-0000-4000-8000-000000000002',
 } as const;
 
+type SeedEnvironment = 'development' | 'test' | 'production';
+
+export function assertSafeSeedTarget(
+  connectionString: string,
+  expectedRole: 'tapra2_owner' | 'tapra2_app',
+  environment = process.env.NODE_ENV as SeedEnvironment | undefined,
+): { database: string } {
+  const activeEnvironment = environment ?? 'development';
+  if (activeEnvironment === 'production') {
+    throw new Error('Development seed is forbidden when NODE_ENV=production.');
+  }
+  if (activeEnvironment !== 'development' && activeEnvironment !== 'test') {
+    throw new Error('Development seed requires NODE_ENV=development or NODE_ENV=test.');
+  }
+  const parsed = new URL(connectionString);
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+  const role = decodeURIComponent(parsed.username);
+  const expectedDatabase = activeEnvironment === 'test' ? 'tapra2_test' : 'tapra2_dev';
+  if (database !== expectedDatabase) {
+    throw new Error(`Development seed requires the dedicated ${expectedDatabase} database.`);
+  }
+  if (role !== expectedRole) {
+    throw new Error(`Development seed requires the restricted ${expectedRole} role.`);
+  }
+  return { database };
+}
+
 export async function seedDatabase(connectionString = process.env.DATABASE_MIGRATION_URL): Promise<void> {
   if (!connectionString?.startsWith('postgresql://')) throw new Error('DATABASE_MIGRATION_URL is required.');
+  const migrationTarget = assertSafeSeedTarget(connectionString, 'tapra2_owner');
   const client = new Client({ connectionString, application_name: 'tapra2_seed' });
   await client.connect();
   try {
@@ -120,6 +148,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
 
   const runtimeConnectionString = process.env.DATABASE_URL;
   if (!runtimeConnectionString?.startsWith('postgresql://')) throw new Error('DATABASE_URL is required for tenant-scoped seed data.');
+  const runtimeTarget = assertSafeSeedTarget(runtimeConnectionString, 'tapra2_app');
+  if (runtimeTarget.database !== migrationTarget.database) {
+    throw new Error('Seed migration and runtime connections must target the same dedicated database.');
+  }
   const runtime = new Client({ connectionString: runtimeConnectionString, application_name: 'tapra2_seed_tenant_data' });
   await runtime.connect();
   try {
