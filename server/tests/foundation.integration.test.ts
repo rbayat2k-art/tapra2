@@ -684,7 +684,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
 
   it('shares Workspace identity without exposing Company-scoped Customer relationships', async () => {
     const secondCompanyId = '20000000-0000-4000-8000-000000000003';
-    const secondMembershipId = '50000000-0000-4000-8000-000000000004';
+    const secondMembershipId = randomUUID();
     const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_multicompany_identity_test' });
     await owner.connect();
     try {
