@@ -7,6 +7,10 @@ import type {
   FoundationSession,
   CustomerImportAction,
   CustomerImportJob,
+  SalesAssignee,
+  SalesCallOutcome,
+  SalesLead,
+  SalesLeadDetail,
 } from './contracts';
 
 export class FoundationApiError extends Error {
@@ -106,5 +110,23 @@ export const foundationApi = {
   }, csrfToken),
   approveCustomerImport: (jobId: string, csrfToken: string) => request<{ import: CustomerImportJob }>(`/customer-imports/${jobId}/approve`, {
     method: 'POST', body: JSON.stringify({}),
+  }, csrfToken),
+  listSalesLeads: () => request<{ leads: SalesLead[] }>('/sales/leads'),
+  readSalesLead: (leadId: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}`),
+  listSalesAssignees: () => request<{ assignees: SalesAssignee[] }>('/sales/assignees'),
+  createSalesLead: (input: {
+    customerId: string; source: string; declaredInterest: string; priority: 'low' | 'normal' | 'high';
+    campaignReference?: string; context?: Record<string, unknown>;
+  }, csrfToken: string) => request<{ lead: SalesLeadDetail }>('/sales/leads', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  assignSalesLead: (leadId: string, input: { targetMembershipId: string; reason?: string }, csrfToken: string) =>
+    request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/assignments`, {
+      method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+    }, csrfToken),
+  recordSalesCall: (leadId: string, input: {
+    outcome: SalesCallOutcome; startedAt: string; note?: string; callbackAt?: string; context?: Record<string, unknown>;
+  }, csrfToken: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/calls`, {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
   }, csrfToken),
 };
