@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current product purpose and scope
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,7 +18,8 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 - ذی‌نفعان و دسته‌بندی آن‌ها؛
 - نامه‌ها، ارتباطات، اعلان‌ها، پیام‌ها و کارهای ارجاع‌شده؛
 - پرونده‌های support و شکایت؛
-- موجودیت Customer و نمای فعلی مشتریان؛
+- موجودیت Customer، نمای Customer 360 و ورود کنترل‌شده CSV؛
+- صف فروش، کمپین، کاتالوگ، فاکتور و fulfillment در پوسته mature بازیابی‌شده؛
 - ناوبری چندتبی و تنظیمات ظاهری کاربر.
 
 این فهرست معرفی سطح بالا است. مرجع جزئیات هر حوزه در [فهرست مالکیت مستندات](../README.md) مشخص شده است.
@@ -28,8 +29,9 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 - یک Foundation server-backed برای login، Workspace/Company context، membership/permission و Customer create/read وجود دارد.
 - Foundation از Express و PostgreSQL استفاده می‌کند و Customer create را همراه AuditEntry ثبت می‌کند.
 - Customer 360 اکنون ورود محدود CSV با staging، reconciliation و Approval صریح دارد؛ جزئیات در [Customer Import](../domains/sales/customer-import.md) است.
-- سایر domainهای محصول هنوز client-side هستند و عمدتاً از `localStorage` استفاده می‌کنند.
-- مسیرهای SaaS و Prototype در دوره migration جدا هستند و داده قدیمی حذف نمی‌شود.
+- Customer و Customer Import در رابط عادی تنها از مسیر SaaS server-backed ارائه می‌شوند و انتخاب‌گر فنی منبع داده ندارند.
+- سایر domainهای بازیابی‌شده هنوز client-side هستند و عمدتاً از `localStorage` استفاده می‌کنند؛ تفکیک backing store در رابط عادی به شکل محصول دوم نمایش داده نمی‌شود.
+- داده legacy حذف یا به‌طور خودکار به PostgreSQL منتقل نمی‌شود.
 - این سند ادعای `Production-Ready` بودن، امنیت enterprise یا persistence سروری ندارد.
 - طراحی‌های آینده sales، backend و API جزو رفتار فعلی محسوب نمی‌شوند.
 

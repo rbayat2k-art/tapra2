@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند فقط برای مسیریابی task-based عامل‌های AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,6 +21,8 @@
 | پشتیبانی/عودت | [support rules](../domains/support/business-rules.md)، [finance rules](../domains/finance/business-rules.md) |
 | مشتری فعلی | [current customer](../domains/sales/current-customer.md) |
 | Customer Import | [customer import](../domains/sales/customer-import.md) |
+| shell، navigation یا backing ماژول‌ها | [canonical integration](../engineering/canonical-product-integration.md)، [module catalog](../product/module-catalog.md) |
+| CI، migration یا seed safety | [Engineering Gate A](../engineering/engineering-gate-a.md)، [quality](../engineering/quality.md) |
 | Foundation Backend/Auth/tenant | [current system](../architecture/current-system.md)، [API status](../architecture/api-status.md)، [security](../engineering/security-and-privacy.md) |
 | طراحی آینده فروش | [approved design](../domains/sales/approved-design.md)، [open questions](../domains/sales/open-questions.md) |
 | معماری/API آینده | [future platform](../architecture/future-platform.md)، [API draft](../future/api-contract-draft.md) |
@@ -29,4 +31,4 @@
 
 ## قاعده context
 
-اسناد legacy و Snapshot را فقط برای traceability یا حل تعارض تاریخی باز کنید. این فایل جزئیات دامنه را تکرار نمی‌کند و وجود متن future در repository هرگز اثبات پیاده‌سازی نیست.
+اسناد legacy و Snapshot را فقط برای traceability یا حل تعارض تاریخی باز کنید. برای recovery از [preservation matrix](../archive/legacy-product-preservation-matrix.md) شروع کنید و ZIP evidence را فقط در صورت نیاز forensic بخوانید. این فایل جزئیات دامنه را تکرار نمی‌کند و وجود متن future در repository هرگز اثبات پیاده‌سازی نیست.

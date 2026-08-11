@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل برای دستورالعمل‌های اجباری و مسیر ورود AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -36,6 +36,7 @@
 | Customer فعلی | [current customer](docs/domains/sales/current-customer.md) |
 | Customer Import | [customer import](docs/domains/sales/customer-import.md) |
 | فروش آینده | [approved design](docs/domains/sales/approved-design.md) و [open questions](docs/domains/sales/open-questions.md) |
+| پوسته canonical و مرز SaaS/Prototype | [canonical product integration](docs/engineering/canonical-product-integration.md) |
 | معماری، داده و امنیت | [documentation index](docs/README.md) |
 | rationale و تاریخچه | [decision log](docs/decisions/DECISION_LOG.md) |
 

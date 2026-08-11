@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/customer-import-sprint-3`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`
 > Supersedes: none
 > Superseded by: none
 
@@ -25,8 +25,8 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/customers/duplicates/check` | تشخیص قطعی `EXACT_MATCH` و هشدار نام یکسان `POSSIBLE_DUPLICATE` بدون merge خودکار |
 | `POST` | `/api/v1/customers/merge` | merge کنترل‌شده، deterministic و reversible؛ نیازمند `customer.merge` و `Idempotency-Key` |
 | `POST` | `/api/v1/customers/merges/:operationId/unmerge` | بازگردانی merge و بازیابی profile مستقل؛ نیازمند `customer.merge` |
-| `GET` | `/api/v1/customer-imports` | فهرست ImportJobهای context فعال |
-| `GET` | `/api/v1/customer-imports/:jobId` | جزئیات staging، classification، candidate و تصمیم‌ها |
+| `GET` | `/api/v1/customer-imports` | summary پاک‌سازی‌شده ImportJobهای context فعال؛ نیازمند `customer.import.read` |
+| `GET` | `/api/v1/customer-imports/:jobId` | جزئیات خام staging، classification، candidate و تصمیم‌ها؛ نیازمند `customer.import.read` و `customer.import.review` |
 | `POST` | `/api/v1/customer-imports` | دریافت محدود `text/csv` و ساخت staging؛ نیازمند `customer.import.create` و `Idempotency-Key` |
 | `POST` | `/api/v1/customer-imports/:jobId/apply-safe-decisions` | ثبت پیشنهادهای deterministic کم‌ریسک؛ نیازمند `customer.import.review` |
 | `PUT` | `/api/v1/customer-imports/:jobId/records/:recordId/decision` | تصمیم صریح reviewer برای یک ردیف |
@@ -38,7 +38,7 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 - session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
-- Customer routeها به active Workspace/Company و یکی از permissionهای `customer.read`، `customer.create`، `customer.identity.manage` یا `customer.merge` متناسب با عملیات نیاز دارند.
+- Customer routeها به active Workspace/Company و permission متناسب نیاز دارند. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
 - خطاها JSON با `error.code`, `error.message` و `correlationId` برمی‌گردند.
 - endpointهای فهرست‌شده contract کامل platform نیستند و pagination عمومی هنوز اجرا نشده است.

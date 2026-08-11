@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند فقط برای تصمیم‌های preservation و traceability ادغام محصول legacy با معماری SaaS است.
 > Owner: Product Integration
-> Last validated: 2026-08-11 against `agent/canonical-product-integration@28e60ea`, legacy ZIP SHA-256 `0B8A6C51938C90AE88C5FA37F76F1D73B132EE48923A9DE01CAE1C9903A1D207`, legacy HEAD `4eefb5c1`, stash `684c3a67`
+> Last validated: 2026-08-11 against `agent/canonical-product-integration`, legacy ZIP SHA-256 `0B8A6C51938C90AE88C5FA37F76F1D73B132EE48923A9DE01CAE1C9903A1D207`, legacy HEAD `4eefb5c1`, stash `684c3a67`
 > Supersedes: none
 > Superseded by: none
 
