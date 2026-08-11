@@ -19,6 +19,10 @@ const schema = z.object({
   SESSION_COOKIE_SECURE: booleanValue.default(false),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+}).superRefine((value, context) => {
+  if (value.NODE_ENV === 'production' && !value.SESSION_COOKIE_SECURE) {
+    context.addIssue({ code: 'custom', path: ['SESSION_COOKIE_SECURE'], message: 'Secure cookies are required in production.' });
+  }
 });
 
 export type Environment = z.infer<typeof schema>;

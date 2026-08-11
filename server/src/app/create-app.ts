@@ -1,6 +1,8 @@
 import express from 'express';
 import { correlationMiddleware } from './correlation.js';
 import { query } from '../infrastructure/database/pool.js';
+import { identityRoutes } from '../modules/identity/routes.js';
+import { asyncHandler } from '../shared/async-handler.js';
 import { errorHandler, notFoundHandler } from '../shared/errors.js';
 
 export function createApp() {
@@ -9,10 +11,12 @@ export function createApp() {
   app.use(correlationMiddleware);
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/api/v1/health', async (_request, response) => {
+  app.get('/api/v1/health', asyncHandler(async (_request, response) => {
     await query('SELECT 1');
     response.json({ status: 'ok', service: 'tapra2-server', timestamp: new Date().toISOString() });
-  });
+  }));
+
+  app.use('/api/v1', identityRoutes());
 
   app.use(notFoundHandler);
   app.use(errorHandler);
