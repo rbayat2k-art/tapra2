@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل برای دستورالعمل‌های اجباری و مسیر ورود AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against fresh clone of `stable@fcc3523c`
+> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -37,6 +37,7 @@
 | پشتیبانی | [support rules](docs/domains/support/business-rules.md) |
 | Customer فعلی | [current customer](docs/domains/sales/current-customer.md) |
 | Customer Import | [customer import](docs/domains/sales/customer-import.md) |
+| Lead، صف، تخصیص و تماس فعلی | [current lead operations](docs/domains/sales/current-lead-operations.md) |
 | فروش آینده | [approved design](docs/domains/sales/approved-design.md) و [open questions](docs/domains/sales/open-questions.md) |
 | پوسته canonical و مرز SaaS/Prototype | [canonical product integration](docs/engineering/canonical-product-integration.md) |
 | Git lineage و شروع توسعه | [source of truth](docs/engineering/source-of-truth.md) |

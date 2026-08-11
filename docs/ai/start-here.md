@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند فقط برای مسیریابی task-based عامل‌های AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,6 +21,7 @@
 | پشتیبانی/عودت | [support rules](../domains/support/business-rules.md)، [finance rules](../domains/finance/business-rules.md) |
 | مشتری فعلی | [current customer](../domains/sales/current-customer.md) |
 | Customer Import | [customer import](../domains/sales/customer-import.md) |
+| Lead، Sales Queue، Assignment یا Call Log فعلی | [current lead operations](../domains/sales/current-lead-operations.md) |
 | shell، navigation یا backing ماژول‌ها | [canonical integration](../engineering/canonical-product-integration.md)، [module catalog](../product/module-catalog.md) |
 | CI، migration یا seed safety | [Engineering Gate A](../engineering/engineering-gate-a.md)، [quality](../engineering/quality.md) |
 | Foundation Backend/Auth/tenant | [current system](../architecture/current-system.md)، [API status](../architecture/api-status.md)، [security](../engineering/security-and-privacy.md) |

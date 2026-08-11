@@ -48,5 +48,5 @@
 ## Platform و rollout
 
 - ترتیب delivery فازهای Customer، Lead، Invoice، catalog، fulfillment و settlement چیست؟
-- انتخاب backend/database، tenant isolation و migration از `localStorage` چیست؟
+- ترتیب و معیار reconciliation/cutover داده‌های Sales باقی‌مانده از `localStorage` به PostgreSQL چیست؟
 - معیار پذیرش و تست end-to-end هر نقش در کل flow چیست؟

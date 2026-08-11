@@ -404,3 +404,18 @@ checkoutهای قدیمی و Codex workspaceهای قبلی source branch آین
 
 **Impact:**
 دانش یکتای معتبر بدون بازگرداندن معماری localStorage یا تغییر Backend/PostgreSQL/Customer 360 حفظ شد. هیچ application code، package configuration، migration، database یا runtime behavior تغییر نکرد. مسیرهای legacy فقط پس از تأیید cleanup جداگانه قابل حذف‌اند.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Sales Lead queue vertical slice implemented
+
+**Context:**
+UI معتبر Sales برای Lead، صف، تخصیص و ثبت تماس در Prototype وجود داشت، اما داده و permission آن server-backed نبود. Customer identity قبلاً در سطح Workspace و relationship عملیاتی آن در سطح Company تثبیت شده بود.
+
+**Decision:**
+برش `Customer 360 → Lead → Assignment → Sales Queue → Call Log` با PostgreSQL، `FORCE RLS`، permission سمت server، history و Audit اجرا شد. seller فقط صف membership خود را می‌بیند و امکان self-claim یا تماس روی Lead فروشنده دیگر ندارد. manager می‌تواند با reason و Audit بازتخصیص دهد. تماس ناموفق relationship/lock دائمی ایجاد نمی‌کند؛ تماس مؤثر طبق `sales_policies` قابل‌تنظیم relationship/lock ایجاد می‌کند و پایان شیفت به‌طور خودکار open work را منتقل نمی‌کند.
+
+**Impact:**
+این برش محدود اکنون `CURRENT` است و authority آن `docs/domains/sales/current-lead-operations.md` است. Full Campaign/Promotion engine، Invoice، Commission، AI Sales، تخصیص rule-based و migration خودکار داده Sales قدیمی همچنان Prototype، `APPROVED-FUTURE` یا `DRAFT` باقی می‌مانند. هیچ داده `localStorage` حذف یا خودکار migrate نشد.

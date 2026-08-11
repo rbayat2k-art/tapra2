@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -16,13 +16,16 @@
 - state-changing endpointها CSRF token می‌خواهند.
 - membership، context و permission در server دوباره محاسبه می‌شوند.
 - Customer context از session استخراج می‌شود و client نمی‌تواند tenant را در payload تعیین کند.
-- PostgreSQL RLS و `FORCE ROW LEVEL SECURITY` لایه دفاعی دوم برای تمام relationهای Customer 360 و Audit است.
+- PostgreSQL RLS و `FORCE ROW LEVEL SECURITY` لایه دفاعی دوم برای تمام relationهای Customer 360، عملیات Sales فعلی و Audit است.
 - نقش runtime superuser، database creator یا role creator نیست.
 - Customer create، phone/address، merge/unmerge، timeline و AuditEntryهای مربوط در server و transaction ثبت می‌شوند.
 - duplicate check فقط داخل context فعال query می‌کند و اطلاعات Tenant دیگر را برنمی‌گرداند.
 - identity و normalized phone در Workspace مرکزی هستند، اما relationship/query عملیاتی Customer همچنان Company-scoped است؛ test چندCompany نبود existence oracle را بررسی می‌کند.
 - permissionهای حساس `customer.identity.manage` و `customer.merge` سمت server enforce می‌شوند؛ UI مرز امنیتی نیست.
 - response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
+- Sales permissionهای `sales.queue.read`, `sales.call.create`, `sales.lead.create/read_all/assign/reassign` سمت server enforce می‌شوند؛ فهرست assignee نیز به Workspace/Company فعال محدود است.
+- فروشنده عادی فقط صف membership خود را می‌بیند، endpoint self-claim ندارد و نمی‌تواند روی Lead فروشنده دیگر تماس ثبت کند. manager برای reassignment به permission و reason نیاز دارد و تغییر در history/Audit ثبت می‌شود.
+- تماس ناموفق relationship/lock نمی‌سازد؛ تماس مؤثر فقط طبق `sales_policies` قابل‌تنظیم relationship/lock می‌سازد. پایان شیفت نیز در policy فعلی باعث انتقال خودکار assignment نمی‌شود.
 
 ## ریسک باقی‌مانده Prototype
 
@@ -51,3 +54,5 @@ dependency قدیمی `xlsx@0.18.5` هنوز برای export در `src/component
 - dependency `xlsx@0.18.5` همچنان legacy debt مربوط به export Prototype است؛ Customer Import جدید هیچ استفاده‌ای از آن ندارد و گسترش استفاده آن مجاز نیست.
 
 جزئیات در [Customer Import](../domains/sales/customer-import.md) است.
+
+مرز امنیتی Sales در [عملیات فعلی Lead](../domains/sales/current-lead-operations.md) ثبت شده است.

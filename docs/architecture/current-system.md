@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current system architecture and technology stack
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -19,6 +19,7 @@ Tapra2 اکنون یک vertical slice از معماری SaaS را در کنار 
 | Identity | login محلی، session opaque در database و cookie دارای `HttpOnly` و `SameSite=Lax` |
 | Organization | `Workspace`، `Company`، `Membership`، انتخاب context و permission سمت server |
 | Customer 360 slice | profile، phone/address چندتایی، provenance، timeline، duplicate check و merge/unmerge تراکنشی در PostgreSQL |
+| Sales Lead slice | Lead، صف شخصی، assignment/reassignment، Call Log، relationship policy و history تراکنشی در PostgreSQL |
 | Canonical product shell | Dashboard، navigation چندگروهی، tabها، Sales، Finance، Support، Organization/RBAC و Communications در یک SPA واحد |
 | Prototype backing | منطق domainهای migrateنشده همچنان در `localStorage` اجرا می‌شود و authorization SaaS محسوب نمی‌شود |
 
@@ -26,13 +27,13 @@ Tapra2 اکنون یک vertical slice از معماری SaaS را در کنار 
 
 ## مرز فعلی migration
 
-- session و Customer 360 SaaS از PostgreSQL استفاده می‌کنند.
+- session، Customer 360/Import و Sales Lead/Queue/Assignment/Call از PostgreSQL استفاده می‌کنند.
 - صفحه Customer فقط تجربه واحد `SaasCustomerWorkspace` را نشان می‌دهد؛ فناوری persistence از UI عادی حذف شده است.
 - هیچ داده قدیمی `localStorage` حذف یا خودکار migrate نمی‌شود.
-- domainهای مالی، Support، Letters، Chat و Sales غیرCustomer در shell حفظ شده‌اند، اما هنوز server-backed نشده‌اند.
-- طراحی‌های Lead، Invoice، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند.
+- domainهای مالی، Support، Letters، Chat و Sales خارج از vertical slice فعلی در shell حفظ شده‌اند، اما هنوز server-backed نشده‌اند.
+- طراحی‌های Campaign/Promotion، Invoice، Commission، AI Sales، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند.
 
-Customer 360 foundation هویت و relationship است؛ fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Lead، Catalog، Invoice، Coordination و Fulfillment وجود دارند، اما backing آن‌ها prototype است و Backend Sales کامل را اثبات نمی‌کنند.
+Customer 360 foundation هویت Workspace-level را نگه می‌دارد و عملیات Sales فعلی فقط relationship/activity شرکت را به آن متصل می‌کند. fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Campaign، Catalog، Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ وجود vertical slice Lead به معنی Backend کامل Sales نیست.
 
 ## Technology stack
 
@@ -45,6 +46,7 @@ Customer 360 foundation هویت و relationship است؛ fuzzy matching، impor
 - [Persistence](../data/persistence.md)
 - [توسعه](../engineering/development.md)
 - [امنیت](../engineering/security-and-privacy.md)
+- [عملیات فعلی Lead](../domains/sales/current-lead-operations.md)
 
 ## Customer Import اجراشده
 
