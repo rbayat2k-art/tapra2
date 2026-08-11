@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:18.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: tapra2_admin
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env.local}
+      TAPRA2_OWNER_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?Set POSTGRES_OWNER_PASSWORD in .env.local}
+      TAPRA2_APP_PASSWORD: ${TAPRA2_APP_PASSWORD:?Set TAPRA2_APP_PASSWORD in .env.local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tapra2_postgres_data:/var/lib/postgresql
+      - ./server/docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tapra2_admin -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  tapra2_postgres_data:
