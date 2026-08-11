@@ -122,7 +122,7 @@ export interface CustomerImportJob {
   id: string;
   fileName: string;
   sourceName: string;
-  fileSha256: string;
+  fileSha256?: string;
   schemaVersion: string;
   status: 'staged' | 'in_review' | 'approved' | 'failed';
   counts: { total: number; valid: number; invalid: number; exactMatch: number; possibleDuplicate: number; reviewRequired: number; approved: number; rejected: number };

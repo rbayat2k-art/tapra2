@@ -406,6 +406,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const reader = request.agent(createApp());
     let readerSession = await login(reader, 'alpha-only@tapra.local', 'TapraAlpha!2026');
     readerSession = await selectContext(reader, readerSession, 'tapra-alpha');
+    await reader.get('/api/v1/customer-imports').expect(403);
     await reader
       .post('/api/v1/customer-imports')
       .set('x-csrf-token', readerSession.csrfToken)
@@ -427,6 +428,38 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send('full_name,phone\nTenant Import,09128880002\nBeta Seed Phone,09120000002')
       .expect(201);
     expect(staged.body.import.counts).toMatchObject({ total: 2, valid: 2, exactMatch: 0 });
+    expect(staged.body.import.records).toBeUndefined();
+    expect(staged.body.import.fileSha256).toBeUndefined();
+
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_import_permission_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO role_permissions(role_id, permission_code)
+        VALUES ('60000000-0000-4000-8000-000000000003', 'customer.import.read')
+        ON CONFLICT DO NOTHING
+      `);
+      const importReader = request.agent(createApp());
+      let importReaderSession = await login(importReader, 'alpha-only@tapra.local', 'TapraAlpha!2026');
+      importReaderSession = await selectContext(importReader, importReaderSession, 'tapra-alpha');
+      const summaries = await importReader.get('/api/v1/customer-imports').expect(200);
+      const summary = summaries.body.imports.find((item: { id: string }) => item.id === staged.body.import.id);
+      expect(summary).toBeTruthy();
+      expect(summary.records).toBeUndefined();
+      expect(summary.fileSha256).toBeUndefined();
+      await importReader.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(403);
+    } finally {
+      await owner.query(`
+        DELETE FROM role_permissions
+        WHERE role_id = '60000000-0000-4000-8000-000000000003'
+          AND permission_code = 'customer.import.read'
+      `);
+      await owner.end();
+    }
+
+    const reviewerDetail = await manager.get(`/api/v1/customer-imports/${staged.body.import.id}`).expect(200);
+    expect(reviewerDetail.body.import.records).toHaveLength(2);
+    expect(reviewerDetail.body.import.records[0].rawData).toBeTruthy();
 
     await reader
       .post(`/api/v1/customer-imports/${staged.body.import.id}/apply-safe-decisions`)
