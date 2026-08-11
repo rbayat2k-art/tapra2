@@ -327,11 +327,13 @@ export async function listSalesAssignees(context: MembershipContext): Promise<Sa
       JOIN role_assignments assignment ON assignment.membership_id = membership.id
       JOIN role_permissions role_permission ON role_permission.role_id = assignment.role_id
       WHERE membership.status = 'active'
+        AND membership.workspace_id = $1
+        AND membership.company_id = $2
         AND membership.valid_from <= now()
         AND (membership.valid_until IS NULL OR membership.valid_until > now())
         AND role_permission.permission_code = 'sales.queue.read'
       ORDER BY person.full_name
-    `);
+    `, [context.workspace.id, company.id]);
     return result.rows.map((row) => ({
       membershipId: row.membership_id, userAccountId: row.user_account_id, fullName: row.full_name,
     }));
@@ -427,10 +429,12 @@ export async function assignSalesLead(
       JOIN role_assignments assignment ON assignment.membership_id = membership.id
       JOIN role_permissions role_permission ON role_permission.role_id = assignment.role_id
       WHERE membership.id = $1 AND membership.status = 'active'
+        AND membership.workspace_id = $2
+        AND membership.company_id = $3
         AND membership.valid_from <= now()
         AND (membership.valid_until IS NULL OR membership.valid_until > now())
         AND role_permission.permission_code = 'sales.queue.read'
-    `, [input.targetMembershipId]);
+    `, [input.targetMembershipId, context.workspace.id, company.id]);
     const targetRow = target.rows[0];
     if (!targetRow) throw new AppError(400, 'sales_assignee_invalid', 'Target is not an active Sales queue member in this Company.');
     if (lead.current_assignee_membership_id === targetRow.membership_id) {

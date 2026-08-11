@@ -262,6 +262,12 @@ describe('Sales Backend Vertical Slice 1', () => {
     const betaSession = await selectContext(betaManager, await login(betaManager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-beta');
     await betaManager.get('/api/v1/sales/leads').expect(200)
       .expect(({ body }) => expect(body.leads).toHaveLength(0));
+    const betaAssignees = await betaManager.get('/api/v1/sales/assignees').expect(200);
+    expect(betaAssignees.body.assignees.map((item: { membershipId: string }) => item.membershipId))
+      .toEqual([betaSession.activeContext?.membershipId]);
+    await manager.post(`/api/v1/sales/leads/${leadId}/assignments`)
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ targetMembershipId: betaSession.activeContext?.membershipId, reason: 'cross-company check' }).expect(400);
     await betaManager.get(`/api/v1/sales/leads/${leadId}`).expect(404);
     expect(betaSession.activeContext).not.toBeNull();
 
