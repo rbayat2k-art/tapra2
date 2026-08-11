@@ -75,15 +75,18 @@ export function SaasCustomersView() {
       const response = await foundationApi.listCustomers();
       setCustomers(response.customers);
       setError(null);
-      if (profile && !response.customers.some((customer) => customer.id === profile.id)) setProfile(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'دریافت مشتریان انجام نشد.');
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [session?.activeContext?.membershipId]);
 
-  useEffect(() => { void load(); }, [session?.activeContext?.membershipId]);
+  useEffect(() => {
+    setProfile(null);
+    setDuplicate(null);
+    void load();
+  }, [load]);
 
   const openProfile = async (customerId: string) => {
     setProfileLoading(true);
