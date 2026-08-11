@@ -1,20 +1,19 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Tapra2
 
-# Run and deploy your AI Studio app
+> Status: CURRENT
+> Source of truth: این فایل فقط entry کوتاه repository است؛ مالکیت موضوعات در `docs/README.md` قرار دارد.
+> Owner: Documentation Architecture
+> Last validated: 2026-08-11 against `stable@cea6514`
+> Supersedes: none
+> Superseded by: none
 
-This contains everything you need to run your app locally.
+Tapra2 یک SPA فارسی برای فرایندهای مالی و اداری سازمان است. برای جلوگیری از تکرار، جزئیات در این فایل نگهداری نمی‌شوند.
 
-View your app in AI Studio: https://ai.studio/apps/f3222c29-9752-483b-869a-981a1cfe79e8
+## شروع
 
-## Run Locally
+- [نمای کلی محصول](docs/product/overview.md)
+- [فهرست ماژول‌های فعلی](docs/product/module-catalog.md)
+- [راهنمای راه‌اندازی](docs/engineering/development.md)
+- [فهرست و ownership مستندات](docs/README.md)
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+عامل‌های AI و توسعه‌دهندگان ابتدا [AGENTS.md](AGENTS.md) را بخوانند. برنامه فعلی client-side و مبتنی بر `localStorage` است؛ طراحی backend و API آینده نباید رفتار پیاده‌سازی‌شده فرض شود.

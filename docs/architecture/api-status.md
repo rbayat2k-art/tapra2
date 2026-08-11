@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `stable@cea6514`
 > Supersedes: none
 > Superseded by: none
 
@@ -26,13 +26,13 @@
 
 ## وضعیت سند قدیمی API
 
-[API_DOCUMENTATION.md](../API_DOCUMENTATION.md) مجموعه‌ای از endpointهای فرضی برای آینده است. آن سند نباید:
+نسخه تاریخی [API_DOCUMENTATION.md در Snapshot](../archive/pre-migration-snapshot/2026-08-10-stable-f271cca7/docs/API_DOCUMENTATION.md) مجموعه‌ای از endpointهای فرضی برای آینده است. آن سند نباید:
 
 - به‌عنوان قرارداد API موجود استفاده شود؛
 - مبنای integration فعلی قرار گیرد؛
 - بدون تصمیم و implementation جدید به `CURRENT` تغییر وضعیت دهد.
 
-مسیر نهایی قرارداد آینده `docs/future/api-contract-draft.md` است، اما آن authority هنوز `PLANNED` است.
+مرجع فعال قرارداد آینده [api-contract-draft.md](../future/api-contract-draft.md) با وضعیت `DRAFT` است؛ فعال بودن آن به معنی وجود API اجرایی نیست.
 
 ## شرط تغییر این وضعیت
 

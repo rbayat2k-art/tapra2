@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `stable@cea6514`
 > Supersedes: none
 > Superseded by: none
 
@@ -39,7 +39,7 @@ Tapra2 در وضعیت فعلی داده‌های برنامه را در مرو�
 
 - مدل مفهومی داده در [current-data-model.md](current-data-model.md) نگهداری می‌شود.
 - معماری runtime در [current-system.md](../architecture/current-system.md) نگهداری می‌شود.
-- security authority آینده `docs/engineering/security-and-privacy.md` هنوز `PLANNED` است.
+- وضعیت امنیت و حریم خصوصی در [security-and-privacy.md](../engineering/security-and-privacy.md) نگهداری می‌شود.
 
 ## شرط تغییر این وضعیت
 
