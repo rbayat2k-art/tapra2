@@ -22,6 +22,8 @@ const ids = {
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
+  customerIdentityAlpha: '65000000-0000-4000-8000-000000000001',
+  customerIdentityBeta: '65000000-0000-4000-8000-000000000002',
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   customerBeta: '70000000-0000-4000-8000-000000000002',
 } as const;
@@ -122,18 +124,28 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
   await runtime.connect();
   try {
     const contexts = [
-      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha, customerId: ids.customerAlpha, name: 'مشتری نمونه آلفا', phone: '09120000001' },
-      { workspaceId: ids.workspaceBeta, companyId: ids.companyBeta, customerId: ids.customerBeta, name: 'مشتری نمونه بتا', phone: '09120000002' },
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha, identityId: ids.customerIdentityAlpha, customerId: ids.customerAlpha, name: 'مشتری نمونه آلفا', phone: '09120000001' },
+      { workspaceId: ids.workspaceBeta, companyId: ids.companyBeta, identityId: ids.customerIdentityBeta, customerId: ids.customerBeta, name: 'مشتری نمونه بتا', phone: '09120000002' },
     ];
     for (const context of contexts) {
       await runtime.query('BEGIN');
       try {
         await runtime.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [context.workspaceId, context.companyId]);
         await runtime.query(`
-          INSERT INTO customers(id, workspace_id, company_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO customer_identities(id, workspace_id, normalized_primary_phone)
+          VALUES ($1, $2, normalize_customer_phone($3))
+          ON CONFLICT DO NOTHING
+        `, [context.identityId, context.workspaceId, context.phone]);
+        await runtime.query(`
+          INSERT INTO customer_identity_phones(workspace_id, identity_id, normalized_value)
+          VALUES ($1, $2, normalize_customer_phone($3))
+          ON CONFLICT DO NOTHING
+        `, [context.workspaceId, context.identityId, context.phone]);
+        await runtime.query(`
+          INSERT INTO customers(id, workspace_id, company_id, identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           ON CONFLICT (id) DO NOTHING
-        `, [context.customerId, context.workspaceId, context.companyId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
+        `, [context.customerId, context.workspaceId, context.companyId, context.identityId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
         await runtime.query(`
           INSERT INTO customer_sources(
             workspace_id, company_id, customer_id, source_type, source_name,
@@ -147,17 +159,17 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         `, [context.workspaceId, context.companyId, context.customerId, ids.accountDemo]);
         await runtime.query(`
           INSERT INTO customer_phones(
-            workspace_id, company_id, customer_id, source_id, value, normalized_value,
+            workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
             label, is_primary, verification_status
           )
-          SELECT $1::uuid, $2::uuid, $3::uuid, s.id, $4::text, normalize_customer_phone($4::text),
+          SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, s.id, $5::text, normalize_customer_phone($5::text),
             'mobile', true, 'unverified'
           FROM customer_sources s
           WHERE s.customer_id = $3::uuid
           ORDER BY s.created_at, s.id
           LIMIT 1
-          ON CONFLICT (workspace_id, normalized_value) DO NOTHING
-        `, [context.workspaceId, context.companyId, context.customerId, context.phone]);
+          ON CONFLICT (workspace_id, company_id, customer_id, normalized_value) DO NOTHING
+        `, [context.workspaceId, context.companyId, context.customerId, context.identityId, context.phone]);
         await runtime.query(`
           INSERT INTO customer_timeline_events(
             workspace_id, company_id, customer_id, actor_user_account_id,

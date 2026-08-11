@@ -602,4 +602,108 @@ describe('Foundation Sprint 1 vertical slice', () => {
       expect(body.customer.addresses).toHaveLength(2);
     });
   });
+
+  it('shares Workspace identity without exposing Company-scoped Customer relationships', async () => {
+    const secondCompanyId = '20000000-0000-4000-8000-000000000003';
+    const secondMembershipId = '50000000-0000-4000-8000-000000000004';
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_multicompany_identity_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO companies(id, workspace_id, code, name)
+        VALUES ($1, '10000000-0000-4000-8000-000000000001', 'ALPHA-SECOND', 'شرکت آلفا - شعبه دوم')
+        ON CONFLICT (id) DO NOTHING
+      `, [secondCompanyId]);
+      await owner.query(`
+        INSERT INTO memberships(id, workspace_id, company_id, person_id)
+        VALUES ($1, '10000000-0000-4000-8000-000000000001', $2, '30000000-0000-4000-8000-000000000001')
+        ON CONFLICT (id) DO NOTHING
+      `, [secondMembershipId, secondCompanyId]);
+      await owner.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id)
+        VALUES ('10000000-0000-4000-8000-000000000001', $1, '60000000-0000-4000-8000-000000000001')
+        ON CONFLICT DO NOTHING
+      `, [secondMembershipId]);
+    } finally {
+      await owner.end();
+    }
+
+    const agent = request.agent(createApp());
+    let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
+    const selectCompany = async (companyId: string) => {
+      const membership = session.memberships.find((item) => item.company?.id === companyId);
+      if (!membership) throw new Error(`Membership for Company ${companyId} was not found.`);
+      const response = await agent
+        .post('/api/v1/session/context')
+        .set('x-csrf-token', session.csrfToken)
+        .send({ membershipId: membership.membershipId })
+        .expect(200);
+      session = response.body as SessionResponse;
+    };
+
+    await selectCompany('20000000-0000-4000-8000-000000000001');
+    const firstRelationship = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'رابطه مشتری شرکت اول', phonePrimary: '09126667788' })
+      .expect(201);
+
+    await selectCompany(secondCompanyId);
+    await agent
+      .post('/api/v1/customers/duplicates/check')
+      .set('x-csrf-token', session.csrfToken)
+      .send({ phone: '09126667788' })
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual({ match: 'NO_MATCH', candidates: [] }));
+    await agent.get(`/api/v1/customers/${firstRelationship.body.customer.id}`).expect(404);
+
+    const secondRelationship = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'رابطه مستقل همان مشتری در شرکت دوم', phonePrimary: '+98 912 666 7788' })
+      .expect(201);
+    expect(secondRelationship.body.customer.id).not.toBe(firstRelationship.body.customer.id);
+    await agent
+      .post(`/api/v1/customers/${secondRelationship.body.customer.id}/addresses`)
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ city: 'تهران', addressText: 'نشانی اختصاصی شرکت دوم' })
+      .expect(201);
+
+    await selectCompany('20000000-0000-4000-8000-000000000001');
+    await agent.get(`/api/v1/customers/${secondRelationship.body.customer.id}`).expect(404);
+    const firstProfile = await agent.get(`/api/v1/customers/${firstRelationship.body.customer.id}`).expect(200);
+    expect(firstProfile.body.customer.addresses).toHaveLength(0);
+
+    const verifier = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_multicompany_identity_verify' });
+    await verifier.connect();
+    try {
+      await verifier.query('BEGIN');
+      await verifier.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [
+        '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+      ]);
+      const firstIdentity = await verifier.query<{ identity_id: string }>(
+        'SELECT identity_id FROM customers WHERE id = $1', [firstRelationship.body.customer.id],
+      );
+      await verifier.query("SELECT set_config('app.company_id', $1, true)", [secondCompanyId]);
+      const secondIdentity = await verifier.query<{ identity_id: string }>(
+        'SELECT identity_id FROM customers WHERE id = $1', [secondRelationship.body.customer.id],
+      );
+      expect(firstIdentity.rows).toHaveLength(1);
+      expect(secondIdentity.rows).toHaveLength(1);
+      expect(secondIdentity.rows[0]?.identity_id).toBe(firstIdentity.rows[0]?.identity_id);
+      const centralPhones = await verifier.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM customer_identity_phones
+        WHERE workspace_id = '10000000-0000-4000-8000-000000000001'
+          AND normalized_value = '09126667788'
+      `);
+      expect(centralPhones.rows[0]?.count).toBe('1');
+      await verifier.query('COMMIT');
+    } finally {
+      await verifier.query('ROLLBACK').catch(() => undefined);
+      await verifier.end();
+    }
+  });
 });

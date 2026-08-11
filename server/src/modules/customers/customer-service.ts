@@ -168,6 +168,56 @@ function mapSummary(row: CustomerRow): CustomerSummary {
   };
 }
 
+async function normalizePhoneValue(client: PoolClient, value: string): Promise<string> {
+  const result = await client.query<{ normalized_value: string }>(
+    'SELECT normalize_customer_phone($1) AS normalized_value',
+    [value],
+  );
+  return result.rows[0]!.normalized_value;
+}
+
+async function ensureIdentityPhone(
+  client: PoolClient,
+  workspaceId: string,
+  identityId: string,
+  value: string,
+): Promise<string> {
+  const normalized = await normalizePhoneValue(client, value);
+  await client.query(`
+    INSERT INTO customer_identity_phones(workspace_id, identity_id, normalized_value)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (workspace_id, normalized_value) DO NOTHING
+  `, [workspaceId, identityId, normalized]);
+  const owner = (await client.query<{ identity_id: string }>(`
+    SELECT identity_id FROM customer_identity_phones
+    WHERE workspace_id = $1 AND normalized_value = $2
+  `, [workspaceId, normalized])).rows[0];
+  if (!owner || owner.identity_id !== identityId) {
+    throw new AppError(409, 'customer_phone_conflict', 'This phone cannot be attached to the selected Customer identity.');
+  }
+  return normalized;
+}
+
+async function resolveCustomerIdentity(
+  client: PoolClient,
+  workspaceId: string,
+  primaryPhone: string,
+): Promise<string> {
+  const normalized = await normalizePhoneValue(client, primaryPhone);
+  await client.query(`
+    INSERT INTO customer_identities(workspace_id, normalized_primary_phone)
+    VALUES ($1, $2)
+    ON CONFLICT (workspace_id, normalized_primary_phone) DO NOTHING
+  `, [workspaceId, normalized]);
+  const identity = (await client.query<{ id: string }>(`
+    SELECT id FROM customer_identities
+    WHERE workspace_id = $1 AND normalized_primary_phone = $2
+  `, [workspaceId, normalized])).rows[0];
+  if (!identity) throw new AppError(409, 'customer_identity_conflict', 'Customer identity could not be resolved.');
+  await ensureIdentityPhone(client, workspaceId, identity.id, primaryPhone);
+  return identity.id;
+}
+
 async function loadCustomerProfile(client: PoolClient, customerId: string): Promise<CustomerProfile> {
   const customerResult = await client.query<CustomerRow>(`
     SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
@@ -283,15 +333,20 @@ export async function createImportedCustomerWithinTransaction(
   input: ImportedCustomerInput,
 ): Promise<string> {
   const idempotencyKey = `customer-import:${input.importRecordId}`;
+  const prior = (await client.query<{ id: string }>(
+    'SELECT id FROM customers WHERE idempotency_key = $1', [idempotencyKey],
+  )).rows[0];
+  if (prior) return prior.id;
+  const identityId = await resolveCustomerIdentity(client, scope.workspaceId, input.phonePrimary);
   const created = await client.query<{ id: string }>(`
     INSERT INTO customers(
-      workspace_id, company_id, full_name, phone_primary, phone_secondary,
+      workspace_id, company_id, identity_id, full_name, phone_primary, phone_secondary,
       address, province, city, postal_code, created_by_user_account_id, idempotency_key
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     ON CONFLICT (workspace_id, company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
     DO NOTHING RETURNING id
   `, [
-    scope.workspaceId, scope.companyId, input.fullName, input.phonePrimary, input.phoneSecondary || null,
+    scope.workspaceId, scope.companyId, identityId, input.fullName, input.phonePrimary, input.phoneSecondary || null,
     input.address || null, input.province || null, input.city || null, input.postalCode || null,
     scope.actorId, idempotencyKey,
   ]);
@@ -304,19 +359,21 @@ export async function createImportedCustomerWithinTransaction(
   const sourceId = await insertSource(client, {
     workspaceId: scope.workspaceId, companyId: scope.companyId, customerId, actorId: scope.actorId,
   }, input.source);
+  await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phonePrimary);
   await client.query(`
     INSERT INTO customer_phones(
-      workspace_id, company_id, customer_id, source_id, value, normalized_value,
+      workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
       label, is_primary, verification_status, idempotency_key
-    ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'mobile', true, 'unverified', $6)
-  `, [scope.workspaceId, scope.companyId, customerId, sourceId, input.phonePrimary, idempotencyKey]);
+    ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'mobile', true, 'unverified', $7)
+  `, [scope.workspaceId, scope.companyId, customerId, identityId, sourceId, input.phonePrimary, idempotencyKey]);
   if (input.phoneSecondary) {
+    await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phoneSecondary);
     await client.query(`
       INSERT INTO customer_phones(
-        workspace_id, company_id, customer_id, source_id, value, normalized_value,
+        workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
         label, is_primary, verification_status, idempotency_key
-      ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'secondary', false, 'unverified', $6)
-    `, [scope.workspaceId, scope.companyId, customerId, sourceId, input.phoneSecondary, `${idempotencyKey}:secondary`]);
+      ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'secondary', false, 'unverified', $7)
+    `, [scope.workspaceId, scope.companyId, customerId, identityId, sourceId, input.phoneSecondary, `${idempotencyKey}:secondary`]);
   }
   if (input.address) {
     await client.query(`
@@ -374,8 +431,12 @@ async function appendTimeline(
 function databaseConflict(error: unknown): never {
   const databaseError = error as Partial<DatabaseError>;
   if (databaseError.code === '23505') {
-    if (databaseError.constraint === 'customer_phones_workspace_normalized_unique_idx') {
-      throw new AppError(409, 'customer_phone_conflict', 'This normalized phone already belongs to another Customer in this Workspace.');
+    if (
+      databaseError.constraint === 'customers_company_identity_unique_idx'
+      || databaseError.constraint === 'customers_workspace_id_company_id_phone_primary_key'
+      || databaseError.constraint === 'customer_phones_relationship_normalized_unique_idx'
+    ) {
+      throw new AppError(409, 'customer_phone_conflict', 'This phone is already attached to a Customer in the active Company.');
     }
     throw new AppError(409, 'customer_identity_conflict', 'The requested Customer identity change conflicts with existing data.');
   }
@@ -413,15 +474,20 @@ export async function createCustomer(
   const company = requireCompany(context);
   try {
     return await withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+      const prior = (await client.query<{ id: string }>(
+        'SELECT id FROM customers WHERE idempotency_key = $1', [idempotencyKey],
+      )).rows[0];
+      if (prior) return loadCustomerProfile(client, prior.id);
+      const identityId = await resolveCustomerIdentity(client, context.workspace.id, input.phonePrimary);
       const created = await client.query<{ id: string }>(`
         INSERT INTO customers(
-          workspace_id, company_id, full_name, phone_primary, phone_secondary,
+          workspace_id, company_id, identity_id, full_name, phone_primary, phone_secondary,
           address, province, city, postal_code, created_by_user_account_id, idempotency_key
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (workspace_id, company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
         DO NOTHING RETURNING id
       `, [
-        context.workspace.id, company.id, input.fullName, input.phonePrimary, input.phoneSecondary || null,
+        context.workspace.id, company.id, identityId, input.fullName, input.phonePrimary, input.phoneSecondary || null,
         input.address || null, input.province || null, input.city || null, input.postalCode || null,
         session.userAccountId, idempotencyKey,
       ]);
@@ -438,19 +504,21 @@ export async function createCustomer(
         const sourceId = await insertSource(client, {
           workspaceId: context.workspace.id, companyId: company.id, customerId, actorId: session.userAccountId,
         }, input.source);
+        await ensureIdentityPhone(client, context.workspace.id, identityId, input.phonePrimary);
         await client.query(`
           INSERT INTO customer_phones(
-            workspace_id, company_id, customer_id, source_id, value, normalized_value,
+            workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
             label, is_primary, verification_status
-          ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'mobile', true, 'unverified')
-        `, [context.workspace.id, company.id, customerId, sourceId, input.phonePrimary]);
+          ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'mobile', true, 'unverified')
+        `, [context.workspace.id, company.id, customerId, identityId, sourceId, input.phonePrimary]);
         if (input.phoneSecondary) {
+          await ensureIdentityPhone(client, context.workspace.id, identityId, input.phoneSecondary);
           await client.query(`
             INSERT INTO customer_phones(
-              workspace_id, company_id, customer_id, source_id, value, normalized_value,
+              workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
               label, is_primary, verification_status
-            ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), 'secondary', false, 'unverified')
-          `, [context.workspace.id, company.id, customerId, sourceId, input.phoneSecondary]);
+            ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'secondary', false, 'unverified')
+          `, [context.workspace.id, company.id, customerId, identityId, sourceId, input.phoneSecondary]);
         }
         if (input.address) {
           await client.query(`
@@ -488,8 +556,8 @@ export async function addPhone(
   const company = requireCompany(context);
   try {
     return await withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-      const customer = (await client.query<CustomerRow>(`
-        SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
+      const customer = (await client.query<CustomerRow & { identity_id: string }>(`
+        SELECT id, identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
         FROM customers WHERE id = $1 FOR UPDATE
       `, [customerId])).rows[0];
       if (!customer) throw new AppError(404, 'customer_not_found', 'Customer was not found in the active context.');
@@ -499,6 +567,7 @@ export async function addPhone(
         'SELECT id FROM customer_phones WHERE idempotency_key = $1', [idempotencyKey],
       );
       if (!existing.rowCount) {
+        await ensureIdentityPhone(client, context.workspace.id, customer.identity_id, input.value);
         const sourceId = await insertSource(client, {
           workspaceId: context.workspace.id, companyId: company.id, customerId, actorId: session.userAccountId,
         }, input.source);
@@ -507,11 +576,11 @@ export async function addPhone(
         }
         await client.query(`
           INSERT INTO customer_phones(
-            workspace_id, company_id, customer_id, source_id, value, normalized_value, label,
+            workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value, label,
             is_primary, verification_status, idempotency_key
-          ) VALUES ($1, $2, $3, $4, $5, normalize_customer_phone($5), $6, $7, $8, $9)
+          ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), $7, $8, $9, $10)
         `, [
-          context.workspace.id, company.id, customerId, sourceId, input.value, input.label ?? 'mobile',
+          context.workspace.id, company.id, customerId, customer.identity_id, sourceId, input.value, input.label ?? 'mobile',
           input.isPrimary ?? false, input.verificationStatus ?? 'unverified', idempotencyKey,
         ]);
         if (input.isPrimary) {
