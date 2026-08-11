@@ -339,3 +339,18 @@ Foundation فعلی از Express modular monolith، PostgreSQL، session opaque 
 
 **Impact:**
 این بخش‌های محدود اکنون `CURRENT` هستند و با integration test اعتبارسنجی می‌شوند. سایر domainهای Prototype، migration داده قدیمی، Outbox، MFA، backup production و طراحی کامل Sales/API همچنان خارج از این vertical slice و مطابق status اسناد خود باقی می‌مانند.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Customer 360 identity foundation implemented
+
+**Decision:**
+Customer به‌عنوان profile والد حفظ شد و phone/address چندتایی، provenance، timeline server-generated و duplicate candidate deterministic به آن افزوده شد. merge فقط میان Customerهای قابل‌مشاهده در همان Workspace/Company انجام می‌شود، canonical با ترتیب `created_at` سپس UUID انتخاب می‌گردد و profile بازنده یا relationهای آن حذف نمی‌شوند. `customer_merge_operations` lineage و snapshot را نگه می‌دارد و unmerge واقعی profile مستقل را بازمی‌گرداند.
+
+**Reason:**
+هویت مشتری باید پیش از Lead، Invoice یا import انبوه، پایدار، قابل‌ردیابی و در برابر تطبیق اشتباه قابل‌بازیابی باشد.
+
+**Impact:**
+Customer 360 foundation اکنون `CURRENT` است و با PostgreSQL integration test پوشش دارد. fuzzy matching، cross-Workspace identity linking، AI resolution و import حجیم همچنان deferred هستند. Prototype و داده `localStorage` تغییری نکرده‌اند.

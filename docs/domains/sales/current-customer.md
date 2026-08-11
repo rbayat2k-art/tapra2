@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer و چرخه فروش فعلی است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
 > Supersedes: none
 > Superseded by: none
 
@@ -12,12 +12,15 @@
 ## Customer SaaS / PostgreSQL
 
 - کاربر ابتدا login و یک membership مجاز را به‌عنوان Workspace/Company context انتخاب می‌کند.
-- permissionهای `customer.read` و `customer.create` در server enforce می‌شوند.
-- Customer با `fullName` و `phonePrimary` اجباری و مشخصات تماس/نشانی اختیاری در PostgreSQL ذخیره می‌شود.
-- uniqueness شماره اصلی در هر Workspace/Company و idempotency ایجاد در database محافظت می‌شود.
-- read و create فقط در context فعال انجام می‌شوند؛ RLS مانع دسترسی بین Companyها است.
-- create موفق و AuditEntry مربوط به آن در یک transaction ثبت می‌شوند.
+- permissionهای `customer.read`، `customer.create`، `customer.identity.manage` و `customer.merge` در server enforce می‌شوند.
+- Customer profile والد است و phone/addressهای چندتایی و source/provenance دارد.
+- normalized phone در Workspace یکتا است؛ Company visibility و RLS مانع مشاهده داده context دیگر می‌شوند.
+- timeline فعلی eventهای `customer_created`، `phone_added`، `address_added`، `customer_merged` و `customer_split` را server-generated ثبت می‌کند.
+- duplicate check شماره دقیق را `EXACT_MATCH` و نام دقیق را فقط به‌عنوان `POSSIBLE_DUPLICATE` برای بررسی انسانی برمی‌گرداند؛ merge خودکار وجود ندارد.
+- merge دارای permission، confirmation UI، transaction، AuditEntry و انتخاب deterministic canonical است. profile بازنده حذف نمی‌شود و unmerge واقعی داده و استقلال آن را بازمی‌گرداند.
 - UI منبع `SaaS / PostgreSQL` را به‌صورت پیش‌فرض و جدا از Prototype نشان می‌دهد.
+
+fuzzy matching، ارتباط هویت میان Workspaceها، import انبوه، AI entity resolution و جریان‌های Prospect/Lead/Opportunity هنوز CURRENT نیستند.
 
 ## Customer Prototype / localStorage
 

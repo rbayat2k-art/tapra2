@@ -7,7 +7,7 @@
 > Supersedes: none
 > Superseded by: none
 
-این سند رفتار CURRENT نیست. تنها قابلیت فعلی فروش در [current customer](current-customer.md) ثبت شده است. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
+این سند رفتار CURRENT نیست. foundation محدود Customer 360 در [current customer](current-customer.md) ثبت شده است؛ Lead/Opportunity/import گسترده و identity resolution این سند همچنان آینده‌اند. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
 
 ## اصول سراسری
 

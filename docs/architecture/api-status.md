@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
+> Last validated: 2026-08-11 against `agent/customer-360-sprint-2@6c2f289`
 > Supersedes: none
 > Superseded by: none
 
@@ -17,17 +17,24 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/auth/logout` | پایان session؛ نیازمند CSRF |
 | `POST` | `/api/v1/session/context` | انتخاب membership مجاز؛ نیازمند CSRF |
 | `GET` | `/api/v1/customers` | فهرست Customerهای context فعال |
-| `GET` | `/api/v1/customers/:customerId` | خواندن Customer در context فعال |
-| `POST` | `/api/v1/customers` | ایجاد Customer؛ نیازمند CSRF، permission و `Idempotency-Key` از نوع UUID |
+| `GET` | `/api/v1/customers/:customerId` | خواندن profile شامل phone، address، source، timeline و merge history |
+| `GET` | `/api/v1/customers/:customerId/timeline` | خواندن timeline مجاز Customer |
+| `POST` | `/api/v1/customers` | ایجاد Customer و source/phone/timeline؛ نیازمند `Idempotency-Key` |
+| `POST` | `/api/v1/customers/:customerId/phones` | افزودن phone و provenance؛ نیازمند `customer.identity.manage` و `Idempotency-Key` |
+| `POST` | `/api/v1/customers/:customerId/addresses` | افزودن address و provenance؛ نیازمند `customer.identity.manage` و `Idempotency-Key` |
+| `POST` | `/api/v1/customers/duplicates/check` | تشخیص قطعی `EXACT_MATCH` و هشدار نام یکسان `POSSIBLE_DUPLICATE` بدون merge خودکار |
+| `POST` | `/api/v1/customers/merge` | merge کنترل‌شده، deterministic و reversible؛ نیازمند `customer.merge` و `Idempotency-Key` |
+| `POST` | `/api/v1/customers/merges/:operationId/unmerge` | بازگردانی merge و بازیابی profile مستقل؛ نیازمند `customer.merge` |
 
 ## قراردادهای مشترک
 
 - session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
-- Customer routeها به active Workspace/Company و permissionهای `customer.read` یا `customer.create` نیاز دارند.
+- Customer routeها به active Workspace/Company و یکی از permissionهای `customer.read`، `customer.create`، `customer.identity.manage` یا `customer.merge` متناسب با عملیات نیاز دارند.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
 - خطاها JSON با `error.code`, `error.message` و `correlationId` برمی‌گردند.
 - endpointهای فهرست‌شده contract کامل platform نیستند و pagination عمومی هنوز اجرا نشده است.
+- merge winner از profile قدیمی‌تر و سپس UUID به‌صورت deterministic انتخاب می‌شود؛ client نمی‌تواند canonical را تحمیل کند.
 
 ## مرز آینده
 

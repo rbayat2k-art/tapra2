@@ -1,4 +1,11 @@
-import type { ApiErrorPayload, CreateFoundationCustomer, FoundationCustomer, FoundationSession } from './contracts';
+import type {
+  ApiErrorPayload,
+  CreateFoundationCustomer,
+  DuplicateCheckResult,
+  FoundationCustomer,
+  FoundationCustomerProfile,
+  FoundationSession,
+} from './contracts';
 
 export class FoundationApiError extends Error {
   constructor(
@@ -44,9 +51,33 @@ export const foundationApi = {
     body: JSON.stringify({ membershipId }),
   }, csrfToken),
   listCustomers: () => request<{ customers: FoundationCustomer[] }>('/customers'),
-  createCustomer: (input: CreateFoundationCustomer, csrfToken: string) => request<{ customer: FoundationCustomer }>('/customers', {
+  readCustomer: (customerId: string) => request<{ customer: FoundationCustomerProfile }>(`/customers/${customerId}`),
+  createCustomer: (input: CreateFoundationCustomer, csrfToken: string) => request<{ customer: FoundationCustomerProfile }>('/customers', {
     method: 'POST',
     headers: { 'idempotency-key': crypto.randomUUID() },
     body: JSON.stringify(input),
+  }, csrfToken),
+  checkCustomerDuplicates: (input: { phone: string; fullName?: string }, csrfToken: string) => request<DuplicateCheckResult>('/customers/duplicates/check', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, csrfToken),
+  addCustomerPhone: (customerId: string, input: { value: string; label?: string; isPrimary?: boolean }, csrfToken: string) => request<{ customer: FoundationCustomerProfile }>(`/customers/${customerId}/phones`, {
+    method: 'POST',
+    headers: { 'idempotency-key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  }, csrfToken),
+  addCustomerAddress: (customerId: string, input: { province?: string; city?: string; addressText: string; postalCode?: string; label?: string; isPrimary?: boolean }, csrfToken: string) => request<{ customer: FoundationCustomerProfile }>(`/customers/${customerId}/addresses`, {
+    method: 'POST',
+    headers: { 'idempotency-key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  }, csrfToken),
+  mergeCustomers: (input: { customerId: string; targetCustomerId: string; reason: string }, csrfToken: string) => request<{ operationId: string; canonicalCustomer: FoundationCustomerProfile }>('/customers/merge', {
+    method: 'POST',
+    headers: { 'idempotency-key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  }, csrfToken),
+  unmergeCustomers: (operationId: string, reason: string, csrfToken: string) => request<{ canonicalCustomer: FoundationCustomerProfile; restoredCustomer: FoundationCustomerProfile }>(`/customers/merges/${operationId}/unmerge`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   }, csrfToken),
 };
