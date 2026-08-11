@@ -312,3 +312,15 @@ Formalization دامنه Sales چند اصل مشترک درباره multi-compa
 
 **Impact:**
 مالکیت اصول cross-domain در documentation index ثبت شد. این تصمیم implementation، معماری runtime، application code، package configuration یا رفتار CURRENT را تغییر نمی‌دهد.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** SaaS foundation architecture decision pack accepted
+
+**Decision:**
+هفت ADR بنیاد SaaS در `docs/decisions/adr/` پذیرفته شدند: مدل Hybrid Tenant/Workspace، Modular Monolith، PostgreSQL و tenancy enforcement، Identity/session/authorization، Audit/Outbox/reliability، مهاجرت تدریجی Prototype و مرزهای Data/AI/Security.
+
+**Impact:**
+این تصمیم‌ها جهت implementation آینده را تثبیت و از architectural drift جلوگیری می‌کنند، اما رفتار `CURRENT` نیستند و هیچ application code، package/config یا runtime behavior را تغییر نمی‌دهند. انتخاب‌های غیرضروری برای Foundation در ADRها صریحاً deferred شده‌اند.

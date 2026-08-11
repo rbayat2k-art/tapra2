@@ -3,7 +3,7 @@
 > Status: DRAFT
 > Source of truth: این سند برای قرارداد مفهومی و غیرپیاده‌سازی‌شده API آینده است.
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `stable@cea6514` and the pre-migration API snapshot
+> Last validated: 2026-08-11 against accepted SaaS foundation ADRs and `agent/docs-migration@120e813`
 > Supersedes: none
 > Superseded by: none
 
@@ -11,7 +11,8 @@
 
 ## قواعد قرارداد پیش از تصویب
 
-- prefix، versioning، authentication، error envelope، pagination و idempotency هنوز تصمیم نهایی ندارند.
+- prefix، versioning، error envelope و pagination هنوز تصمیم نهایی ندارند.
+- مدل مفهومی Identity/session/authorization در [ADR-004](../decisions/adr/ADR-004-identity-session-authorization.md) و الزام idempotency برای commandهای حساس در [ADR-005](../decisions/adr/ADR-005-audit-outbox-reliability.md) پذیرفته شده‌اند؛ شکل دقیق contract و فناوری implementation هنوز DRAFT است.
 - typeهای client فعلی ورودی/خروجی دائمی backend نیستند؛ DTOها باید پس از تحلیل امنیت و validation تعریف شوند.
 - authorization باید server-side و علاوه بر permission، شامل company/branch/team scope باشد.
 - عملیات تغییر وضعیت باید audit، actor، timestamp و جلوگیری از transition نامعتبر داشته باشند.

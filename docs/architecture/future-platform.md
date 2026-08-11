@@ -3,15 +3,27 @@
 > Status: DRAFT
 > Source of truth: این سند برای جهت معماری platform/backend آینده و مرز آن با سیستم فعلی است.
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `stable@cea6514` and legacy design sources
+> Last validated: 2026-08-11 against accepted SaaS foundation ADRs and `agent/docs-migration@120e813`
 > Supersedes: none
 > Superseded by: none
 
 این سند پیاده‌سازی موجود را توصیف نمی‌کند. وضعیت اجرایی در [current system](current-system.md) و [API status](api-status.md) است.
 
+تصمیم‌های پذیرفته‌شده Foundation در [ADR index](../decisions/adr/README.md) authoritative هستند. این سند overview آینده و محل جزئیات هنوز حل‌نشده باقی می‌ماند و نباید تصمیم پذیرفته‌شده ADRها را دوباره تعریف کند.
+
 ## مسئله‌ای که معماری آینده باید حل کند
 
 معماری client-only فعلی برای داده سازمانی مشترک، کنترل دسترسی قابل اتکا، هم‌زمانی چند کاربر، audit مقاوم، backup و integration خارجی کافی نیست. platform آینده باید بدون مخلوط‌کردن قواعد دامنه با transport، این نیازها را پوشش دهد.
+
+## تصمیم‌های Foundation پذیرفته‌شده
+
+- مدل Hybrid با `Workspace/Tenant` به‌عنوان مرز امنیت و داده: [ADR-001](../decisions/adr/ADR-001-tenant-workspace-model.md)
+- `Modular Monolith` به‌عنوان topology اولیه Backend: [ADR-002](../decisions/adr/ADR-002-modular-monolith.md)
+- `PostgreSQL` managed/shared با enforcement چندلایه tenancy: [ADR-003](../decisions/adr/ADR-003-postgresql-tenancy.md)
+- جداسازی Identity/Membership/Role/Scope و authorization سمت Server: [ADR-004](../decisions/adr/ADR-004-identity-session-authorization.md)
+- Audit append-oriented، Transactional Outbox و integration قابل‌اعتماد: [ADR-005](../decisions/adr/ADR-005-audit-outbox-reliability.md)
+- migration تدریجی Prototype با Strangler و reconciliation: [ADR-006](../decisions/adr/ADR-006-prototype-migration.md)
+- مرزهای deny-by-default برای Data، AI و Security: [ADR-007](../decisions/adr/ADR-007-data-ai-security-boundaries.md)
 
 ## مرزهای پیشنهادی
 
@@ -41,12 +53,13 @@
 4. ساخت Customer/Lead/Sales domains بر اساس طراحی پذیرفته‌شده و حل پرسش‌های باز.
 5. افزودن integrationها پس از تثبیت domain contracts.
 
-## موارد حل‌نشده معماری
+## موارد deferred و غیرمسدودکننده Foundation
 
-- انتخاب database، hosting، deployment topology و فناوری backend.
-- شکل دقیق tenant/company isolation و retention.
-- ترتیب migration داده‌های browser و راهبرد coexistence.
-- سطح consistency برای عملیات بانکی، inventory و settlement.
-- قرارداد identity provider، token/session و بازیابی حساب.
+- انتخاب backend framework، Cloud provider و ابزار deployment.
+- Identity Provider دقیق، MFA، recovery و session library.
+- ترتیب domain-level migration، ابزار import و مدت coexistence.
+- سطح consistency جزئی برای عملیات بانکی، inventory و settlement.
+- AI provider، سیاست حقوقی/retention، SaaS billing، Enterprise SLA و Dedicated Database tier.
+- مقادیر نهایی `RPO/RTO` و integrationهای آینده.
 
 تا زمان تصمیم رسمی، هیچ محصول یا فناوری نمونه در اسناد legacy الزام معماری محسوب نمی‌شود. endpointهای پیشنهادی در [API contract draft](../future/api-contract-draft.md) DRAFT هستند.
