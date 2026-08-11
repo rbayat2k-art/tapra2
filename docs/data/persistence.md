@@ -3,44 +3,28 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-Tapra2 در وضعیت فعلی داده‌های برنامه را در مرورگر نگهداری می‌کند. مرجع implementation این رفتار [src/utils/storage.ts](../../src/utils/storage.ts) است.
+Tapra2 اکنون persistence دوگانه و صریح دارد.
 
-## روش ذخیره‌سازی
+## PostgreSQL
 
-- storage layer داده‌ها را با `localStorage` می‌خواند و می‌نویسد.
-- کلیدهای دامنه در `STORAGE_KEYS` متمرکز شده‌اند.
-- داده‌های پیش‌فرض برای کاربران تازه یا storage خالی در همان لایه تعریف شده‌اند.
-- بعضی تنظیمات UI مانند theme، font و impersonation مستقیماً در `App.tsx` با کلیدهای جداگانه ذخیره می‌شوند.
+- session، Organization/Access foundation، Customer SaaS و AuditEntry در PostgreSQL ذخیره می‌شوند.
+- migrationها checksum، ترتیب نام و advisory lock دارند و تکرار اجرای آن‌ها idempotent است.
+- service runtime با نقش محدود `tapra2_app` و migration با `tapra2_owner` اجرا می‌شود.
+- Customer و AuditEntry در transaction دارای tenant context اجرا و با RLS محدود می‌شوند.
+- ایجاد Customer و AuditEntry مربوط به آن در یک transaction انجام می‌شود.
+- Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
-گروه‌های persistent فعلی شامل کاربران و نقش‌ها، شرکت‌ها، حساب‌ها، مراکز هزینه، vendors، درخواست‌ها، اعلان‌ها، پیام‌ها، support cases، نامه‌ها، workflow، tasks، tab usage و customers هستند. نام دقیق کلیدها باید از `STORAGE_KEYS` خوانده شود و در اسناد دیگر تکرار نشود.
+## localStorage
 
-## Migration و compatibility
+سایر قابلیت‌های Prototype همچنان از `src/utils/storage.ts` و کلیدهای موجود مرورگر استفاده می‌کنند. هیچ پاک‌سازی، تبدیل یا انتقال خودکار داده قدیمی اجرا نشده است. صفحه Customer نیز مسیر Prototype را جداگانه حفظ می‌کند.
 
-مکانیزم عمومی برای migrate یا upgrade خودکار داده‌های قدیمی `localStorage` مشاهده نشد. بنابراین:
+## محدودیت‌ها
 
-- تغییر default data روی داده ذخیره‌شده کاربران قبلی الزاماً اعمال نمی‌شود.
-- تغییر schema یا storage key ممکن است داده قبلی را ناسازگار یا غیرقابل مشاهده کند.
-- هر تغییر آینده در persistence باید migration، rollback و compatibility plan جداگانه داشته باشد.
-
-## محدودیت‌ها و ریسک‌ها
-
-- داده به browser profile و دستگاه فعلی وابسته است.
-- پاک‌شدن site data می‌تواند داده را حذف کند.
-- backup مرکزی و restore سازمانی وجود ندارد.
-- همگام‌سازی چندکاربره و concurrency control وجود ندارد.
-- client-side storage برای secrets یا enforcement امنیتی قابل اتکا نیست.
-- `localStorage` database سازمانی محسوب نمی‌شود.
-
-## مسئولیت اسناد دیگر
-
-- مدل مفهومی داده در [current-data-model.md](current-data-model.md) نگهداری می‌شود.
-- معماری runtime در [current-system.md](../architecture/current-system.md) نگهداری می‌شود.
-- وضعیت امنیت و حریم خصوصی در [security-and-privacy.md](../engineering/security-and-privacy.md) نگهداری می‌شود.
-
-## شرط تغییر این وضعیت
-
-با اضافه‌شدن database، server synchronization یا persistence جدید، ابتدا design و migration plan باید تصویب شود و سپس این سند پس از implementation به‌روزرسانی گردد.
+- backup/restore production، retention و disaster recovery هنوز پیاده‌سازی نشده‌اند.
+- migration داده Prototype به PostgreSQL هنوز وجود ندارد.
+- هم‌زیستی دو منبع داده موقت است و UI باید منبع را آشکار نشان دهد.
+- `localStorage` همچنان برای داده حساس واقعی یا enforcement امنیتی مناسب نیست.

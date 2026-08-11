@@ -3,36 +3,32 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-این سند گزارش وضعیت است، نه تأیید آمادگی production. جزئیات permission در [roles and permissions](../domains/finance/roles-and-permissions.md) قرار دارد.
+این سند تأیید آمادگی production نیست.
 
-## وضعیت فعلی
+## Foundation اجراشده
 
-- برنامه یک SPA بدون backend و بدون API اجرایی است.
-- کاربران، passwordها، current user و داده‌های کسب‌وکار در `localStorage` مرورگر نگهداری می‌شوند.
-- passwordها hash نشده‌اند و `AdminPanel` امکان نمایش/تغییر مقدار آن‌ها را دارد.
-- login در client انجام می‌شود و passwordهای fallback نمونه مانند `123456` و `admin` پذیرفته می‌شوند.
-- `storage.getCurrentUser()` در نبود session ذخیره‌شده، admin نمونه را به‌صورت خودکار برمی‌گرداند.
-- session token، secure cookie، server-side authorization، encryption at rest و audit مقاوم در برابر دست‌کاری وجود ندارد.
-- فایل‌ها/تصاویر می‌توانند به‌صورت Data URL یا URL نمونه در داده client ذخیره شوند.
+- passwordهای Foundation با `scrypt` و salt نگهداری می‌شوند؛ password خام در database ذخیره نمی‌شود.
+- session opaque و hash token در PostgreSQL است؛ cookie دارای `HttpOnly` و `SameSite=Lax` است و در production باید `Secure` باشد.
+- state-changing endpointها CSRF token می‌خواهند.
+- membership، context و permission در server دوباره محاسبه می‌شوند.
+- Customer context از session استخراج می‌شود و client نمی‌تواند tenant را در payload تعیین کند.
+- PostgreSQL RLS و `FORCE ROW LEVEL SECURITY` لایه دفاعی دوم برای Customer/Audit است.
+- نقش runtime superuser، database creator یا role creator نیست.
+- Customer create و AuditEntry server-derived در یک transaction ثبت می‌شوند.
+- response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
 
-## کنترل‌های موجود و محدودیت آن‌ها
+## ریسک باقی‌مانده Prototype
 
-- UI بر اساس role و permission بخش‌ها و اقدام‌ها را محدود می‌کند.
-- admin در چند مسیر UI bypass دارد و بعضی Viewها هنوز از محاسبه واحد `getEffectiveUserPermissions` استفاده نمی‌کنند.
-- بازنشانی tabها هنگام تغییر هویت از نمایش tab بازمانده کاربر قبلی جلوگیری می‌کند.
-- همه این کنترل‌ها client-side هستند و در برابر کاربری که storage یا bundle مرورگر را دست‌کاری کند مرز امنیتی قابل اتکا محسوب نمی‌شوند.
+بخش‌های قدیمی همچنان login و permission client-side و داده در `localStorage` دارند؛ passwordهای نمونه legacy نیز در همان مدل قدیمی وجود دارند. این بخش‌ها مرز امنیتی سازمانی نیستند و نباید برای داده حساس production استفاده شوند.
 
-## حریم خصوصی و بهره‌برداری
+## Gapهای باقی‌مانده
 
-- داده‌هایی مانند اطلاعات هویتی، شماره تماس، حساب بانکی، شکایت، پیام و password نباید در این معماری برای داده واقعی حساس یا محیط production استفاده شوند.
-- پاک‌کردن storage مرورگر می‌تواند داده را از بین ببرد؛ export/backup امن و سیاست retention مرکزی وجود ندارد.
-- مرورگر و دستگاه مشترک می‌تواند داده و session را در معرض کاربر بعدی قرار دهد.
-- repository و مستندات نباید secret یا داده واقعی مشتری را دریافت کنند. `GEMINI_API_KEY` فقط متغیر محیط توسعه است و نباید commit شود.
-
-## شرط عبور به معماری سازمانی
-
-نیازهای آینده مانند backend، احراز هویت server-side، hash امن password، least privilege، encryption، validation سمت server، audit immutable، backup و سیاست retention هنوز پیاده‌سازی نشده‌اند. جهت طراحی در [future platform](../architecture/future-platform.md) و قرارداد پیشنهادی در [API draft](../future/api-contract-draft.md) ثبت می‌شود.
+- MFA، recovery، rate limiting و lockout اجرا نشده‌اند.
+- TLS توسط خود برنامه local فراهم نمی‌شود و باید در deployment خاتمه یابد.
+- secret manager، backup/restore، retention، encryption-at-rest policy و security monitoring production تعریف نشده‌اند.
+- Audit فعلی append-oriented است، اما tamper-evident storage و Outbox هنوز اجرا نشده‌اند.
+- credential واقعی فقط در فایل ignored محیطی مجاز است و هرگز نباید در repository یا log قرار گیرد.

@@ -324,3 +324,18 @@ Formalization دامنه Sales چند اصل مشترک درباره multi-compa
 
 **Impact:**
 این تصمیم‌ها جهت implementation آینده را تثبیت و از architectural drift جلوگیری می‌کنند، اما رفتار `CURRENT` نیستند و هیچ application code، package/config یا runtime behavior را تغییر نمی‌دهند. انتخاب‌های غیرضروری برای Foundation در ADRها صریحاً deferred شده‌اند.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Foundation Sprint 1 vertical slice implemented
+
+**Context:**
+پس از پذیرش ADRهای Foundation، نخستین برش production-shaped برای اثبات مسیر end-to-end بدون مهاجرت یا حذف داده Prototype اجرا شد.
+
+**Decision:**
+Foundation فعلی از Express modular monolith، PostgreSQL، session opaque server-side، مدل Workspace/Company/Membership، permission سمت server، Customer create/read، RLS tenant isolation و AuditEntry تراکنشی استفاده می‌کند. Web client از مسیر متمرکز API به این Foundation متصل است و مسیر `Prototype / localStorage` را جدا و دست‌نخورده حفظ می‌کند. Docker Compose روش reproducible رسمی development است و PostgreSQL native فقط fallback محلی مبتنی بر environment باقی می‌ماند.
+
+**Impact:**
+این بخش‌های محدود اکنون `CURRENT` هستند و با integration test اعتبارسنجی می‌شوند. سایر domainهای Prototype، migration داده قدیمی، Outbox، MFA، backup production و طراحی کامل Sales/API همچنان خارج از این vertical slice و مطابق status اسناد خود باقی می‌مانند.

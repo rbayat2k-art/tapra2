@@ -3,55 +3,36 @@
 > Status: CURRENT
 > Source of truth: This document for current development setup and commands
 > Owner: Engineering Owner
-> Last validated: 2026-08-10 against `stable@e5874572`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-این سند فرمان‌های موجود در repository را توضیح می‌دهد و قابلیت یا ابزار توسعه‌ای را که در `package.json` وجود ندارد فرض نمی‌کند.
-
 ## پیش‌نیازها
 
-- Node.js
-- npm
+- Node.js و npm
+- PostgreSQL 18.x از Docker Compose در ماشین‌های پشتیبانی‌شده
+- در Windows بدون Docker: PostgreSQL native فقط به‌عنوان development fallback
 
-نسخه Node در `package.json` یا فایل `.nvmrc` تثبیت نشده است؛ بنابراین این سند نسخه مشخصی را تضمین نمی‌کند.
+## محیط
 
-## راه‌اندازی
+`.env.example` را به `.env.local` کپی و placeholderها را محلی جایگزین کنید. `.env.local` ignored است و هرگز نباید commit شود. runtime باید از `tapra2_app` و migration از `tapra2_owner` استفاده کند؛ `postgres` superuser برای اجرای برنامه مجاز نیست.
 
-```bash
-npm install
-```
+در Windows، `scripts/setup-native-postgres.ps1` با دریافت تعاملی رمز admin، database/userهای محدود را ایجاد می‌کند. رمز admin ذخیره نمی‌شود.
 
-فایل [.env.example](../../.env.example) متغیر زیر را معرفی می‌کند:
+## فرمان‌ها
 
-```text
-GEMINI_API_KEY=
-```
-
-در صورت نیاز، مقدار واقعی باید در فایل محیطی محلی قرار گیرد و نباید commit شود.
-
-## فرمان‌های موجود
-
-| فرمان | رفتار واقعی |
+| فرمان | کارکرد |
 |---|---|
-| `npm run dev` | اجرای Vite روی port `3000` و host `0.0.0.0` |
-| `npm run build` | ساخت bundle با Vite |
-| `npm run preview` | preview خروجی Vite |
-| `npm run lint` | اجرای `tsc --noEmit`؛ این فرمان ESLint نیست |
+| `npm install` | نصب dependencyها |
+| `npm run infra:up` | اجرای PostgreSQL با Docker Compose |
+| `npm run db:migrate` | اعمال migrationهای نسخه‌دار |
+| `npm run db:seed` | ایجاد داده deterministic توسعه |
+| `npm run db:setup` | migration سپس seed |
+| `npm run dev:all` | اجرای Web روی `3000` و Backend روی `3101` |
+| `npm run local` | setup database و اجرای هر دو process |
+| `npm run local:docker` | بالا‌آوردن container و اجرای local workflow |
+| `npm run build` | build Web و Backend |
+| `npm run lint` | typecheck Web و Backend؛ ESLint نیست |
+| `npm test` | integration test روی `tapra2_test` |
 
-تنظیمات Vite در [vite.config.ts](../../vite.config.ts) شامل React plugin، Tailwind plugin، alias با `@` و کنترل HMR از طریق `DISABLE_HMR` است.
-
-## محدودیت‌های فعلی workflow
-
-- package manager version قفل نشده است.
-- Node engine تعریف نشده است.
-- formatter یا ESLint script مشاهده نشد.
-- test script در `package.json` وجود ندارد.
-- این سند موفقیت build یا type check در همه commitها را تضمین نمی‌کند؛ نتیجه هر تغییر باید جداگانه اجرا و گزارش شود.
-
-## مراجع مرتبط
-
-- [وضعیت کیفیت](quality.md)
-- [معماری فعلی](../architecture/current-system.md)
-- [Persistence فعلی](../data/persistence.md)
-- [فهرست مستندات](../README.md)
+داده seed صرفاً توسعه‌ای است و نباید برای production استفاده شود.

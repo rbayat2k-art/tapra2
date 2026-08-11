@@ -7,13 +7,13 @@
 > Supersedes: none
 > Superseded by: none
 
-این سند پیاده‌سازی موجود را توصیف نمی‌کند. وضعیت اجرایی در [current system](current-system.md) و [API status](api-status.md) است.
+این سند تکمیل platform آینده را توصیف می‌کند، نه Foundation محدودی که اکنون اجرا شده است. وضعیت اجرایی فقط در [current system](current-system.md) و [API status](api-status.md) است.
 
 تصمیم‌های پذیرفته‌شده Foundation در [ADR index](../decisions/adr/README.md) authoritative هستند. این سند overview آینده و محل جزئیات هنوز حل‌نشده باقی می‌ماند و نباید تصمیم پذیرفته‌شده ADRها را دوباره تعریف کند.
 
 ## مسئله‌ای که معماری آینده باید حل کند
 
-معماری client-only فعلی برای داده سازمانی مشترک، کنترل دسترسی قابل اتکا، هم‌زمانی چند کاربر، audit مقاوم، backup و integration خارجی کافی نیست. platform آینده باید بدون مخلوط‌کردن قواعد دامنه با transport، این نیازها را پوشش دهد.
+Foundation فعلی مرزهای اولیه Backend، PostgreSQL، Identity، tenancy و Audit را برای Customer ایجاد کرده است، اما بیشتر domainهای Prototype هنوز client-only هستند. platform آینده باید بدون مخلوط‌کردن قواعد دامنه با transport، migration کامل، backup، reliability و integrationها را پوشش دهد.
 
 ## تصمیم‌های Foundation پذیرفته‌شده
 

@@ -5,10 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:all": "concurrently -k -n web,server -c cyan,magenta \"npm:dev\" \"npm:dev:server\"",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "npm run typecheck:web && npm run typecheck:server",
+    "typecheck:web": "tsc --noEmit",
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
+    "db:migrate": "tsx server/scripts/migrate.ts",
+    "db:seed": "tsx server/scripts/seed.ts",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "infra:up": "docker compose --env-file .env.local up -d postgres",
+    "infra:down": "docker compose --env-file .env.local down",
+    "local": "npm run db:setup && npm run dev:all",
+    "local:docker": "npm run infra:up && npm run local",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -18,21 +32,28 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-date-object": "^2.1.9",
     "react-dom": "^19.0.1",
     "react-multi-date-picker": "^4.5.2",
     "vite": "^6.2.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.21.0",
+    "@types/supertest": "^7.2.1",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.4",
     "esbuild": "^0.25.0",
+    "supertest": "^7.2.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vitest": "^4.1.10"
   }
 }

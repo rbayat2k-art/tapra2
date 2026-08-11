@@ -3,13 +3,23 @@
 > Status: CURRENT
 > Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer و چرخه فروش فعلی است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-11 against `agent/foundation-sprint-1@c5b8de6`
 > Supersedes: none
 > Superseded by: none
 
-این مرحله فقط `Customer` را پیاده‌سازی کرده است؛ فاکتور فروش، Lead، Promotion، انبار و لجستیک هنوز CURRENT نیستند.
+این مرحله دو مسیر صریح Customer دارد؛ فاکتور فروش، Lead، Promotion، انبار و لجستیک هنوز CURRENT نیستند.
 
-## مدل و persistence
+## Customer SaaS / PostgreSQL
+
+- کاربر ابتدا login و یک membership مجاز را به‌عنوان Workspace/Company context انتخاب می‌کند.
+- permissionهای `customer.read` و `customer.create` در server enforce می‌شوند.
+- Customer با `fullName` و `phonePrimary` اجباری و مشخصات تماس/نشانی اختیاری در PostgreSQL ذخیره می‌شود.
+- uniqueness شماره اصلی در هر Workspace/Company و idempotency ایجاد در database محافظت می‌شود.
+- read و create فقط در context فعال انجام می‌شوند؛ RLS مانع دسترسی بین Companyها است.
+- create موفق و AuditEntry مربوط به آن در یک transaction ثبت می‌شوند.
+- UI منبع `SaaS / PostgreSQL` را به‌صورت پیش‌فرض و جدا از Prototype نشان می‌دهد.
+
+## Customer Prototype / localStorage
 
 - `Customer` اطلاعات اختیاری هویت و نشانی، `createdAt` و `activityLog` دارد.
 - `phone1` در UI نقطه شروع جست‌وجو/ثبت است و توضیح type آن را در صورت وجود یکتا می‌داند؛ storage قید دیتابیس واقعی برای uniqueness ندارد.
@@ -33,7 +43,7 @@
 
 ## دسترسی
 
-- مسیر «مشتریان» برای `sales_access` نمایش داده می‌شود و admin در UI bypass دارد.
+- نمایش tab قدیمی «مشتریان» همچنان بر اساس `sales_access` و admin bypass کنترل می‌شود؛ دسترسی Foundation مستقل و server-side است.
 - کاربران نمونه فروش، `User.role: 'requestor'` و `customPermissions: ['sales_access']` دارند؛ `UserRole` مخصوص فروش اضافه نشده است.
 
-طراحی ادامه فروش در [approved design](approved-design.md) و ابهام‌های آن در [open questions](open-questions.md) است. منبع تاریخی کامل در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot باقی می‌ماند.
+هیچ داده `localStorage` به‌طور خودکار migrate یا حذف نشده است. طراحی ادامه فروش در [approved design](approved-design.md) و ابهام‌های آن در [open questions](open-questions.md) است. منبع تاریخی کامل در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot باقی می‌ماند.
