@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-11 against fresh clone of `stable@fcc3523c`
+> Last validated: 2026-08-11 against fresh clone of `stable@6d8414e0`
 > Supersedes: none
 > Superseded by: none
 
@@ -112,6 +112,8 @@
 - [Legacy product preservation and Legacy → SaaS map](archive/legacy-product-preservation-matrix.md)
 - [Permanent Sales Draft archive](archive/sales/README.md)
 - [PR #1 historical preservation and classification](archive/pr-1/README.md)
+- [Archive consolidation audit and cleanup evidence](archive/archive-consolidation-audit.md)
+- [Unique legacy product artifacts](archive/legacy-product/README.md)
 
 Snapshot فقط برای بازیابی و تاریخچه است و نباید به‌عنوان مستندات فعال استفاده شود.
 
