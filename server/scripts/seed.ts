@@ -133,10 +133,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
             workspace_id, company_id, customer_id, source_type, source_name,
             source_reference, confidence, verification_status, created_by_user_account_id
           )
-          SELECT $1, $2, $3, 'manual', 'Deterministic development seed', $3::text,
-            1, 'verified', $4
+          SELECT $1::uuid, $2::uuid, $3::uuid, 'manual', 'Deterministic development seed', $3::uuid::text,
+            1, 'verified', $4::uuid
           WHERE NOT EXISTS (
-            SELECT 1 FROM customer_sources WHERE customer_id = $3
+            SELECT 1 FROM customer_sources WHERE customer_id = $3::uuid
           )
         `, [context.workspaceId, context.companyId, context.customerId, ids.accountDemo]);
         await runtime.query(`
@@ -144,10 +144,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
             workspace_id, company_id, customer_id, source_id, value, normalized_value,
             label, is_primary, verification_status
           )
-          SELECT $1, $2, $3, s.id, $4, normalize_customer_phone($4),
+          SELECT $1::uuid, $2::uuid, $3::uuid, s.id, $4::text, normalize_customer_phone($4::text),
             'mobile', true, 'unverified'
           FROM customer_sources s
-          WHERE s.customer_id = $3
+          WHERE s.customer_id = $3::uuid
           ORDER BY s.created_at, s.id
           LIMIT 1
           ON CONFLICT (workspace_id, normalized_value) DO NOTHING
@@ -157,11 +157,11 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
             workspace_id, company_id, customer_id, actor_user_account_id,
             event_type, summary, metadata
           )
-          SELECT $1, $2, $3, $4, 'customer_created', 'پروفایل مشتری ایجاد شد.',
+          SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'customer_created', 'پروفایل مشتری ایجاد شد.',
             '{"source":"development_seed"}'::jsonb
           WHERE NOT EXISTS (
             SELECT 1 FROM customer_timeline_events
-            WHERE customer_id = $3 AND event_type = 'customer_created'
+            WHERE customer_id = $3::uuid AND event_type = 'customer_created'
           )
         `, [context.workspaceId, context.companyId, context.customerId, ids.accountDemo]);
         await runtime.query('COMMIT');
