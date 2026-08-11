@@ -387,3 +387,20 @@ Fresh clone در `C:\Users\iLia\Documents\Tapra2\canonical` از `stable@fcc3523
 
 **Impact:**
 checkoutهای قدیمی و Codex workspaceهای قبلی source branch آینده نیستند. ZIP legacy و forensic extraction فقط archive/recovery evidence باقی می‌مانند. هیچ فایل محلی، branch یا داده PostgreSQL در این تصمیم حذف نشد.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Legacy archive consolidation and support-refund safeguards recovered
+
+**Context:**
+پیش از cleanup checkoutهای قدیمی، پنج مسیر legacy و PR #1 با `origin/stable` مقایسه شدند. stash تاریخی `684c3a67` دو تصمیم ثبت‌نشده داشت: سخت‌سازی مالی عودت و پروتکل branch/approval. کد سخت‌سازی عودت از قبل در canonical وجود داشت، اما authority پشتیبانی همه invariantها را صریح ثبت نکرده بود.
+
+**Decision:**
+قواعد ضد پرداخت تکراری، منع reset پس از اتصال به خزانه، دلیل اجباری لغو تأیید، atomic بودن validation batch و منع بستن پرونده تا نتیجه نهایی همه ردیف‌ها به‌عنوان رفتار `CURRENT` در `docs/domains/support/business-rules.md` ثبت شدند. این ادعاها با `supportRefundWorkflow.ts`، تست‌های آن، `App.tsx` و `SupportCaseDetailModal.tsx` اعتبارسنجی شدند.
+
+پروتکل branch قدیمی به‌عنوان تاریخچه حفظ شد، اما authority فعال آن `AGENTS.md` و `docs/engineering/source-of-truth.md` است. فایل مستقل `tapra_preview.jsx` نیز فقط به‌عنوان artifact تاریخی در `docs/archive/legacy-product/` نگهداری شد و وارد runtime نشد.
+
+**Impact:**
+دانش یکتای معتبر بدون بازگرداندن معماری localStorage یا تغییر Backend/PostgreSQL/Customer 360 حفظ شد. هیچ application code، package configuration، migration، database یا runtime behavior تغییر نکرد. مسیرهای legacy فقط پس از تأیید cleanup جداگانه قابل حذف‌اند.
