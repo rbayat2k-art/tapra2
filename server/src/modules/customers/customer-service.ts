@@ -182,38 +182,36 @@ async function loadCustomerProfile(client: PoolClient, customerId: string): Prom
       `, [customerId])).rows.map((row) => row.id)
     : [customerId];
 
-  const [phones, addresses, sources, timeline, merges] = await Promise.all([
-    client.query<PhoneRow>(`
+  const phones = await client.query<PhoneRow>(`
       SELECT id, customer_id, value, normalized_value, label, is_primary, verification_status,
         source_id, created_at, updated_at
       FROM customer_phones WHERE customer_id = ANY($1::uuid[])
       ORDER BY is_primary DESC, created_at, id
-    `, [profileIds]),
-    client.query<AddressRow>(`
+    `, [profileIds]);
+  const addresses = await client.query<AddressRow>(`
       SELECT id, customer_id, province, city, address_text, postal_code, label, is_primary,
         source_id, created_at, updated_at
       FROM customer_addresses WHERE customer_id = ANY($1::uuid[])
       ORDER BY is_primary DESC, created_at, id
-    `, [profileIds]),
-    client.query<SourceRow>(`
+    `, [profileIds]);
+  const sources = await client.query<SourceRow>(`
       SELECT id, customer_id, source_type, source_name, source_reference, import_reference,
         observed_at, ingested_at, raw_source_reference, confidence, verification_status
       FROM customer_sources WHERE customer_id = ANY($1::uuid[])
       ORDER BY ingested_at, id
-    `, [profileIds]),
-    client.query<TimelineRow>(`
+    `, [profileIds]);
+  const timeline = await client.query<TimelineRow>(`
       SELECT id, customer_id, event_type, summary, metadata, occurred_at
       FROM customer_timeline_events WHERE customer_id = ANY($1::uuid[])
       ORDER BY occurred_at DESC, id DESC LIMIT 300
-    `, [profileIds]),
-    client.query<MergeRow>(`
+    `, [profileIds]);
+  const merges = await client.query<MergeRow>(`
       SELECT id, canonical_customer_id, merged_customer_id, status, reason,
         merged_at, reversed_at, reversal_reason
       FROM customer_merge_operations
       WHERE canonical_customer_id = $1 OR merged_customer_id = $1
       ORDER BY merged_at DESC, id DESC
-    `, [customerId]),
-  ]);
+    `, [customerId]);
 
   return {
     ...mapSummary(customer),
@@ -364,7 +362,11 @@ export async function createCustomer(
             INSERT INTO customer_addresses(
               workspace_id, company_id, customer_id, source_id, province, city, address_text,
               postal_code, label, is_primary, normalized_search_text
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'other', true, lower(trim(concat_ws(' ', $5, $6, $7, $8))))
+            ) VALUES (
+              $1::uuid, $2::uuid, $3::uuid, $4::uuid,
+              $5::text, $6::text, $7::text, $8::text,
+              'other', true, lower(trim(concat_ws(' ', $5::text, $6::text, $7::text, $8::text)))
+            )
           `, [context.workspace.id, company.id, customerId, sourceId, input.province || null, input.city || null, input.address, input.postalCode || null]);
         }
         await appendTimeline(client, {
@@ -461,8 +463,11 @@ export async function addAddress(
           INSERT INTO customer_addresses(
             workspace_id, company_id, customer_id, source_id, province, city, address_text,
             postal_code, label, is_primary, normalized_search_text, idempotency_key
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            lower(trim(concat_ws(' ', $5, $6, $7, $8))), $11)
+          ) VALUES (
+            $1::uuid, $2::uuid, $3::uuid, $4::uuid,
+            $5::text, $6::text, $7::text, $8::text, $9::text, $10::boolean,
+            lower(trim(concat_ws(' ', $5::text, $6::text, $7::text, $8::text))), $11::text
+          )
         `, [
           context.workspace.id, company.id, customerId, sourceId, input.province || null, input.city || null,
           input.addressText, input.postalCode || null, input.label ?? 'other', input.isPrimary ?? false, idempotencyKey,
