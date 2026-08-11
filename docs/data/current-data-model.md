@@ -26,6 +26,7 @@
 | Sales policy | `sales_policies` برای outcome مؤثر، lock و رفتار assignment بدون hard-code در service |
 | Sales operation | `sales_leads`, `sales_lead_assignments`, `sales_call_logs` برای Lead، مالکیت عملیاتی و تماس Company-scoped |
 | Sales relationship/history | `sales_customer_relationships`, `sales_customer_relationship_events`, `sales_lead_timeline_events` برای lock و history قابل‌ردیابی |
+| Sales marketing context | `sales_lead_marketing_links` برای reference و snapshot نوع `campaign`/`promotion` متصل به Lead و relationship همان Company |
 | Audit | `audit_entries` با actor، context، action، resource و correlation |
 
 شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. همه جدول‌های Customer 360، عملیات Sales فعلی و AuditEntry دارای PostgreSQL RLS اجباری هستند.
@@ -33,6 +34,8 @@
 شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و `customer_identity_phones` مانع تعلق بی‌صدای یک phone به دو identity در همان Workspace است. یک identity می‌تواند برای چند Company رابطه جدا داشته باشد، اما هر Company فقط relationship و داده عملیاتی context خود را از طریق RLS می‌بیند. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
 
 در merge، phone/address/source روی Customer اصلی خود باقی می‌مانند و profile canonical آن‌ها را از رابطه merge فعال جمع می‌کند. `lineage_snapshot` و هر دو ردیف Customer حفظ می‌شوند؛ unmerge رابطه را reverse و profile بازنده را دوباره active می‌کند.
+
+هر Call Log مقدار `marketing_snapshot` مستقل دارد. linkهای جدید Campaign/Promotion می‌توانند بعداً به relationship متصل شوند، ولی snapshot تماس قدیمی بازنویسی نمی‌شود. این مدل فقط context و تاریخچه را ذخیره می‌کند و schema کامل Campaign/Promotion یا pricing نیست.
 
 ## مدل Prototype
 

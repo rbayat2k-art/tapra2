@@ -23,9 +23,10 @@
 - identity و normalized phone در Workspace مرکزی هستند، اما relationship/query عملیاتی Customer همچنان Company-scoped است؛ test چندCompany نبود existence oracle را بررسی می‌کند.
 - permissionهای حساس `customer.identity.manage` و `customer.merge` سمت server enforce می‌شوند؛ UI مرز امنیتی نیست.
 - response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
-- Sales permissionهای `sales.queue.read`, `sales.call.create`, `sales.lead.create/read_all/assign/reassign` سمت server enforce می‌شوند؛ فهرست assignee نیز به Workspace/Company فعال محدود است.
+- Sales permissionهای `sales.queue.read`, `sales.call.create`, `sales.lead.create/read_all/assign/reassign` و `sales.marketing.link` سمت server enforce می‌شوند؛ فهرست assignee و marketing link نیز به Workspace/Company فعال محدود است.
 - فروشنده عادی فقط صف membership خود را می‌بیند، endpoint self-claim ندارد و نمی‌تواند روی Lead فروشنده دیگر تماس ثبت کند. manager برای reassignment به permission و reason نیاز دارد و تغییر در history/Audit ثبت می‌شود.
 - تماس ناموفق relationship/lock نمی‌سازد؛ تماس مؤثر فقط طبق `sales_policies` قابل‌تنظیم relationship/lock می‌سازد. پایان شیفت نیز در policy فعلی باعث انتقال خودکار assignment نمی‌شود.
+- اتصال Campaign/Promotion فقط توسط manager مجاز است، زیر RLS همان Company اجرا می‌شود و نمی‌تواند Lead شرکت دیگر را آشکار یا تغییر دهد. این اتصال هیچ pricing/eligibility ضمنی ایجاد نمی‌کند.
 
 ## ریسک باقی‌مانده Prototype
 

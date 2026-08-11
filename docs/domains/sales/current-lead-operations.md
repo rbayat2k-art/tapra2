@@ -1,7 +1,7 @@
-# عملیات فعلی Lead و صف فروش
+# عملیات فعلی Lead، صف و زمینه بازاریابی فروش
 
 > Status: CURRENT
-> Source of truth: این سند برای رفتار پیاده‌سازی‌شده Lead، Sales Queue، Assignment و Call Log است.
+> Source of truth: این سند برای رفتار پیاده‌سازی‌شده Lead، Sales Queue، Assignment، Call Log و اتصال Campaign/Promotion است.
 > Owner: Sales Domain Owner
 > Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: backing مبتنی بر `localStorage` برای صفحه‌های صف فروش و تخصیص Lead
@@ -11,16 +11,16 @@
 
 مسیر فعلی زیر server-backed است:
 
-`Customer 360 → Lead → Assignment → Sales Queue → Call Log → Timeline/Audit`
+`Customer 360 → Lead → Marketing Context → Assignment → Sales Queue → Call Log → Relationship/Timeline/Audit`
 
-UI فارسی/RTL قبلی حفظ شده، اما صفحه‌های «صف فروش من» و «تخصیص و انتقال Lead» اکنون از `/api/v1/sales/*` و PostgreSQL استفاده می‌کنند. فایل‌ها و داده‌های Prototype حذف یا خودکار migrate نشده‌اند؛ Campaign، Invoice، Commission و AI Sales همچنان خارج از این slice هستند.
+UI فارسی/RTL قبلی حفظ شده، اما صفحه‌های «صف فروش من» و «تخصیص و انتقال Lead» اکنون از `/api/v1/sales/*` و PostgreSQL استفاده می‌کنند. فایل‌ها و داده‌های Prototype حذف یا خودکار migrate نشده‌اند. اتصال context مربوط به Campaign/Promotion اجرا شده است، اما موتور کامل Campaign/Promotion، Invoice، Commission و AI Sales همچنان خارج از این slice هستند.
 
 ## مرز داده
 
 - `customer_identity_id` هویت مشترک Customer در Workspace است.
 - `customer_id`، Lead، assignment، تماس، رابطه فروش و timeline عملیاتی همگی Company-scoped هستند.
 - Company و Workspace از session فعال استخراج می‌شوند و client اجازه تعیین آن‌ها در payload را ندارد.
-- هر Call Log زمان، Company، User، Lead، Customer identity/relationship، نتیجه، context و `campaign_reference` snapshot را حفظ می‌کند.
+- هر Call Log زمان، Company، User، Lead، Customer identity/relationship، نتیجه، context و snapshot مستقل Campaign/Promotion موجود در لحظه تماس را حفظ می‌کند.
 
 ## Permission و صف
 
@@ -32,8 +32,17 @@ UI فارسی/RTL قبلی حفظ شده، اما صفحه‌های «صف فر�
 | `sales.lead.read_all` | مشاهده همه Leadهای Company فعال |
 | `sales.lead.assign` | تخصیص Lead بدون مالک به membership فروش فعال |
 | `sales.lead.reassign` | بازتخصیص Lead دارای مالک، فقط با دلیل |
+| `sales.marketing.link` | اتصال Campaign/Promotion به Lead و relationship همان Company؛ فقط manager |
 
 فروشنده عادی permission تخصیص ندارد و endpoint self-claim نیز وجود ندارد. بازتخصیص manager در `sales_lead_assignments`، Lead timeline و `audit_entries` ثبت می‌شود. اگر رابطه Customer lock فعال داشته باشد، همان transaction مالک lock را نیز منتقل و history آن را append می‌کند.
+
+## Campaign/Promotion context
+
+- manager می‌تواند یک reference از نوع `campaign` یا `promotion` را به Lead متصل کند؛ duplicate طبیعی و درخواست تکراری idempotent است.
+- اتصال در `sales_lead_marketing_links` با actor، زمان، Company، context snapshot و relationship فعلی نگهداری می‌شود.
+- اگر رابطه هنوز وجود نداشته باشد، تماس مؤثر همان linkها را به relationship ایجادشده متصل و history آن را append می‌کند.
+- Call Log یک `marketing_snapshot` مستقل می‌گیرد؛ افزودن Promotion یا تغییر context در آینده تماس قدیمی را بازنویسی نمی‌کند.
+- این linkage به‌تنهایی pricing، eligibility، entitlement، تخفیف یا مجوز فروش ایجاد نمی‌کند. UIهای مدیریت Campaign و Promotion همچنان prototype-backed هستند.
 
 ## تماس، رابطه و policy
 
@@ -52,13 +61,14 @@ Outcome مؤثر، relationship شرکتی را ایجاد/به‌روزرسان
 
 - assignment/reassignment append-only است و previous/new owner، actor، time و reason را نگه می‌دارد.
 - Lead timeline رویدادهای create، assignment و call را نگه می‌دارد.
-- Customer timeline رویدادهای `sales_lead_created` و `sales_call_logged` را در همان Company ثبت می‌کند.
+- Customer timeline رویدادهای `sales_lead_created`، `sales_marketing_linked` و `sales_call_logged` را در همان Company ثبت می‌کند.
 - Audit شامل previous/new state و `correlationId` است.
 - migration داده Lead/Call قدیمی از `localStorage` در این slice انجام نشده و به pipeline صریح import/reconciliation آینده نیاز دارد.
 
 ## شواهد پیاده‌سازی
 
 - `server/migrations/0009_sales_lead_queue.sql`
+- `server/migrations/0010_sales_marketing_context_links.sql`
 - `server/src/modules/sales/`
 - `server/tests/sales.integration.test.ts`
 - `src/foundation/sales/`

@@ -419,3 +419,18 @@ UI معتبر Sales برای Lead، صف، تخصیص و ثبت تماس در Pr
 
 **Impact:**
 این برش محدود اکنون `CURRENT` است و authority آن `docs/domains/sales/current-lead-operations.md` است. Full Campaign/Promotion engine، Invoice، Commission، AI Sales، تخصیص rule-based و migration خودکار داده Sales قدیمی همچنان Prototype، `APPROVED-FUTURE` یا `DRAFT` باقی می‌مانند. هیچ داده `localStorage` حذف یا خودکار migrate نشد.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Sales Campaign/Promotion context linkage implemented
+
+**Context:**
+Lead و relationship فروش به context بازاریابی نیاز داشتند، ولی ساخت موتور کامل Campaign/Promotion، pricing یا eligibility خارج از این Run بود. تاریخچه تماس نیز نباید با تغییر context آینده بازنویسی شود.
+
+**Decision:**
+referenceهای typed از نوع `campaign` و `promotion` در `sales_lead_marketing_links` به Lead و relationship همان Company متصل می‌شوند. فقط manager دارای `sales.marketing.link` می‌تواند linkage جدید بسازد. هر Call Log snapshot مستقل linkهای موجود در لحظه تماس را نگه می‌دارد و اتصال بعدی، تماس قبلی را تغییر نمی‌دهد. همه عملیات زیر permission سمت server، `FORCE RLS`، Customer/relationship history و Audit اجرا می‌شوند.
+
+**Impact:**
+linkage و snapshot بازاریابی اکنون `CURRENT` هستند، اما مدیریت Campaign/Promotion، lead generation، eligibility، pricing و discount همچنان Prototype یا `APPROVED-FUTURE` باقی می‌مانند. هیچ Business Rule تازه‌ای برای قیمت یا صلاحیت فروش ایجاد نشد.

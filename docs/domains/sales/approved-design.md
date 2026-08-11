@@ -7,7 +7,7 @@
 > Supersedes: none
 > Superseded by: none
 
-این سند رفتار CURRENT نیست. Customer 360 در [current customer](current-customer.md) و vertical slice محدود Lead/Queue/Assignment/Call در [current lead operations](current-lead-operations.md) ثبت شده‌اند؛ Opportunity، موتور کامل Campaign/Assignment، import گسترده و identity resolution این سند همچنان آینده‌اند. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
+این سند رفتار CURRENT نیست. Customer 360 و vertical slice محدود Lead/Queue/Assignment/Call/Marketing Context در اسناد CURRENT ثبت شده‌اند؛ Opportunity، موتور کامل Campaign/Promotion/Assignment، import گسترده و identity resolution این سند همچنان آینده‌اند. linkage فعلی Campaign/Promotion فقط reference و snapshot تاریخی است و نباید با موتور آینده eligibility، pricing یا lead generation اشتباه شود. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
 
 ## اصول سراسری
 
