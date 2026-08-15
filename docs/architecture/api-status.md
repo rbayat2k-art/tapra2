@@ -15,6 +15,7 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/auth/login` | احراز هویت و ایجاد session |
 | `GET` | `/api/v1/auth/session` | دریافت user، membershipها، context و permissionها |
 | `POST` | `/api/v1/auth/logout` | پایان session؛ نیازمند CSRF |
+| `POST` | `/api/v1/auth/password` | جایگزینی اجباری credential موقت و باطل‌کردن sessionهای دیگر همان UserAccount؛ نیازمند CSRF |
 | `POST` | `/api/v1/session/context` | انتخاب membership و Scope مجاز؛ نیازمند CSRF |
 | `GET` | `/api/v1/organization` | نمای Organization مجاز شامل Company، unit، User، Membership، Role/Scope و mapping legacy |
 | `POST`, `PUT` | `/api/v1/organization/companies[/:companyId]` | ایجاد/ویرایش/فعال‌غیرفعال‌سازی Company با Scope و Audit |

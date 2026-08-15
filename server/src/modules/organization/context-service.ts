@@ -191,6 +191,7 @@ export async function buildSessionView(session: {
   personId: string;
   fullName: string;
   email: string;
+  requiresPasswordChange: boolean;
   csrfToken: string;
   activeMembershipId: string | null;
   activeScopeType: OrganizationScopeType | null;
@@ -223,6 +224,7 @@ export async function buildSessionView(session: {
       personId: session.personId,
       fullName: session.fullName,
       email: session.email,
+      requiresPasswordChange: session.requiresPasswordChange,
     },
     actor: {
       id: session.actorUserAccountId,

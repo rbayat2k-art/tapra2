@@ -10,7 +10,7 @@ const users: User[] = [{
 
 function session(email: string, permissions: string[]): FoundationSession {
   return {
-    user: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
+    user: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email, requiresPasswordChange: false },
     actor: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
     impersonation: null,
     memberships: [], csrfToken: 'csrf',

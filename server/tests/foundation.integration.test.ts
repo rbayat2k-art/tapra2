@@ -12,7 +12,7 @@ import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '.
 
 interface SessionResponse {
   csrfToken: string;
-  user: { id: string; email: string };
+  user: { id: string; email: string; requiresPasswordChange: boolean };
   actor: { id: string; email: string };
   impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: Array<{
@@ -114,6 +114,34 @@ async function verifyPopulatedLegacyCustomerUpgrade(): Promise<void> {
 async function login(agent: ReturnType<typeof request.agent>, email: string, password: string): Promise<SessionResponse> {
   const response = await agent.post('/api/v1/auth/login').send({ email, password }).expect(200);
   return response.body as SessionResponse;
+}
+
+async function activateTemporaryCredential(
+  agent: ReturnType<typeof request.agent>,
+  email: string,
+  temporaryPassword: string,
+): Promise<SessionResponse> {
+  const session = await login(agent, email, temporaryPassword);
+  expect(session.user.requiresPasswordChange).toBe(true);
+  const firstContext = session.memberships[0];
+  if (firstContext) {
+    await agent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', session.csrfToken)
+      .send({ membershipId: firstContext.membershipId, scopeType: firstContext.scope.type, scopeId: firstContext.scope.id })
+      .expect(403)
+      .expect(({ body }) => expect(body.error.code).toBe('password_change_required'));
+  }
+  const newPassword = `Activated!Aa9-${randomUUID()}`;
+  const changed = await agent
+    .post('/api/v1/auth/password')
+    .set('x-csrf-token', session.csrfToken)
+    .send({ currentPassword: temporaryPassword, newPassword })
+    .expect(200);
+  expect(changed.body.user.requiresPasswordChange).toBe(false);
+  await request(createApp()).post('/api/v1/auth/login').send({ email, password: temporaryPassword }).expect(401);
+  await request(createApp()).post('/api/v1/auth/login').send({ email, password: newPassword }).expect(200);
+  return changed.body as SessionResponse;
 }
 
 async function selectContext(
@@ -848,7 +876,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .expect(201);
 
     const sharedAgent = request.agent(createApp());
-    let sharedSession = await login(sharedAgent, workspaceUser.body.account.email, workspaceUser.body.temporaryPassword);
+    let sharedSession = await activateTemporaryCredential(sharedAgent, workspaceUser.body.account.email, workspaceUser.body.temporaryPassword);
     const sharedWorkspaceContext = sharedSession.memberships.find((item) => item.scope.type === 'WORKSPACE');
     if (!sharedWorkspaceContext) throw new Error('Workspace-level Membership did not produce a usable context.');
     sharedSession = (await sharedAgent
@@ -892,7 +920,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .expect(201);
 
     const scopedAgent = request.agent(createApp());
-    let scopedSession = await login(scopedAgent, scopedUser.body.account.email, scopedUser.body.temporaryPassword);
+    let scopedSession = await activateTemporaryCredential(scopedAgent, scopedUser.body.account.email, scopedUser.body.temporaryPassword);
     const alphaContext = scopedSession.memberships.find((item) => item.company?.id === '20000000-0000-4000-8000-000000000001');
     const otherContext = scopedSession.memberships.find((item) => item.company?.id === company.body.company.id);
     if (!alphaContext || !otherContext) throw new Error('Multi-Company scoped contexts were not found.');

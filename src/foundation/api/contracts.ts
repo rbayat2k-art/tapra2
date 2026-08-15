@@ -12,7 +12,7 @@ export interface FoundationMembership {
 export type OrganizationScopeType = 'WORKSPACE' | 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SELF';
 
 export interface FoundationSession {
-  user: { id: string; personId: string; fullName: string; email: string };
+  user: { id: string; personId: string; fullName: string; email: string; requiresPasswordChange: boolean };
   actor: { id: string; personId: string; fullName: string; email: string };
   impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: FoundationMembership[];

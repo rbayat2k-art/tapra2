@@ -31,6 +31,9 @@ export const requireCsrf: RequestHandler = (request, response, next) => {
 
 export const requireActiveContext: RequestHandler = asyncHandler(async (_request, response, next) => {
   const session = getAuthenticatedSession(response.locals);
+  if (session.requiresPasswordChange) {
+    throw new AppError(403, 'password_change_required', 'The temporary password must be changed before continuing.');
+  }
   if (!session.activeMembershipId) throw new AppError(409, 'active_context_required', 'Select an active Workspace and Company context.');
   let context = await assertMembershipAvailable(
     session.userAccountId,

@@ -51,6 +51,7 @@ export const foundationApi = {
   }),
   session: () => request<FoundationSession>('/auth/session'),
   logout: (csrfToken: string) => request<void>('/auth/logout', { method: 'POST' }, csrfToken),
+  changePassword: (input: { currentPassword: string; newPassword: string }, csrfToken: string) => request<FoundationSession>('/auth/password', { method: 'POST', body: JSON.stringify(input) }, csrfToken),
   selectContext: (context: Pick<FoundationMembership, 'membershipId' | 'scope'>, csrfToken: string) => request<FoundationSession>('/session/context', {
     method: 'POST',
     body: JSON.stringify({ membershipId: context.membershipId, scopeType: context.scope.type, scopeId: context.scope.id }),

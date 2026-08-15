@@ -15,6 +15,7 @@ interface SessionRow {
   person_id: string;
   full_name: string;
   email: string;
+  requires_password_change: boolean;
   csrf_token: string;
   active_membership_id: string | null;
   active_scope_type: OrganizationScopeType | null;
@@ -62,6 +63,7 @@ export async function createSession(response: Response, account: {
   personId: string;
   fullName: string;
   email: string;
+  requiresPasswordChange: boolean;
 }): Promise<SessionView> {
   const environment = getEnvironment();
   const rawToken = randomBytes(32).toString('hex');
@@ -78,6 +80,7 @@ export async function createSession(response: Response, account: {
     personId: account.personId,
     fullName: account.fullName,
     email: account.email,
+    requiresPasswordChange: account.requiresPasswordChange,
     csrfToken,
     activeMembershipId: null,
     activeScopeType: null,
@@ -113,6 +116,7 @@ export async function resolveSession(request: Request): Promise<AuthenticatedSes
       p.id AS person_id,
       p.full_name,
       ua.email,
+      ua.requires_password_change,
       s.csrf_token,
       s.active_membership_id
       , s.active_scope_type
@@ -141,6 +145,7 @@ export async function resolveSession(request: Request): Promise<AuthenticatedSes
     personId: impersonation?.target_person_id ?? row.person_id,
     fullName: impersonation?.target_full_name ?? row.full_name,
     email: impersonation?.target_email ?? row.email,
+    requiresPasswordChange: impersonation ? false : row.requires_password_change,
     csrfToken: row.csrf_token,
     activeMembershipId: impersonation?.target_membership_id ?? row.active_membership_id,
     activeScopeType: impersonation?.target_scope_type ?? row.active_scope_type,

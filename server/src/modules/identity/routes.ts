@@ -5,7 +5,7 @@ import { asyncHandler } from '../../shared/async-handler.js';
 import { AppError } from '../../shared/errors.js';
 import { assertMembershipAvailable, buildSessionView, limitContextToActor } from '../organization/context-service.js';
 import { getAuthenticatedSession, requireAuthentication, requireCsrf } from './middleware.js';
-import { verifyPassword } from './password.js';
+import { hashPassword, verifyPassword } from './password.js';
 import { createSession, destroySession } from './session-service.js';
 
 interface AccountRow {
@@ -14,6 +14,7 @@ interface AccountRow {
   full_name: string;
   email: string;
   password_hash: string;
+  requires_password_change: boolean;
 }
 
 const loginInput = z.object({
@@ -29,13 +30,25 @@ const contextInput = z.object({
   message: 'scopeType and scopeId must be supplied together.',
 });
 
+const passwordChangeInput = z.object({
+  currentPassword: z.string().min(8).max(200),
+  newPassword: z.string().min(12).max(200)
+    .regex(/[a-z]/, 'Password must contain a lowercase letter.')
+    .regex(/[A-Z]/, 'Password must contain an uppercase letter.')
+    .regex(/[0-9]/, 'Password must contain a number.')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain a symbol.'),
+}).refine((value) => value.currentPassword !== value.newPassword, {
+  message: 'The new password must be different from the temporary password.',
+  path: ['newPassword'],
+});
+
 export function identityRoutes(): Router {
   const router = Router();
 
   router.post('/auth/login', asyncHandler(async (request, response) => {
     const input = loginInput.parse(request.body);
     const result = await query<AccountRow>(`
-      SELECT ua.id, ua.person_id, p.full_name, ua.email, ua.password_hash
+      SELECT ua.id, ua.person_id, p.full_name, ua.email, ua.password_hash, ua.requires_password_change
       FROM user_accounts ua
       JOIN persons p ON p.id = ua.person_id
       WHERE ua.email = $1 AND ua.is_active = true
@@ -49,6 +62,7 @@ export function identityRoutes(): Router {
       personId: account.person_id,
       fullName: account.full_name,
       email: account.email,
+      requiresPasswordChange: account.requires_password_change,
     }));
   }));
 
@@ -61,9 +75,35 @@ export function identityRoutes(): Router {
     response.status(204).send();
   }));
 
+  router.post('/auth/password', requireAuthentication, requireCsrf, asyncHandler(async (request, response) => {
+    const input = passwordChangeInput.parse(request.body);
+    const session = getAuthenticatedSession(response.locals);
+    if (session.impersonationId) {
+      throw new AppError(403, 'impersonation_password_forbidden', 'Password changes are unavailable during impersonation.');
+    }
+    const accountResult = await query<{ password_hash: string }>(`
+      SELECT password_hash FROM user_accounts WHERE id = $1 AND is_active = true
+    `, [session.userAccountId]);
+    const account = accountResult.rows[0];
+    if (!account || !(await verifyPassword(input.currentPassword, account.password_hash))) {
+      throw new AppError(401, 'invalid_current_password', 'The current password is incorrect.');
+    }
+    const passwordHash = await hashPassword(input.newPassword);
+    await query(`
+      UPDATE user_accounts
+      SET password_hash = $1, requires_password_change = false, updated_at = now()
+      WHERE id = $2
+    `, [passwordHash, session.userAccountId]);
+    await query('DELETE FROM sessions WHERE user_account_id = $1 AND id <> $2', [session.userAccountId, session.sessionId]);
+    response.json(await buildSessionView({ ...session, requiresPasswordChange: false }));
+  }));
+
   router.post('/session/context', requireAuthentication, requireCsrf, asyncHandler(async (request, response) => {
     const input = contextInput.parse(request.body);
     const session = getAuthenticatedSession(response.locals);
+    if (session.requiresPasswordChange) {
+      throw new AppError(403, 'password_change_required', 'The temporary password must be changed before selecting a context.');
+    }
     const selected = await assertMembershipAvailable(
       session.userAccountId, input.membershipId, input.scopeType, input.scopeId,
     );

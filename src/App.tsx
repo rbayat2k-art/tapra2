@@ -60,6 +60,7 @@ import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
 import { NAV_ITEMS, isNavItemVisible } from './config/navigationRegistry';
 import { useFoundationSession } from './foundation/auth/FoundationSessionContext';
 import { FoundationLogin } from './foundation/auth/FoundationLogin';
+import { FoundationPasswordChange } from './foundation/auth/FoundationPasswordChange';
 import { ContextSelector } from './foundation/organization/ContextSelector';
 import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
 import { OrganizationAdminView } from './foundation/organization/OrganizationAdminView';
@@ -284,7 +285,7 @@ export default function App() {
     // It is deliberately not persisted as a local login and cannot authorize an API request.
     setCurrentUser(resolveLegacyShellUser(session, users));
     setImpersonatorAdmin(session.impersonation
-      ? resolveLegacyShellUser({ ...session, user: session.actor, impersonation: null }, users)
+      ? resolveLegacyShellUser({ ...session, user: { ...session.actor, requiresPasswordChange: false }, impersonation: null }, users)
       : null);
     resetTabsToDashboard();
   }, [foundation.session?.user.id, foundation.session?.activeContext?.contextKey, foundation.session?.impersonation?.id, users]);
@@ -1020,6 +1021,7 @@ export default function App() {
   }
 
   if (!foundation.session) return <FoundationLogin />;
+  if (foundation.session.user.requiresPasswordChange) return <FoundationPasswordChange />;
   if (!foundation.session.activeContext) return <ContextSelector />;
 
   // Identity is derived after the trusted Foundation session/context is ready.
@@ -1073,6 +1075,7 @@ export default function App() {
             </span>
             <span>
               در حال مشاهده سیستم به‌جای کاربر <strong className="underline">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
+              {foundation.session?.impersonation && <small className="mt-1 block font-medium opacity-90">دلیل: {foundation.session.impersonation.reason} · پایان خودکار: {new Date(foundation.session.impersonation.expiresAt).toLocaleString('fa-IR')}</small>}
             </span>
           </div>
           <button

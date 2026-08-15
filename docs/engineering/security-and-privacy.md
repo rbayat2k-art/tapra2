@@ -24,7 +24,7 @@
 - permissionهای حساس `customer.identity.manage` و `customer.merge` سمت server enforce می‌شوند؛ UI مرز امنیتی نیست.
 - response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
 - مدیریت Company، Organization unit، UserAccount، Membership و RoleAssignment با Permission و Scope سمت server و Audit انجام می‌شود. RLS اجباری روی `organization_units` مرز Workspace را مستقل از filter برنامه کنترل می‌کند؛ جدول‌های bootstrap هویت همچنان به guard و queryهای Workspace-scoped برنامه متکی‌اند.
-- UserAccount جدید credential تصادفی `scrypt` دریافت می‌کند که فقط یک‌بار در response ایجاد نمایش داده می‌شود؛ password legacy migrate، log یا commit نمی‌شود. پرچم `requires_password_change` بدهی flow تغییر password را صریح نگه می‌دارد.
+- UserAccount جدید credential تصادفی `scrypt` دریافت می‌کند که فقط یک‌بار در response ایجاد نمایش داده می‌شود؛ password legacy migrate، log یا commit نمی‌شود. تا زمان تغییر credential موقت، انتخاب Context و دسترسی به APIهای کاری با `requires_password_change` در server مسدود است؛ تغییر موفق password سایر sessionهای همان UserAccount را باطل می‌کند.
 - Impersonation بدون Password هدف، با reason اجباری، مدت ۵ تا ۳۰ دقیقه، منع target خارج از Scope و Permission intersection اجرا می‌شود. Audit، Actor واقعی، User مؤثر و `impersonation_id` را جدا نگه می‌دارد و UI banner/بازگشت دارد.
 
 ## ریسک باقی‌مانده Prototype
@@ -34,7 +34,7 @@
 ## Gapهای باقی‌مانده
 
 - MFA، recovery، rate limiting و lockout اجرا نشده‌اند.
-- flow نهایی اجبار به تغییر credential موقت و recovery هنوز اجرا نشده است؛ `requires_password_change` فقط وضعیت را ثبت می‌کند.
+- recovery، reset مدیریتی credential و سیاست production برای rotation هنوز اجرا نشده‌اند؛ flow تغییر اجباری credential موقت در development موجود است.
 - TLS توسط خود برنامه local فراهم نمی‌شود و باید در deployment خاتمه یابد.
 - secret manager، backup/restore، retention، encryption-at-rest policy و security monitoring production تعریف نشده‌اند.
 - Audit فعلی append-oriented است، اما tamper-evident storage و Outbox هنوز اجرا نشده‌اند.

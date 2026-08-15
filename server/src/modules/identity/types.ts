@@ -6,6 +6,7 @@ export interface AuthenticatedSession {
   personId: string;
   fullName: string;
   email: string;
+  requiresPasswordChange: boolean;
   csrfToken: string;
   activeMembershipId: string | null;
   activeScopeType: OrganizationScopeType | null;
@@ -34,7 +35,7 @@ export interface MembershipContext {
 }
 
 export interface SessionView {
-  user: { id: string; personId: string; fullName: string; email: string };
+  user: { id: string; personId: string; fullName: string; email: string; requiresPasswordChange: boolean };
   actor: { id: string; personId: string; fullName: string; email: string };
   impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: MembershipContext[];
