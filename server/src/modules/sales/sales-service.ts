@@ -25,7 +25,7 @@ interface LeadRow {
   id: string;
   tracking_code: string;
   customer_id: string;
-  customer_identity_id: string;
+  canonical_identity_id: string;
   customer_name: string;
   company_id: string;
   company_name: string;
@@ -67,7 +67,7 @@ export interface SalesLeadSummary {
   id: string;
   trackingCode: string;
   customerId: string;
-  customerIdentityId: string;
+  canonicalIdentityId: string;
   customerName: string;
   company: { id: string; name: string };
   source: string;
@@ -144,6 +144,9 @@ export interface RecordSalesCallInput {
 
 function companyFrom(context: MembershipContext) {
   if (!context.company) throw new AppError(409, 'company_context_required', 'A Company context is required for Sales.');
+  if (!['COMPANY', 'SELF'].includes(context.scope.type)) {
+    throw new AppError(403, 'sales_scope_unsupported', 'Sales requires a Company or Self context until Leads are attributed to organization units.');
+  }
   return context.company;
 }
 
@@ -166,7 +169,7 @@ function mapLead(row: LeadRow): SalesLeadSummary {
     id: row.id,
     trackingCode: row.tracking_code,
     customerId: row.customer_id,
-    customerIdentityId: row.customer_identity_id,
+    canonicalIdentityId: row.canonical_identity_id,
     customerName: row.customer_name,
     company: { id: row.company_id, name: row.company_name },
     source: row.source,
@@ -190,7 +193,7 @@ function mapLead(row: LeadRow): SalesLeadSummary {
 }
 
 const leadSelect = `
-  SELECT lead.id, lead.tracking_code, lead.customer_id, lead.customer_identity_id,
+  SELECT lead.id, lead.tracking_code, lead.customer_id, lead.canonical_identity_id,
     customer.full_name AS customer_name, lead.company_id, company.name AS company_name,
     lead.source, lead.declared_interest, lead.priority, lead.status, lead.campaign_reference,
     lead.promotion_reference,
@@ -276,7 +279,8 @@ async function loadLeadDetail(client: PoolClient, leadId: string): Promise<Sales
       FROM sales_lead_marketing_links link
       JOIN user_accounts account ON account.id = link.linked_by_user_account_id
       JOIN persons person ON person.id = account.person_id
-      WHERE link.lead_id = $1 ORDER BY link.linked_at, link.id
+      WHERE link.lead_id = $1
+      ORDER BY link.linked_at, CASE link.link_type WHEN 'campaign' THEN 0 ELSE 1 END, link.id
     `, [leadId]);
   const relationship = await client.query<{
       id: string; status: 'active' | 'released'; lock_mode: 'none' | 'until_reassigned' | 'duration';
@@ -370,6 +374,15 @@ export async function listSalesAssignees(context: MembershipContext): Promise<Sa
       JOIN persons person ON person.id = membership.person_id
       JOIN user_accounts account ON account.person_id = person.id AND account.is_active = true
       JOIN role_assignments assignment ON assignment.membership_id = membership.id
+        AND assignment.workspace_id = membership.workspace_id
+        AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+        AND (
+          assignment.scope_type = 'WORKSPACE'
+          OR assignment.company_id = $2
+          OR (assignment.scope_type = 'SELF' AND assignment.company_id IS NULL)
+        )
+      JOIN roles role ON role.id = assignment.role_id
+        AND role.workspace_id = assignment.workspace_id AND role.is_active = true
       JOIN role_permissions role_permission ON role_permission.role_id = assignment.role_id
       WHERE membership.status = 'active'
         AND membership.workspace_id = $1
@@ -402,8 +415,8 @@ export async function createSalesLead(
     `, [idempotencyKey]);
     if (repeated.rows[0]) return loadLeadDetail(client, repeated.rows[0].id);
 
-    const customer = await client.query<{ id: string; identity_id: string; full_name: string }>(`
-      SELECT id, identity_id, full_name FROM customers WHERE id = $1 AND status = 'active'
+    const customer = await client.query<{ id: string; canonical_identity_id: string; full_name: string }>(`
+      SELECT id, canonical_identity_id, full_name FROM customers WHERE id = $1 AND status = 'active'
     `, [input.customerId]);
     const customerRow = customer.rows[0];
     if (!customerRow) throw new AppError(404, 'customer_not_found', 'Customer was not found in the active Company.');
@@ -412,12 +425,12 @@ export async function createSalesLead(
     const trackingCode = `LD-${leadId.replaceAll('-', '').slice(0, 8).toUpperCase()}`;
     await client.query(`
       INSERT INTO sales_leads(
-        id, workspace_id, company_id, customer_identity_id, customer_id, tracking_code,
+        id, workspace_id, company_id, canonical_identity_id, customer_id, tracking_code,
         source, declared_interest, priority, campaign_reference, promotion_reference,
         context_snapshot, created_by_user_account_id, idempotency_key
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `, [
-      leadId, context.workspace.id, company.id, customerRow.identity_id, customerRow.id, trackingCode,
+      leadId, context.workspace.id, company.id, customerRow.canonical_identity_id, customerRow.id, trackingCode,
       input.source, input.declaredInterest, input.priority, input.campaignReference ?? null,
       input.promotionReference ?? null, JSON.stringify(input.context ?? {}), session.userAccountId, idempotencyKey,
     ]);
@@ -455,7 +468,7 @@ export async function createSalesLead(
       workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
       action: 'sales.lead.created', resourceType: 'sales_lead', resourceId: leadId, result: 'success',
       newState: {
-        customerId: customerRow.id, customerIdentityId: customerRow.identity_id, trackingCode,
+        customerId: customerRow.id, canonicalIdentityId: customerRow.canonical_identity_id, trackingCode,
         campaignReference: input.campaignReference ?? null, promotionReference: input.promotionReference ?? null,
       }, correlationId,
     });
@@ -581,6 +594,15 @@ export async function assignSalesLead(
       FROM memberships membership
       JOIN persons person ON person.id = membership.person_id
       JOIN role_assignments assignment ON assignment.membership_id = membership.id
+        AND assignment.workspace_id = membership.workspace_id
+        AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+        AND (
+          assignment.scope_type = 'WORKSPACE'
+          OR assignment.company_id = $3
+          OR (assignment.scope_type = 'SELF' AND assignment.company_id IS NULL)
+        )
+      JOIN roles role ON role.id = assignment.role_id
+        AND role.workspace_id = assignment.workspace_id AND role.is_active = true
       JOIN role_permissions role_permission ON role_permission.role_id = assignment.role_id
       WHERE membership.id = $1 AND membership.status = 'active'
         AND membership.workspace_id = $2
@@ -754,7 +776,8 @@ export async function recordSalesCall(
       FROM sales_lead_marketing_links link
       JOIN user_accounts account ON account.id = link.linked_by_user_account_id
       JOIN persons person ON person.id = account.person_id
-      WHERE link.lead_id = $1 ORDER BY link.linked_at, link.id
+      WHERE link.lead_id = $1
+      ORDER BY link.linked_at, CASE link.link_type WHEN 'campaign' THEN 0 ELSE 1 END, link.id
     `, [lead.id]);
     const marketingSnapshot: SalesMarketingLink[] = marketingLinks.rows.map((row) => ({
       id: row.id, type: row.link_type, referenceCode: row.reference_code,
@@ -764,12 +787,12 @@ export async function recordSalesCall(
     const callId = randomUUID();
     await client.query(`
       INSERT INTO sales_call_logs(
-        id, workspace_id, company_id, lead_id, customer_identity_id, customer_id,
+        id, workspace_id, company_id, lead_id, canonical_identity_id, customer_id,
         salesperson_membership_id, actor_user_account_id, campaign_reference, marketing_snapshot,
         context_snapshot, started_at, outcome, effective, note, callback_at, idempotency_key
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     `, [
-      callId, context.workspace.id, company.id, lead.id, lead.customer_identity_id, lead.customer_id,
+      callId, context.workspace.id, company.id, lead.id, lead.canonical_identity_id, lead.customer_id,
       context.membershipId, session.userAccountId, lead.campaign_reference, JSON.stringify(marketingSnapshot),
       JSON.stringify({ ...lead.context_snapshot, ...input.context }), input.startedAt, input.outcome,
       effective, input.note ?? null, input.callbackAt ?? null, idempotencyKey,
@@ -797,11 +820,11 @@ export async function recordSalesCall(
         relationshipId = randomUUID();
         await client.query(`
           INSERT INTO sales_customer_relationships(
-            id, workspace_id, company_id, customer_identity_id, customer_id, owner_membership_id,
+            id, workspace_id, company_id, canonical_identity_id, customer_id, owner_membership_id,
             lock_mode, lock_acquired_at, lock_expires_at, latest_effective_call_id
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 = 'none' THEN NULL ELSE now() END, $8, $9)
         `, [
-          relationshipId, context.workspace.id, company.id, lead.customer_identity_id, lead.customer_id,
+          relationshipId, context.workspace.id, company.id, lead.canonical_identity_id, lead.customer_id,
           lockOwner, policy.relationship_lock_mode, lockExpiresAt, callId,
         ]);
         relationshipEvent = policy.relationship_lock_mode === 'none' ? 'relationship_created' : 'lock_acquired';

@@ -15,6 +15,7 @@ interface SessionResponse {
     membershipId: string;
     workspace: { id: string; slug: string };
     company: { id: string } | null;
+    scope: { type: 'WORKSPACE' | 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SELF'; id: string };
     permissions: string[];
   }>;
   activeContext: null | { membershipId: string };
@@ -61,12 +62,18 @@ async function login(agent: ReturnType<typeof request.agent>, email: string, pas
 
 async function selectContext(
   agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string,
+  requiredPermission: string,
 ): Promise<SessionResponse> {
-  const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug);
+  const membership = session.memberships.find((item) => (
+    item.workspace.slug === workspaceSlug
+    && item.company !== null
+    && item.scope.type === 'COMPANY'
+    && item.permissions.includes(requiredPermission)
+  ));
   if (!membership) throw new Error(`Membership ${workspaceSlug} was not found.`);
   const response = await agent.post('/api/v1/session/context')
     .set('x-csrf-token', session.csrfToken)
-    .send({ membershipId: membership.membershipId }).expect(200);
+    .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id }).expect(200);
   return response.body as SessionResponse;
 }
 
@@ -91,11 +98,11 @@ describe('Sales Backend Vertical Slice 1', () => {
     await seedDatabase(migrationUrl);
 
     manager = request.agent(createApp());
-    managerSession = await selectContext(manager, await login(manager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-alpha');
+    managerSession = await selectContext(manager, await login(manager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-alpha', 'sales.lead.create');
     sellerOne = request.agent(createApp());
-    sellerOneSession = await selectContext(sellerOne, await login(sellerOne, 'sales-one@tapra.local', 'TapraSales!2026'), 'tapra-alpha');
+    sellerOneSession = await selectContext(sellerOne, await login(sellerOne, 'sales-one@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'sales.queue.read');
     sellerTwo = request.agent(createApp());
-    sellerTwoSession = await selectContext(sellerTwo, await login(sellerTwo, 'sales-two@tapra.local', 'TapraSales!2026'), 'tapra-alpha');
+    sellerTwoSession = await selectContext(sellerTwo, await login(sellerTwo, 'sales-two@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'sales.queue.read');
   });
 
   afterAll(async () => { await closePool(); });
@@ -152,6 +159,15 @@ describe('Sales Backend Vertical Slice 1', () => {
       campaignReference: 'CMP-SLICE-1',
       promotionReference: 'PRM-SLICE-1',
       currentAssignee: null,
+    });
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const identity = await client.query<{ lead_identity: string; customer_identity: string }>(`
+        SELECT lead.canonical_identity_id AS lead_identity,
+          customer.canonical_identity_id AS customer_identity
+        FROM sales_leads lead JOIN customers customer ON customer.id = lead.customer_id
+        WHERE lead.id = $1
+      `, [leadId]);
+      expect(identity.rows[0]?.lead_identity).toBe(identity.rows[0]?.customer_identity);
     });
     expect(created.body.lead.marketingLinks.map((link: { type: string; referenceCode: string }) => ({
       type: link.type, referenceCode: link.referenceCode,
@@ -310,7 +326,7 @@ describe('Sales Backend Vertical Slice 1', () => {
 
   it('keeps Sales activity isolated from another Company at API and PostgreSQL RLS layers', async () => {
     const betaManager = request.agent(createApp());
-    const betaSession = await selectContext(betaManager, await login(betaManager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-beta');
+    const betaSession = await selectContext(betaManager, await login(betaManager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-beta', 'sales.lead.create');
     await betaManager.get('/api/v1/sales/leads').expect(200)
       .expect(({ body }) => expect(body.leads).toHaveLength(0));
     const betaAssignees = await betaManager.get('/api/v1/sales/assignees').expect(200);

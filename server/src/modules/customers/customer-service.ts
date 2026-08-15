@@ -1029,6 +1029,19 @@ export async function mergeCustomerIdentities(
         WHERE canonical_identity_id = $2
         RETURNING id
       `, [canonical.id, merged.id]);
+      await client.query(`
+        UPDATE sales_leads SET canonical_identity_id = $1, updated_at = now(), version = version + 1
+        WHERE canonical_identity_id = $2
+      `, [canonical.id, merged.id]);
+      await client.query(`
+        UPDATE sales_call_logs SET canonical_identity_id = $1
+        WHERE canonical_identity_id = $2
+      `, [canonical.id, merged.id]);
+      await client.query(`
+        UPDATE sales_customer_relationships
+        SET canonical_identity_id = $1, updated_at = now(), version = version + 1
+        WHERE canonical_identity_id = $2
+      `, [canonical.id, merged.id]);
       for (const relationship of updated.rows) {
         await appendTimeline(client, {
           workspaceId: context.workspace.id,
@@ -1104,6 +1117,22 @@ export async function unmergeCustomerIdentity(
         WHERE identity_id = $1 AND canonical_identity_id = $2
         RETURNING id
       `, [operation.merged_identity_id, operation.canonical_identity_id]);
+      const restoredRelationshipIds = restored.rows.map((relationship) => relationship.id);
+      if (restoredRelationshipIds.length > 0) {
+        await client.query(`
+          UPDATE sales_leads SET canonical_identity_id = $1, updated_at = now(), version = version + 1
+          WHERE customer_id = ANY($2::uuid[])
+        `, [operation.merged_identity_id, restoredRelationshipIds]);
+        await client.query(`
+          UPDATE sales_call_logs SET canonical_identity_id = $1
+          WHERE customer_id = ANY($2::uuid[])
+        `, [operation.merged_identity_id, restoredRelationshipIds]);
+        await client.query(`
+          UPDATE sales_customer_relationships
+          SET canonical_identity_id = $1, updated_at = now(), version = version + 1
+          WHERE customer_id = ANY($2::uuid[])
+        `, [operation.merged_identity_id, restoredRelationshipIds]);
+      }
       for (const relationship of restored.rows) {
         await appendTimeline(client, {
           workspaceId: context.workspace.id,

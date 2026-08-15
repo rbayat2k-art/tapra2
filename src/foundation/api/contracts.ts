@@ -198,7 +198,7 @@ export interface SalesLead {
   id: string;
   trackingCode: string;
   customerId: string;
-  customerIdentityId: string;
+  canonicalIdentityId: string;
   customerName: string;
   company: { id: string; name: string };
   source: string;
