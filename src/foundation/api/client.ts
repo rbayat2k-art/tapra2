@@ -170,6 +170,21 @@ export const foundationApi = {
   listSalesInvoices: () => request<{ invoices: FoundationSalesInvoice[] }>('/sales/invoices'),
   readSalesInvoice: (invoiceId: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}`),
   getSalesPaymentInfrastructure: () => request<SalesPaymentInfrastructure>('/sales/payment-infrastructure'),
+  createSalesCollectionAccount: (input: {
+    displayName: string; bankName: string; maskedReference: string; isActive?: boolean;
+  }, csrfToken: string) => request<{ account: SalesPaymentInfrastructure['accounts'][number] }>('/sales/collection-accounts', {
+    method: 'POST', body: JSON.stringify(input),
+  }, csrfToken),
+  updateSalesCollectionAccount: (accountId: string, input: {
+    displayName: string; bankName: string; maskedReference: string; isActive?: boolean;
+  }, csrfToken: string) => request<{ account: SalesPaymentInfrastructure['accounts'][number] }>(`/sales/collection-accounts/${accountId}`, {
+    method: 'PUT', body: JSON.stringify(input),
+  }, csrfToken),
+  updateSalesApprovalPolicy: (required: boolean, csrfToken: string) => request<{
+    policy: SalesPaymentInfrastructure['salesApprovalPolicy'];
+  }>('/sales/settings/supervisor-approval', {
+    method: 'PUT', body: JSON.stringify({ required }),
+  }, csrfToken),
   createSaleAndInvoice: (input: {
     customerId: string;
     leadId?: string;
@@ -189,7 +204,7 @@ export const foundationApi = {
     method: 'POST', body: JSON.stringify({}),
   }, csrfToken),
   recordSalesPayment: (invoiceId: string, input: {
-    amount: number;
+    amount: string;
     paymentMethod: Exclude<SalesPaymentMethod, 'payment_gateway'>;
     occurredAt: string;
     lastFourDigits?: string;
@@ -201,7 +216,7 @@ export const foundationApi = {
     method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
   }, csrfToken),
   reviewSalesPayment: (invoiceId: string, paymentId: string, input: {
-    decision: 'approved' | 'needs_correction' | 'rejected'; reason?: string;
+    decision: 'approved' | 'needs_correction'; reason?: string;
   }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}/payments/${paymentId}/review`, {
     method: 'POST', body: JSON.stringify(input),
   }, csrfToken),

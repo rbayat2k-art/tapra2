@@ -54,12 +54,10 @@ export const SALES_INVOICE_STATUS_LABELS: Record<SalesInvoiceStatus, string> = {
 };
 
 export const SALES_PAYMENT_STATUS_LABELS: Record<SalesPaymentStatus, string> = {
-  declared: 'در انتظار بررسی',
+  submitted: 'در انتظار بررسی',
   approved: 'تأیید شده',
   needs_correction: 'برگشت برای اصلاح',
-  rejected: 'رد شده',
   superseded: 'با نسخه اصلاحی جایگزین شده',
-  reversed: 'برگشت مالی ثبت شده',
 };
 
 export const SALES_PAYMENT_METHOD_LABELS: Record<SalesPaymentMethod, string> = {
@@ -92,6 +90,10 @@ export const FULFILLMENT_STATUS_LABELS: Record<string, string> = {
   failed: 'ناموفق',
 };
 
-export function formatRial(value: number): string {
-  return `${new Intl.NumberFormat('fa-IR').format(value)} ریال`;
+export function formatRial(value: string): string {
+  try {
+    return `${new Intl.NumberFormat('fa-IR').format(BigInt(value))} ریال`;
+  } catch {
+    return 'مبلغ نامعتبر';
+  }
 }

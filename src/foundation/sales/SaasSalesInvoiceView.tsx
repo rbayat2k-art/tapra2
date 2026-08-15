@@ -60,10 +60,11 @@ const errorLabels: Record<string, string> = {
   payment_method_disabled: 'این روش پرداخت برای شرکت فعال نیست.',
   payment_recording_blocked: 'در وضعیت فعلی فاکتور امکان ثبت پرداخت وجود ندارد.',
   payment_self_review_denied: 'ثبت‌کننده پرداخت نمی‌تواند همان پرداخت را بررسی کند.',
-  payment_review_reason_required: 'برای برگشت یا رد پرداخت، توضیح مالی الزامی است.',
+  payment_review_reason_required: 'برای برگشت پرداخت، توضیح مالی الزامی است.',
   invoice_has_payments: 'پس از شروع عملیات پرداخت، مبلغ و اقلام فاکتور از این مسیر قابل تغییر نیست.',
   invoice_revision_blocked: 'در وضعیت فعلی امکان ایجاد نسخه اصلاحی فاکتور وجود ندارد.',
   financial_account_invalid: 'حساب مالی مقصد معتبر یا فعال نیست.',
+  payment_overpayment_denied: 'تأیید این پرداخت از مبلغ فاکتور بیشتر می‌شود و مجاز نیست.',
 };
 
 function messageFrom(error: unknown): string {
@@ -76,17 +77,27 @@ function toLineInput(lines: LineDraft[]): SalesInvoiceLineInput[] | null {
     itemType: line.itemType,
     itemName: line.itemName.trim(),
     quantity: Number(line.quantity),
-    unitPrice: Number(line.unitPrice),
-    discountAmount: Number(line.discountAmount || 0),
+    unitPrice: line.unitPrice,
+    discountAmount: line.discountAmount || '0',
     sourceType: 'manual_addition' as const,
   }));
   if (result.some((line) => (
     line.itemName.length < 2 || !Number.isSafeInteger(line.quantity) || line.quantity <= 0
-    || !Number.isSafeInteger(line.unitPrice) || line.unitPrice < 0
-    || !Number.isSafeInteger(line.discountAmount) || (line.discountAmount ?? 0) < 0
-    || (line.discountAmount ?? 0) > line.quantity * line.unitPrice
+    || !isRial(line.unitPrice) || !isRial(line.discountAmount ?? '0')
+    || BigInt(line.discountAmount ?? '0') > BigInt(line.quantity) * BigInt(line.unitPrice)
   ))) return null;
   return result;
+}
+
+function isRial(value: string, positive = false): boolean {
+  if (!/^(0|[1-9][0-9]{0,18})$/.test(value)) return false;
+  const amount = BigInt(value);
+  return amount <= 9_223_372_036_854_775_807n && (!positive || amount > 0n);
+}
+
+function remainingRial(finalAmount: string, approvedAmount: string): string {
+  const remaining = BigInt(finalAmount) - BigInt(approvedAmount);
+  return (remaining > 0n ? remaining : 0n).toString();
 }
 
 function invoiceTone(status: FoundationSalesInvoice['status']): string {
@@ -98,7 +109,7 @@ function invoiceTone(status: FoundationSalesInvoice['status']): string {
 
 function paymentTone(status: FoundationSalesInvoice['payments'][number]['status']): string {
   if (status === 'approved') return 'bg-emerald-100 text-emerald-800';
-  if (status === 'declared') return 'bg-blue-100 text-blue-800';
+  if (status === 'submitted') return 'bg-blue-100 text-blue-800';
   if (status === 'needs_correction') return 'bg-amber-100 text-amber-800';
   return 'bg-slate-100 text-slate-600';
 }
@@ -114,6 +125,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   const canReviewPayment = permissions.includes('sales.payment.review');
   const canReviseDraft = permissions.includes('sales.invoice.edit_draft');
   const canAmend = permissions.includes('sales.invoice.amend');
+  const canManageInfrastructure = permissions.includes('sales.payment.infrastructure.manage');
 
   const [invoices, setInvoices] = useState<FoundationSalesInvoice[]>([]);
   const [customers, setCustomers] = useState<FoundationCustomer[]>([]);
@@ -143,6 +155,9 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   const [paymentOccurredAt, setPaymentOccurredAt] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
   const [correctsPaymentId, setCorrectsPaymentId] = useState<string | undefined>();
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
+  const [accountName, setAccountName] = useState('');
+  const [accountBank, setAccountBank] = useState('');
+  const [accountReference, setAccountReference] = useState('');
 
   const load = useCallback(async () => {
     if (!canRead) return;
@@ -157,10 +172,10 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         ? current : selectableInvoices[0]?.id ?? null);
       if (canCreate || canCreateOnBehalf) setCustomers((await foundationApi.listCustomers()).customers);
       if (canCreateOnBehalf) setAssignees((await foundationApi.listSalesAssignees()).assignees);
-      if (canRecordPayment) {
+      if (canRecordPayment || canManageInfrastructure) {
         const paymentInfrastructure = await foundationApi.getSalesPaymentInfrastructure();
         setInfrastructure(paymentInfrastructure);
-        setPaymentAccountId((current) => current || paymentInfrastructure.accounts[0]?.id || '');
+        setPaymentAccountId((current) => current || paymentInfrastructure.accounts.find((account) => account.active)?.id || '');
       }
       setError(null);
     } catch (caught) {
@@ -168,7 +183,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [canCreate, canCreateOnBehalf, canRead, canRecordPayment, mode, session?.activeContext?.contextKey]);
+  }, [canCreate, canCreateOnBehalf, canManageInfrastructure, canRead, canRecordPayment, mode, session?.activeContext?.contextKey]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -179,6 +194,8 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   const enabledManualMethods = infrastructure?.policies
     .filter((policy) => policy.enabled && policy.manualReviewRequired && policy.method !== 'payment_gateway')
     .map((policy) => policy.method as Exclude<SalesPaymentMethod, 'payment_gateway'>) ?? [];
+
+  const activeAccounts = infrastructure?.accounts.filter((account) => account.active) ?? [];
 
   const replaceInvoice = (invoice: FoundationSalesInvoice, message: string) => {
     setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)]);
@@ -227,7 +244,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     if (!session || !selected) return;
     const lines = toLineInput(revisionLines);
     if (!lines) { setError('اطلاعات نسخه اصلاحی معتبر نیست.'); return; }
-    if (selected.status !== 'awaiting_supervisor_approval' && revisionReason.trim().length < 3) {
+    if (selected.status !== 'awaiting_supervisor_approval' && selected.salesApprovalRequired && revisionReason.trim().length < 3) {
       setError('برای اصلاح فاکتور تأییدشده، دلیل تغییر الزامی است.'); return;
     }
     setSaving(true);
@@ -250,8 +267,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
 
   const recordPayment = async () => {
     if (!session || !selected) return;
-    const amount = Number(paymentAmount);
-    if (!Number.isSafeInteger(amount) || amount <= 0 || !paymentAccountId || paymentTracking.trim().length < 2) {
+    if (!isRial(paymentAmount, true) || !paymentAccountId || paymentTracking.trim().length < 2) {
       setError('مبلغ، حساب مقصد و شماره پیگیری را کامل و صحیح وارد کنید.'); return;
     }
     if (['card_to_card', 'bank_transfer'].includes(paymentMethod) && !/^\d{4}$/.test(paymentLastFour)) {
@@ -260,7 +276,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     setSaving(true);
     try {
       const response = await foundationApi.recordSalesPayment(selected.id, {
-        amount, paymentMethod, occurredAt: new Date(paymentOccurredAt).toISOString(),
+        amount: paymentAmount, paymentMethod, occurredAt: new Date(paymentOccurredAt).toISOString(),
         lastFourDigits: paymentLastFour || undefined, destinationAccountId: paymentAccountId,
         trackingNumber: paymentTracking.trim(), correctsPaymentId,
       }, session.csrfToken);
@@ -269,7 +285,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
   };
 
-  const reviewPayment = async (paymentId: string, decision: 'approved' | 'needs_correction' | 'rejected') => {
+  const reviewPayment = async (paymentId: string, decision: 'approved' | 'needs_correction') => {
     if (!session || !selected) return;
     const reason = reviewReasons[paymentId]?.trim();
     if (decision !== 'approved' && (!reason || reason.length < 3)) {
@@ -278,7 +294,47 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     setSaving(true);
     try {
       const response = await foundationApi.reviewSalesPayment(selected.id, paymentId, { decision, reason }, session.csrfToken);
-      replaceInvoice(response.invoice, decision === 'approved' ? 'پرداخت تأیید شد.' : decision === 'needs_correction' ? 'پرداخت برای اصلاح برگشت داده شد.' : 'پرداخت رد شد.');
+      replaceInvoice(response.invoice, decision === 'approved' ? 'پرداخت تأیید شد.' : 'پرداخت برای اصلاح برگشت داده شد.');
+    } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
+  };
+
+  const createAccount = async () => {
+    if (!session || accountName.trim().length < 2 || accountBank.trim().length < 2 || accountReference.trim().length < 4) {
+      setError('نام حساب، نام بانک و شناسه پوشیده حساب را کامل کنید.'); return;
+    }
+    setSaving(true);
+    try {
+      await foundationApi.createSalesCollectionAccount({
+        displayName: accountName.trim(), bankName: accountBank.trim(), maskedReference: accountReference.trim(),
+      }, session.csrfToken);
+      setAccountName(''); setAccountBank(''); setAccountReference('');
+      setSuccess('حساب دریافت وجه ایجاد شد.');
+      await load();
+    } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
+  };
+
+  const toggleAccount = async (account: SalesPaymentInfrastructure['accounts'][number]) => {
+    if (!session || !account.maskedReference) return;
+    setSaving(true);
+    try {
+      await foundationApi.updateSalesCollectionAccount(account.id, {
+        displayName: account.name, bankName: account.bankName,
+        maskedReference: account.maskedReference, isActive: !account.active,
+      }, session.csrfToken);
+      setSuccess(account.active ? 'حساب دریافت وجه غیرفعال شد.' : 'حساب دریافت وجه فعال شد.');
+      await load();
+    } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
+  };
+
+  const toggleApprovalPolicy = async () => {
+    if (!session || !infrastructure) return;
+    setSaving(true);
+    try {
+      await foundationApi.updateSalesApprovalPolicy(
+        !infrastructure.salesApprovalPolicy.supervisorApprovalRequired, session.csrfToken,
+      );
+      setSuccess('تنظیم تأیید سرپرست برای فروش‌های بعدی به‌روزرسانی شد.');
+      await load();
     } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
   };
 
@@ -309,6 +365,15 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
 
     {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
     {success && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>}
+
+    {canManageInfrastructure && infrastructure && <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="font-bold text-slate-800">تنظیمات دریافت وجه و تأیید فروش</h3><p className="mt-1 text-xs text-slate-500">اطلاعات حساس کامل نمایش داده نمی‌شود و همه تغییرها در سابقه مدیریتی ثبت می‌شوند.</p></div>
+        <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={infrastructure.salesApprovalPolicy.supervisorApprovalRequired} onChange={() => void toggleApprovalPolicy()} disabled={saving} />تأیید سرپرست برای فروش‌های جدید الزامی باشد</label>
+      </div>
+      <div className="grid gap-2 md:grid-cols-4"><input aria-label="نام حساب دریافت وجه" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="نام حساب" className={inputClass} /><input aria-label="نام بانک" value={accountBank} onChange={(event) => setAccountBank(event.target.value)} placeholder="نام بانک" className={inputClass} /><input aria-label="شناسه پوشیده حساب" value={accountReference} onChange={(event) => setAccountReference(event.target.value)} placeholder="مانند •••• ۱۲۳۴" className={inputClass} /><button type="button" disabled={saving} onClick={() => void createAccount()} className="mt-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">افزودن حساب</button></div>
+      <div className="flex flex-wrap gap-2">{infrastructure.accounts.map((account) => <div key={account.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs"><span>{account.name} · {account.bankName} · {account.maskedReference ?? 'شناسه ثبت نشده'}</span><button type="button" disabled={saving || !account.maskedReference} onClick={() => void toggleAccount(account)} className={account.active ? 'font-bold text-rose-600' : 'font-bold text-emerald-600'}>{account.active ? 'غیرفعال‌کردن' : 'فعال‌کردن'}</button></div>)}</div>
+    </section>}
 
     {createOpen && <section className="space-y-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
       <h3 className="font-bold text-slate-800">ثبت فروش و ساخت خودکار فاکتور</h3>
@@ -365,11 +430,11 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <AmountCard label="مبلغ فاکتور" value={selected.finalAmount} />
               <AmountCard label="پرداخت تأییدشده" value={selected.approvedPaymentAmount} />
-              <AmountCard label="مانده" value={Math.max(0, selected.finalAmount - selected.approvedPaymentAmount)} />
+              <AmountCard label="مانده" value={remainingRial(selected.finalAmount, selected.approvedPaymentAmount)} />
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              {canApprove && selected.status === 'awaiting_supervisor_approval' && selected.sale.seller.membershipId !== session?.activeContext?.membershipId && <button type="button" disabled={saving} onClick={() => void approveInvoice()} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><BadgeCheck className="h-4 w-4" />تأیید سرپرست</button>}
-              {((selected.status === 'awaiting_supervisor_approval' && canReviseDraft) || (selected.status === 'awaiting_payment' && canAmend)) && <button type="button" onClick={startRevision} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"><FilePenLine className="h-4 w-4" />ایجاد نسخه اصلاحی</button>}
+              {canApprove && selected.salesApprovalRequired && selected.status === 'awaiting_supervisor_approval' && selected.sale.seller.membershipId !== session?.activeContext?.membershipId && <button type="button" disabled={saving} onClick={() => void approveInvoice()} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><BadgeCheck className="h-4 w-4" />تأیید سرپرست</button>}
+              {((selected.status === 'awaiting_supervisor_approval' && canReviseDraft) || (selected.status === 'awaiting_payment' && ((!selected.salesApprovalRequired && canReviseDraft) || (selected.salesApprovalRequired && canAmend)))) && <button type="button" onClick={startRevision} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"><FilePenLine className="h-4 w-4" />ایجاد نسخه اصلاحی</button>}
             </div>
           </section>
 
@@ -377,7 +442,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
             <h3 className="font-bold text-slate-800">نسخه اصلاحی فاکتور</h3>
             <p className="text-xs text-slate-500">نسخه قبلی در تاریخچه باقی می‌ماند و تغییر مهم دوباره نیازمند تأیید سرپرست است.</p>
             <LineEditor lines={revisionLines} setLines={setRevisionLines} editLine={editLine} />
-            {selected.status !== 'awaiting_supervisor_approval' && <textarea value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} rows={2} placeholder="دلیل اصلاح فاکتور" className="w-full rounded-lg border border-slate-300 p-2 text-sm" />}
+            {selected.status !== 'awaiting_supervisor_approval' && selected.salesApprovalRequired && <textarea value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} rows={2} placeholder="دلیل اصلاح فاکتور" className="w-full rounded-lg border border-slate-300 p-2 text-sm" />}
             <div className="flex gap-2"><button type="button" disabled={saving} onClick={() => void submitRevision()} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white">ثبت نسخه جدید</button><button type="button" onClick={() => setRevisionOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">انصراف</button></div>
           </section>}
 
@@ -388,13 +453,13 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
             </tbody></table></div>
           </section>
 
-          {canRecordPayment && selected.supervisorApproval && !['financially_approved', 'cancelled', 'cancellation_requested'].includes(selected.status) && <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-5">
+          {canRecordPayment && (selected.supervisorApproval || !selected.salesApprovalRequired) && !['financially_approved', 'cancelled', 'cancellation_requested'].includes(selected.status) && <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-5">
             <h3 className="flex items-center gap-2 font-bold text-slate-800"><CircleDollarSign className="h-4 w-4" />{correctsPaymentId ? 'ثبت نسخه اصلاحی پرداخت' : 'ثبت پرداخت'}</h3>
             {correctsPaymentId && <p className="flex items-center gap-2 text-xs text-amber-700"><RotateCcw className="h-3.5 w-3.5" />این پرداخت جایگزین مورد برگشتی می‌شود و سابقه قبلی باقی می‌ماند.</p>}
             <div className="grid gap-3 md:grid-cols-3">
               <Field label="مبلغ پرداخت"><input inputMode="numeric" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className={inputClass} /></Field>
               <Field label="روش پرداخت"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as Exclude<SalesPaymentMethod, 'payment_gateway'>)} className={inputClass}>{enabledManualMethods.map((method) => <option key={method} value={method}>{SALES_PAYMENT_METHOD_LABELS[method]}</option>)}</select></Field>
-              <Field label="حساب مقصد"><select value={paymentAccountId} onChange={(event) => setPaymentAccountId(event.target.value)} className={inputClass}>{infrastructure?.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.bankName}{account.cardLastFour ? ` · پایان ${account.cardLastFour}` : ''}</option>)}</select></Field>
+              <Field label="حساب مقصد"><select value={paymentAccountId} onChange={(event) => setPaymentAccountId(event.target.value)} className={inputClass}>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.bankName}{account.maskedReference ? ` · ${account.maskedReference}` : ''}</option>)}</select></Field>
               <Field label="چهار رقم آخر"><input inputMode="numeric" maxLength={4} value={paymentLastFour} onChange={(event) => setPaymentLastFour(event.target.value.replace(/\D/g, '').slice(0, 4))} className={inputClass} /></Field>
               <Field label="شماره پیگیری"><input value={paymentTracking} onChange={(event) => setPaymentTracking(event.target.value)} className={inputClass} /></Field>
               <Field label="تاریخ و ساعت"><input type="datetime-local" value={paymentOccurredAt} onChange={(event) => setPaymentOccurredAt(event.target.value)} className={inputClass} /></Field>
@@ -408,7 +473,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
             <div className="mt-3 space-y-3">{selected.payments.map((payment) => <article key={payment.id} className="rounded-lg border border-slate-200 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="font-semibold text-slate-700">{formatRial(payment.amount)} · {SALES_PAYMENT_METHOD_LABELS[payment.method]}</div><div className="mt-1 text-xs text-slate-400">{formatSalesDate(payment.occurredAt)} · پیگیری: {payment.trackingNumber ?? 'ثبت نشده'} · ثبت‌کننده: {payment.recorderName}</div></div><span className={`rounded-full px-2 py-1 text-xs ${paymentTone(payment.status)}`}>{SALES_PAYMENT_STATUS_LABELS[payment.status]}</span></div>
               {payment.reviewReason && <p className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800">توضیح مالی: {payment.reviewReason}</p>}
-              {canReviewPayment && payment.status === 'declared' && <div className="mt-3 space-y-2 border-t border-slate-100 pt-3"><textarea value={reviewReasons[payment.id] ?? ''} onChange={(event) => setReviewReasons((current) => ({ ...current, [payment.id]: event.target.value }))} rows={2} placeholder="توضیح مالی برای برگشت یا رد" className="w-full rounded-lg border border-slate-300 p-2 text-sm" /><div className="flex flex-wrap gap-2"><button type="button" disabled={saving} onClick={() => void reviewPayment(payment.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">تأیید پرداخت</button><button type="button" disabled={saving} onClick={() => void reviewPayment(payment.id, 'needs_correction')} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white">برگشت برای اصلاح</button><button type="button" disabled={saving} onClick={() => void reviewPayment(payment.id, 'rejected')} className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-bold text-rose-700">رد پرداخت</button></div></div>}
+              {canReviewPayment && payment.status === 'submitted' && <div className="mt-3 space-y-2 border-t border-slate-100 pt-3"><textarea value={reviewReasons[payment.id] ?? ''} onChange={(event) => setReviewReasons((current) => ({ ...current, [payment.id]: event.target.value }))} rows={2} placeholder="توضیح مالی برای برگشت" className="w-full rounded-lg border border-slate-300 p-2 text-sm" /><div className="flex flex-wrap gap-2"><button type="button" disabled={saving} onClick={() => void reviewPayment(payment.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">تأیید پرداخت</button><button type="button" disabled={saving} onClick={() => void reviewPayment(payment.id, 'needs_correction')} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white">برگشت برای اصلاح</button></div></div>}
               {canRecordPayment && payment.status === 'needs_correction' && !payment.supersededByPaymentId && <button type="button" onClick={() => { setCorrectsPaymentId(payment.id); setPaymentAmount(String(payment.amount)); setPaymentMethod(payment.method === 'payment_gateway' ? 'card_to_card' : payment.method); setPaymentLastFour(payment.lastFourDigits ?? ''); setPaymentTracking(''); }} className="mt-3 flex items-center gap-1 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-bold text-amber-700"><RotateCcw className="h-3.5 w-3.5" />ثبت اصلاح این پرداخت</button>}
             </article>)}</div>
           </section>
@@ -423,7 +488,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   </div>;
 }
 
-function AmountCard({ label, value }: { label: string; value: number }) {
+function AmountCard({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs text-slate-400">{label}</div><div className="mt-1 font-bold text-slate-800">{formatRial(value)}</div></div>;
 }
 
