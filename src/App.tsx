@@ -273,6 +273,7 @@ export default function App() {
 
   // Impersonation (Admin Login as User) State
   const [impersonatorAdmin, setImpersonatorAdmin] = useState<User | null>(null);
+  const [returnToAdminRequested, setReturnToAdminRequested] = useState(false);
 
   useEffect(() => {
     const session = foundation.session;
@@ -289,6 +290,15 @@ export default function App() {
       : null);
     resetTabsToDashboard();
   }, [foundation.session?.user.id, foundation.session?.activeContext?.contextKey, foundation.session?.impersonation?.id, users]);
+
+  useEffect(() => {
+    const session = foundation.session;
+    if (!returnToAdminRequested || !session || session.impersonation
+      || currentUser?.email.trim().toLowerCase() !== session.user.email.trim().toLowerCase()) return;
+    resetTabsToDashboard();
+    openTab('admin');
+    setReturnToAdminRequested(false);
+  }, [returnToAdminRequested, foundation.session?.impersonation?.id, foundation.session?.user.id, currentUser?.id]);
 
   // Effective permissions of the REAL logged-in identity (never affected by whichever user is
   // currently being viewed while impersonating) — the ONLY thing consulted to authorize
@@ -346,10 +356,8 @@ export default function App() {
 
   const handleExitImpersonation = () => {
     if (!foundation.session?.impersonation) return;
-    void foundation.stopImpersonation('بازگشت مدیر از نمای کاربر').then(() => {
-      resetTabsToDashboard();
-      openTab('admin');
-    });
+    setReturnToAdminRequested(true);
+    void foundation.stopImpersonation('بازگشت مدیر از نمای کاربر');
   };
 
   // Aggressive Tab Guard: whenever the open tab set or the current user's effective
