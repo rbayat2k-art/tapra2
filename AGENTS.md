@@ -24,7 +24,7 @@
 - تغییر نام یا حذف قراردادهای پرمصرف مانند `isDualRole`, `approvalChain` و `allowedApproverIds` نیازمند بررسی سراسری و تصمیم صریح است.
 - زنجیره فروش (`salesSupervisorId`) هرگز با زنجیره خزانه‌داری (`approvalChain`/`allowedApproverIds`) ترکیب نمی‌شود.
 - برای هر flow جدید، تمام نقش‌ها، دسترسی‌ها، انتقال مسئولیت، حالت انتظار، خطا و پایان flow بررسی شوند.
-- رابط محصول فارسی، RTL و مناسب کاربر غیر فنی باقی بماند؛ type safety پروژه حفظ شود.
+- برای هر تغییر رابط محصول، [قرارداد زبان و نمایش UI](docs/engineering/canonical-product-integration.md#قرارداد-زبان-و-نمایش-ui) را رعایت کن؛ type safety پروژه حفظ شود.
 - هیچ secret، credential یا داده واقعی مشتری در repository یا مستندات commit نشود.
 - کار آینده از آخرین GitHub `stable` آغاز می‌شود؛ workspace قدیمی یا ZIP منبع branch جدید نیست.
 
