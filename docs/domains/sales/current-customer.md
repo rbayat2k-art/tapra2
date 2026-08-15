@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer identity/profile و relationship شرکت است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `stable@2ca59ed5`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,6 +21,17 @@
 - UI فقط Customer 360 و Import طبیعی داخل همان workspace را نشان می‌دهد و هیچ انتخاب فناوری database ندارد.
 
 fuzzy matching، ارتباط هویت میان Workspaceها، import انبوه، AI entity resolution و جریان کامل Prospect/Opportunity هنوز CURRENT نیستند. وجود Lead محدود فعلی به معنی پیاده‌سازی کامل موتور Campaign/Opportunity نیست.
+
+## Customer Resolution پیش از ایجاد
+
+مسیر عادی ساخت Customer با شماره تماس آغاز می‌شود:
+
+1. UI ابتدا normalized phone و نام را از endpoint تشخیص duplicate بررسی می‌کند.
+2. `EXACT_MATCH` کاربر را به همان Customer/Identity موجود هدایت می‌کند و ساخت duplicate را مجاز نمی‌کند.
+3. `NO_MATCH` اجازه ساخت profile جدید را می‌دهد؛ constraint شماره Workspace-level همچنان در PostgreSQL از race یا دورزدن UI جلوگیری می‌کند.
+4. `POSSIBLE_DUPLICATE` ایجاد خودکار یا merge خودکار انجام نمی‌دهد و فقط پس از بررسی انسانی می‌تواند به profile جدا منجر شود.
+
+این flow به معنی جست‌وجوی سراسری داده عملیاتی Companyهای دیگر نیست. resolution شماره در server بدون existence oracle انجام می‌شود و Company جدید فقط relationship مستقل و مجاز خود را به Identity مرکزی متصل می‌کند.
 
 ## مرز دو نوع merge
 

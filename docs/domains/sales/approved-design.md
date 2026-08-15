@@ -3,7 +3,7 @@
 > Status: APPROVED-FUTURE
 > Source of truth: این سند برای تصمیم‌های پذیرفته‌شده فروش که هنوز پیاده‌سازی نشده‌اند است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against confirmed business-discovery decisions, the Sales Draft archive and historical decisions
+> Last validated: 2026-08-15 against confirmed business decisions, the Sales Draft archive and historical decisions
 > Supersedes: none
 > Superseded by: none
 
@@ -48,6 +48,28 @@
 - تمام مراحل قرنطینه و آزادسازی در Customer history و MIS ثبت می‌شوند.
 
 ## فاکتور و وصول
+
+### مسیرهای ثبت Sale
+
+ثبت Sale آینده دو `entry_mode` مستقل دارد:
+
+- `DIRECT`: فروشنده مستقیماً Sale را در Tapra2 ثبت می‌کند؛ `seller` و `actor` همان فروشنده‌اند.
+- `PAPER_ENTRY`: فروشنده واقعی بیرون از سیستم تماس، مذاکره و فروش را انجام می‌دهد و پس از دریافت اطلاعات کامل Customer و اعلام واریز، برگه را به ثبات تحویل می‌دهد؛ `seller` فروشنده واقعی و `actor` ثبات است.
+
+در مسیر `PAPER_ENTRY`، KPI و attribution به فروشنده واقعی تعلق دارد. نبود Call Log قبلی به‌تنهایی Sale را بی‌اعتبار نمی‌کند؛ actor، seller، زمان ورود، source و entry mode باید جداگانه و audit-friendly ثبت شوند. این تصمیم مجوز ساخت Sale بدون Customer Resolution یا دورزدن کنترل‌های Invoice/Payment نیست.
+
+Customer باید پیش از Sale با flow شماره‌محور [authority فعلی Customer](current-customer.md#customer-resolution-پیش-از-ایجاد) resolve شود؛ duplicate کورکورانه مجاز نیست.
+
+### Invoice و Paymentهای مستقل
+
+- یک Invoice می‌تواند چند Payment مستقل داشته باشد.
+- هر Payment حداقل مبلغ، تاریخ، ساعت، چهار رقم آخر ابزار پرداخت، حساب مقصد، روش پرداخت، شماره پیگیری، ثبت‌کننده و وضعیت مالی خود را نگه می‌دارد.
+- اعلام واریز توسط کاربر با تأیید مالی یکسان نیست.
+- مالی هر Payment را جداگانه `APPROVED` یا `RETURNED / NEEDS_CORRECTION` می‌کند.
+- بازگرداندن Payment به توضیح مالی اجباری نیاز دارد و فقط همان Payment را برای اصلاح برمی‌گرداند؛ Paymentهای دیگر و خود Invoice نباید بی‌دلیل بازنویسی شوند.
+- وضعیت پرداخت Invoice از مجموع Paymentهای `APPROVED` محاسبه می‌شود، نه صرفاً از اعلام واریز یا وجود یک رسید.
+
+state machine کامل Invoice، policy اختلاف مبلغ و permission دقیق کارتابل مالی همچنان در [پرسش‌های باز](open-questions.md#فاکتور-قیمت-و-مالی) باقی می‌ماند. این بخش `APPROVED-FUTURE` است و به معنی وجود Backend Invoice/Payment نیست.
 
 - Promotion زمینه مکالمه است؛ فروشنده می‌تواند کالا و خدمت مجاز را ردیف‌به‌ردیف اضافه کند و منشأ اصلی/Cross-sell/Upsell هر ردیف حفظ می‌شود.
 - فروشنده فاکتور را مستقیم ثبت می‌کند؛ ابتدا سرپرست صحت آن را تأیید می‌کند، سپس پرداخت کارت‌به‌کارت به کارتابل مستقل تأیید واریزی مشتری می‌رود.

@@ -467,3 +467,27 @@ migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log
 
 **Impact:**
 رفتار قبلی Lead، Queue، Assignment/Reassignment، Call Log، lock policy و Campaign/Promotion linkage حفظ شد، درحالی‌که RLS، Audit، Customer 360، Import و مدل Scope جدید تضعیف نشدند. هیچ Feature جدید Sales یا Business Rule تازه اضافه نشد.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Sale entry modes, Customer Resolution and multi-Payment Invoice flow approved
+
+**Context:**
+برای طراحی ادامه Sales لازم بود تفاوت فروشنده واقعی با ثبت‌کننده سیستم، مسیر Customer Resolution و مرز اعلام واریز با تأیید مالی روشن شود. این تصمیم‌ها قواعد آینده‌اند؛ Backend Invoice/Payment و ثبت Sale هنوز پیاده‌سازی نشده‌اند.
+
+**Decision:**
+
+1. Sale می‌تواند `DIRECT` باشد که seller و actor همان فروشنده‌اند، یا `PAPER_ENTRY` که seller فروشنده واقعی و actor ثبات است. KPI/attribution در مسیر کاغذی برای seller حفظ می‌شود و نبود Call Log قبلی به‌تنهایی Sale را نامعتبر نمی‌کند.
+2. پیش از ایجاد Customer، شماره بررسی می‌شود: تطبیق قطعی از Identity موجود استفاده می‌کند، نبود تطبیق profile جدید می‌سازد و مورد مشکوک به بررسی انسانی می‌رود؛ duplicate کورکورانه مجاز نیست.
+3. یک Invoice می‌تواند چند Payment مستقل داشته باشد. اعلام واریز با تأیید مالی متفاوت است و مالی هر Payment را مستقل `APPROVED` یا `RETURNED / NEEDS_CORRECTION` می‌کند. بازگشت دلیل می‌خواهد و فقط همان Payment را متاثر می‌کند. وضعیت مالی Invoice از مجموع Paymentهای تأییدشده محاسبه می‌شود.
+
+**Affected authority documents:**
+
+- `docs/domains/sales/current-customer.md` برای Customer Resolution اجراشده؛
+- `docs/domains/sales/approved-design.md` برای Sale/Invoice/Payment آینده؛
+- `docs/domains/sales/open-questions.md` برای جزئیات state machine و policyهای حل‌نشده.
+
+**Impact:**
+دانش کسب‌وکار در source of truth ثبت شد، ولی هیچ application code، migration، API، database یا runtime behavior تغییر نکرد. Sale entry و Invoice/Payment تا زمان implementation و validation با وضعیت `APPROVED-FUTURE` باقی می‌مانند.
