@@ -10,6 +10,10 @@ const serverPermissionMap: Partial<Record<string, SystemPermission[]>> = {
   'customer.import.read': ['data_management_access', 'view_raw_contact_pool'],
   'customer.import.create': ['data_management_access', 'view_raw_contact_pool', 'import_raw_contacts'],
   'customer.import.review': ['data_management_access', 'view_raw_contact_pool', 'review_import_conflicts'],
+  'organization.company.manage': ['manage_companies'],
+  'organization.user.manage': ['manage_users'],
+  'organization.membership.manage': ['manage_users'],
+  'organization.role.manage': ['manage_roles'],
 };
 
 function mapServerPermissions(permissions: string[]): SystemPermission[] {

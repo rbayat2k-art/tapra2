@@ -42,4 +42,12 @@ describe('legacy shell identity adapter', () => {
     expect(user.id).toBe('legacy-admin');
     expect(user.fullName).toBe('کاربر سرور');
   });
+
+  it('routes server Organization managers to the matching shell navigation only', () => {
+    const user = resolveLegacyShellUser(session('organization@tapra.local', [
+      'organization.company.manage', 'organization.user.manage', 'organization.role.manage',
+    ]), users);
+    expect(user.customPermissions).toEqual(expect.arrayContaining(['manage_companies', 'manage_users', 'manage_roles']));
+    expect(user.customPermissions).not.toContain('view_all_requests');
+  });
 });

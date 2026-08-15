@@ -1559,14 +1559,17 @@ export default function App() {
                   )}
 
                   {tab.id === 'companies' && (
-                    <CompaniesView
-                      companies={companies}
-                      companyBankAccounts={companyBankAccounts}
-                      currentUser={currentUser}
-                      onUpdateCompanies={setCompanies}
-                      onUpdateCompanyBankAccounts={setCompanyBankAccounts}
-                      serverManagedCompanies
-                    />
+                    <div className="space-y-8">
+                      <OrganizationAdminView initialTab="companies" />
+                      <CompaniesView
+                        companies={companies}
+                        companyBankAccounts={companyBankAccounts}
+                        currentUser={currentUser}
+                        onUpdateCompanies={setCompanies}
+                        onUpdateCompanyBankAccounts={setCompanyBankAccounts}
+                        serverManagedCompanies
+                      />
+                    </div>
                   )}
 
                   {tab.id === 'archive' && (
@@ -1609,12 +1612,16 @@ export default function App() {
                   )}
 
                   {tab.id === 'roles_permissions' && (
-                    <RolesAndPermissionsView
-                      roles={roles}
-                      users={users}
-                      currentUser={currentUser}
-                      onUpdateRoles={setRoles}
-                    />
+                    <div className="space-y-8">
+                      <OrganizationAdminView initialTab="roles" />
+                      <div className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-200">بخش زیر فقط RBAC مربوط به Prototype است و هنوز authority امنیت Server نیست.</div>
+                      <RolesAndPermissionsView
+                        roles={roles}
+                        users={users}
+                        currentUser={currentUser}
+                        onUpdateRoles={setRoles}
+                      />
+                    </div>
                   )}
 
                   {tab.id === 'all_communications' && (
