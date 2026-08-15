@@ -28,7 +28,8 @@ const ids = {
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
-  roleAlphaSeller: '60000000-0000-4000-8000-000000000004',
+  roleWorkspaceAdmin: '60000000-0000-4000-8000-000000000004',
+  roleAlphaSeller: '60000000-0000-4000-8000-000000000005',
   customerIdentityAlpha: '65000000-0000-4000-8000-000000000001',
   customerIdentityBeta: '65000000-0000-4000-8000-000000000002',
   customerAlpha: '70000000-0000-4000-8000-000000000001',
@@ -121,11 +122,31 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       ids.membershipSalesTwo, ids.personSalesTwo,
     ]);
     await client.query(`
+      INSERT INTO memberships(workspace_id, company_id, person_id)
+      SELECT $1, NULL, $2
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM memberships
+        WHERE workspace_id = $1
+          AND company_id IS NULL
+          AND person_id = $2
+      )
+      ON CONFLICT DO NOTHING
+    `, [ids.workspaceAlpha, ids.personDemo]);
+    await client.query(`
+      UPDATE memberships
+      SET status = 'active', valid_until = NULL
+      WHERE workspace_id = $1
+        AND company_id IS NULL
+        AND person_id = $2
+    `, [ids.workspaceAlpha, ids.personDemo]);
+    await client.query(`
       INSERT INTO permissions(code, description) VALUES
         ('customer.read', 'Read Customers in the active context'),
         ('customer.create', 'Create Customers in the active context'),
         ('customer.identity.manage', 'Manage Customer identity details in the active context'),
         ('customer.merge', 'Merge and unmerge Customers in the active context'),
+        ('customer.identity.reconcile', 'Merge and reverse Workspace Customer identities with lineage and audit'),
         ('customer.import.read', 'Read sanitized Customer import summaries in the active context'),
         ('customer.import.create', 'Create a staged Customer CSV import in the active context'),
         ('customer.import.review', 'Review and reconcile staged Customer import records'),
@@ -136,7 +157,14 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('sales.lead.assign', 'Assign an unowned Sales Lead in the current Company'),
         ('sales.lead.reassign', 'Reassign an owned Sales Lead with a reason in the current Company'),
         ('sales.call.create', 'Record a Call Log for an assigned Sales Lead'),
-        ('sales.marketing.link', 'Link Campaign or Promotion context to a Sales Lead and Company relationship')
+        ('sales.marketing.link', 'Link Campaign or Promotion context to a Sales Lead and Company relationship'),
+        ('organization.read', 'Read the permitted Organization structure and access assignments'),
+        ('organization.company.manage', 'Create and update Companies in the permitted scope'),
+        ('organization.unit.manage', 'Create and update Organization units'),
+        ('organization.user.manage', 'Create and activate or deactivate UserAccounts'),
+        ('organization.membership.manage', 'Create and update Memberships'),
+        ('organization.role.manage', 'Create Roles and assign scoped Roles'),
+        ('organization.impersonate', 'Start a time-limited audited impersonation session')
       ON CONFLICT (code) DO UPDATE SET description = EXCLUDED.description
     `);
     await client.query(`
@@ -144,9 +172,13 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($1, $2, 'customer_manager', 'مدیر مشتریان'),
         ($3, $4, 'customer_manager', 'مدیر مشتریان'),
         ($5, $2, 'customer_reader', 'مشاهده‌گر مشتریان'),
-        ($6, $2, 'sales_seller', 'فروشنده')
+        ($6, $2, 'workspace_admin', 'مدیر فضای کاری'),
+        ($7, $2, 'sales_seller', 'فروشنده')
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-    `, [ids.roleAlphaManager, ids.workspaceAlpha, ids.roleBetaManager, ids.workspaceBeta, ids.roleAlphaReader, ids.roleAlphaSeller]);
+    `, [
+      ids.roleAlphaManager, ids.workspaceAlpha, ids.roleBetaManager, ids.workspaceBeta,
+      ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller,
+    ]);
     await client.query(`
       INSERT INTO role_permissions(role_id, permission_code) VALUES
         ($1, 'customer.read'), ($1, 'customer.create'),
@@ -160,20 +192,38 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($2, 'sales.queue.read'), ($2, 'sales.lead.create'), ($2, 'sales.lead.read_all'),
         ($2, 'sales.lead.assign'), ($2, 'sales.lead.reassign'), ($2, 'sales.call.create'), ($2, 'sales.marketing.link'),
         ($3, 'customer.read'),
-        ($4, 'customer.read'), ($4, 'sales.queue.read'), ($4, 'sales.call.create')
+        ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'), ($4, 'customer.merge'), ($4, 'customer.identity.reconcile'),
+        ($4, 'customer.import.read'), ($4, 'customer.import.create'), ($4, 'customer.import.review'), ($4, 'customer.import.approve'),
+        ($4, 'organization.read'), ($4, 'organization.company.manage'), ($4, 'organization.unit.manage'),
+        ($4, 'organization.user.manage'), ($4, 'organization.membership.manage'),
+        ($4, 'organization.role.manage'), ($4, 'organization.impersonate'),
+        ($5, 'customer.read'), ($5, 'sales.queue.read'), ($5, 'sales.call.create')
       ON CONFLICT DO NOTHING
-    `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader, ids.roleAlphaSeller]);
+    `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller]);
     await client.query(`
-      INSERT INTO role_assignments(workspace_id, membership_id, role_id) VALUES
-        ($1, $2, $3), ($4, $5, $6), ($1, $7, $8), ($1, $9, $10), ($1, $11, $10)
+      INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
+        ($1, $2, $3, 'COMPANY', $4),
+        ($5, $6, $7, 'COMPANY', $8),
+        ($1, $9, $10, 'COMPANY', $4),
+        ($1, $11, $12, 'COMPANY', $4),
+        ($1, $13, $12, 'COMPANY', $4)
       ON CONFLICT DO NOTHING
     `, [
-      ids.workspaceAlpha, ids.membershipDemoAlpha, ids.roleAlphaManager,
-      ids.workspaceBeta, ids.membershipDemoBeta, ids.roleBetaManager,
+      ids.workspaceAlpha, ids.membershipDemoAlpha, ids.roleAlphaManager, ids.companyAlpha,
+      ids.workspaceBeta, ids.membershipDemoBeta, ids.roleBetaManager, ids.companyBeta,
       ids.membershipAlphaOnly, ids.roleAlphaReader,
       ids.membershipSalesOne, ids.roleAlphaSeller,
       ids.membershipSalesTwo,
     ]);
+    await client.query(`
+      INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+      SELECT $1, membership.id, $3, 'WORKSPACE', NULL
+      FROM memberships membership
+      WHERE membership.workspace_id = $1
+        AND membership.company_id IS NULL
+        AND membership.person_id = $2
+      ON CONFLICT DO NOTHING
+    `, [ids.workspaceAlpha, ids.personDemo, ids.roleWorkspaceAdmin]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -215,8 +265,8 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
           ON CONFLICT DO NOTHING
         `, [context.workspaceId, context.identityId, context.phone]);
         await runtime.query(`
-          INSERT INTO customers(id, workspace_id, company_id, identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          INSERT INTO customers(id, workspace_id, company_id, identity_id, canonical_identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8)
           ON CONFLICT (id) DO NOTHING
         `, [context.customerId, context.workspaceId, context.companyId, context.identityId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
         await runtime.query(`

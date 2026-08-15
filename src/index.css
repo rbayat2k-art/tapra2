@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+.input-shell {
+  width: 100%;
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.75rem;
+  background: rgb(15 23 42);
+  color: rgb(241 245 249);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  outline: none;
+}
+
+.input-shell:focus { border-color: rgb(99 102 241); }
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {

@@ -28,8 +28,13 @@ export interface TenantDatabaseContext {
   companyId: string;
 }
 
-export async function withTenantTransaction<T>(
-  context: TenantDatabaseContext,
+export interface WorkspaceDatabaseContext {
+  workspaceId: string;
+  companyId: string | null;
+}
+
+export async function withWorkspaceTransaction<T>(
+  context: WorkspaceDatabaseContext,
   operation: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await getPool().connect();
@@ -37,7 +42,7 @@ export async function withTenantTransaction<T>(
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', $2, true)", [
       context.workspaceId,
-      context.companyId,
+      context.companyId ?? '',
     ]);
     const result = await operation(client);
     await client.query('COMMIT');
@@ -48,6 +53,13 @@ export async function withTenantTransaction<T>(
   } finally {
     client.release();
   }
+}
+
+export async function withTenantTransaction<T>(
+  context: TenantDatabaseContext,
+  operation: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  return withWorkspaceTransaction(context, operation);
 }
 
 export async function closePool(): Promise<void> {

@@ -3,11 +3,22 @@
 > Status: CURRENT
 > Source of truth: این سند برای مدل نقش، permission و محدودیت‌های دسترسی فعلی است.
 > Owner: Access Control Owner
-> Last validated: 2026-08-11 against `stable@cea6514`
+> Last validated: 2026-08-15 against `agent/organization-access-foundation`
 > Supersedes: none
 > Superseded by: none
 
-تعریف typeها در `src/types.ts` و نقش‌های پیش‌فرض در `src/utils/storage.ts` شواهد اجرایی این سند هستند.
+این پروژه در دوره migration دو مدل دسترسی اجراشده دارد. مدل Server-backed از migrationهای `server/migrations/` و `server/src/modules/access/` خوانده می‌شود؛ مدل legacy Prototype از `src/types.ts` و نقش‌های پیش‌فرض `src/utils/storage.ts` خوانده می‌شود. این دو فهرست نباید هم‌معنی فرض شوند.
+
+## مدل Server-backed
+
+- `Membership` می‌تواند Workspace-level (`company_id = NULL`) یا Company-level باشد.
+- `role_assignments` Scope صریح `WORKSPACE`، `COMPANY`، `BRANCH`، `DEPARTMENT`، `TEAM` یا `SELF` دارد.
+- یک UserAccount می‌تواند بدون ساخت account دوم، Role متفاوت در چند Company/Scope داشته باشد.
+- Permission سمت server محاسبه می‌شود؛ در Impersonation نتیجه به اشتراک Permissionهای Admin و target محدود می‌شود.
+- Permissionهای Organization فعلی: `organization.read`، `organization.company.manage`، `organization.unit.manage`، `organization.user.manage`، `organization.membership.manage`، `organization.role.manage` و `organization.impersonate`.
+- نقش‌های legacy حذف یا به‌صورت حدسی تبدیل نشده‌اند. `legacy_role_mappings` وضعیت `UNMAPPED/PARTIAL/MAPPED/REVIEW_REQUIRED` را برای migration تدریجی نگه می‌دارد؛ تا ثبت mapping، نقش legacy فقط در Prototype معتبر است.
+
+## مدل مؤثر دسترسی Prototype
 
 ## مدل مؤثر دسترسی
 
@@ -32,7 +43,7 @@
 | `role_support_agent` | ثبت و پیگیری پرونده پشتیبانی. |
 | `role_financial_approver` | تأیید مالی ردیف‌های عودت پشتیبانی. |
 
-`SystemPermission` اکنون ۲۱ مقدار دارد. فهرست دقیق و قابل‌کامپایل آن در `src/types.ts` است؛ اسناد نباید تعداد legacy «۲۰» یا «۲۲» را تکرار کنند.
+`SystemPermission` در زمان این validation دارای ۱۲۱ مقدار قابل‌کامپایل است. فهرست دقیق و authoritative آن در `src/types.ts` است؛ عدد این سند فقط snapshot اعتبارسنجی است و هنگام تغییر type باید دوباره محاسبه شود.
 
 ## مدل چندنقشی
 

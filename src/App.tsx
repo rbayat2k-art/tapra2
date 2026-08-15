@@ -60,8 +60,10 @@ import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
 import { NAV_ITEMS, isNavItemVisible } from './config/navigationRegistry';
 import { useFoundationSession } from './foundation/auth/FoundationSessionContext';
 import { FoundationLogin } from './foundation/auth/FoundationLogin';
+import { FoundationPasswordChange } from './foundation/auth/FoundationPasswordChange';
 import { ContextSelector } from './foundation/organization/ContextSelector';
 import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
+import { OrganizationAdminView } from './foundation/organization/OrganizationAdminView';
 import { SaasCustomerWorkspace } from './foundation/customers/SaasCustomerWorkspace';
 import { resolveLegacyShellUser } from './integration/legacyShellIdentity';
 
@@ -271,6 +273,7 @@ export default function App() {
 
   // Impersonation (Admin Login as User) State
   const [impersonatorAdmin, setImpersonatorAdmin] = useState<User | null>(null);
+  const [returnToAdminRequested, setReturnToAdminRequested] = useState(false);
 
   useEffect(() => {
     const session = foundation.session;
@@ -282,10 +285,20 @@ export default function App() {
     // The mature shell receives presentation identity from the trusted Foundation session.
     // It is deliberately not persisted as a local login and cannot authorize an API request.
     setCurrentUser(resolveLegacyShellUser(session, users));
-    setImpersonatorAdmin(null);
-    localStorage.removeItem('shavaz_impersonator_admin');
+    setImpersonatorAdmin(session.impersonation
+      ? resolveLegacyShellUser({ ...session, user: { ...session.actor, requiresPasswordChange: false }, impersonation: null }, users)
+      : null);
     resetTabsToDashboard();
-  }, [foundation.session?.user.id, foundation.session?.activeContext?.membershipId, users]);
+  }, [foundation.session?.user.id, foundation.session?.activeContext?.contextKey, foundation.session?.impersonation?.id, users]);
+
+  useEffect(() => {
+    const session = foundation.session;
+    if (!returnToAdminRequested || !session || session.impersonation
+      || currentUser?.email.trim().toLowerCase() !== session.user.email.trim().toLowerCase()) return;
+    resetTabsToDashboard();
+    openTab('admin');
+    setReturnToAdminRequested(false);
+  }, [returnToAdminRequested, foundation.session?.impersonation?.id, foundation.session?.user.id, currentUser?.id]);
 
   // Effective permissions of the REAL logged-in identity (never affected by whichever user is
   // currently being viewed while impersonating) — the ONLY thing consulted to authorize
@@ -342,18 +355,9 @@ export default function App() {
   };
 
   const handleExitImpersonation = () => {
-    if (impersonatorAdmin) {
-      if (currentUser) {
-        endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
-        logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان مشاهده به‌جای ${currentUser.fullName}` });
-      }
-      setCurrentUser(impersonatorAdmin);
-      storage.setCurrentUser(impersonatorAdmin);
-      setImpersonatorAdmin(null);
-      localStorage.removeItem('shavaz_impersonator_admin');
-      resetTabsToDashboard();
-      openTab('admin');
-    }
+    if (!foundation.session?.impersonation) return;
+    setReturnToAdminRequested(true);
+    void foundation.stopImpersonation('بازگشت مدیر از نمای کاربر');
   };
 
   // Aggressive Tab Guard: whenever the open tab set or the current user's effective
@@ -1025,6 +1029,7 @@ export default function App() {
   }
 
   if (!foundation.session) return <FoundationLogin />;
+  if (foundation.session.user.requiresPasswordChange) return <FoundationPasswordChange />;
   if (!foundation.session.activeContext) return <ContextSelector />;
 
   // Identity is derived after the trusted Foundation session/context is ready.
@@ -1078,6 +1083,7 @@ export default function App() {
             </span>
             <span>
               در حال مشاهده سیستم به‌جای کاربر <strong className="underline">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
+              {foundation.session?.impersonation && <small className="mt-1 block font-medium opacity-90">دلیل: {foundation.session.impersonation.reason} · پایان خودکار: {new Date(foundation.session.impersonation.expiresAt).toLocaleString('fa-IR')}</small>}
             </span>
           </div>
           <button
@@ -1547,13 +1553,17 @@ export default function App() {
                   )}
 
                   {tab.id === 'companies' && (
-                    <CompaniesView
-                      companies={companies}
-                      companyBankAccounts={companyBankAccounts}
-                      currentUser={currentUser}
-                      onUpdateCompanies={setCompanies}
-                      onUpdateCompanyBankAccounts={setCompanyBankAccounts}
-                    />
+                    <div className="space-y-8">
+                      <OrganizationAdminView initialTab="companies" />
+                      <CompaniesView
+                        companies={companies}
+                        companyBankAccounts={companyBankAccounts}
+                        currentUser={currentUser}
+                        onUpdateCompanies={setCompanies}
+                        onUpdateCompanyBankAccounts={setCompanyBankAccounts}
+                        serverManagedCompanies
+                      />
+                    </div>
                   )}
 
                   {tab.id === 'archive' && (
@@ -1596,12 +1606,16 @@ export default function App() {
                   )}
 
                   {tab.id === 'roles_permissions' && (
-                    <RolesAndPermissionsView
-                      roles={roles}
-                      users={users}
-                      currentUser={currentUser}
-                      onUpdateRoles={setRoles}
-                    />
+                    <div className="space-y-8">
+                      <OrganizationAdminView initialTab="roles" />
+                      <div className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-200">بخش زیر فقط RBAC مربوط به Prototype است و هنوز authority امنیت Server نیست.</div>
+                      <RolesAndPermissionsView
+                        roles={roles}
+                        users={users}
+                        currentUser={currentUser}
+                        onUpdateRoles={setRoles}
+                      />
+                    </div>
                   )}
 
                   {tab.id === 'all_communications' && (
@@ -1631,20 +1645,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'admin' && (
-                    <AdminPanel
-                      users={users}
-                      companies={companies}
-                      costCenters={costCenters}
-                      requests={requests}
-                      roles={roles}
-                      currentUser={currentUser}
-                      realActor={realActor}
-                      impersonatorAdmin={impersonatorAdmin}
-                      realActorPermissions={realActorPermissions}
-                      onUpdateUsers={setUsers}
-                      onUpdateCompanies={setCompanies}
-                      onUpdateCostCenters={setCostCenters}
-                    />
+                    <OrganizationAdminView initialTab="users" />
                   )}
                 </div>
               ))}

@@ -16,6 +16,10 @@ const serverPermissionMap: Partial<Record<string, SystemPermission[]>> = {
   'sales.lead.read_all': ['sales_access', 'view_sales_reports'],
   'sales.lead.assign': ['sales_access', 'assign_sales_lead'],
   'sales.lead.reassign': ['sales_access', 'reassign_sales_lead'],
+  'organization.company.manage': ['manage_companies'],
+  'organization.user.manage': ['manage_users'],
+  'organization.membership.manage': ['manage_users'],
+  'organization.role.manage': ['manage_roles'],
 };
 
 function mapServerPermissions(permissions: string[]): SystemPermission[] {

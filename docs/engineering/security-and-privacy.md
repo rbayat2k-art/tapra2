@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,8 +21,13 @@
 - Customer create، phone/address، merge/unmerge، timeline و AuditEntryهای مربوط در server و transaction ثبت می‌شوند.
 - duplicate check فقط داخل context فعال query می‌کند و اطلاعات Tenant دیگر را برنمی‌گرداند.
 - identity و normalized phone در Workspace مرکزی هستند، اما relationship/query عملیاتی Customer همچنان Company-scoped است؛ test چندCompany نبود existence oracle را بررسی می‌کند.
+- reconciliation مرکزی فقط با `customer.identity.reconcile` و Context فعال `WORKSPACE` اجرا می‌شود. endpoint عمومی برای enumerate/search هویت‌های Workspace وجود ندارد؛ داشتن permission در Company context نیز کافی نیست.
+- merge مرکزی Identity را حذف نمی‌کند و Actor واقعی، user مؤثر، reason، idempotency، lineage snapshot و reverse را ثبت می‌کند. دو relationship فعال یک Company باید پیش از آن صریحاً در سطح Company reconcile شوند.
 - permissionهای حساس `customer.identity.manage` و `customer.merge` سمت server enforce می‌شوند؛ UI مرز امنیتی نیست.
 - response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
+- مدیریت Company، Organization unit، UserAccount، Membership و RoleAssignment با Permission و Scope سمت server و Audit انجام می‌شود. RLS اجباری روی `organization_units` مرز Workspace را مستقل از filter برنامه کنترل می‌کند؛ جدول‌های bootstrap هویت همچنان به guard و queryهای Workspace-scoped برنامه متکی‌اند.
+- UserAccount جدید credential تصادفی `scrypt` دریافت می‌کند که فقط یک‌بار در response ایجاد نمایش داده می‌شود؛ password legacy migrate، log یا commit نمی‌شود. تا زمان تغییر credential موقت، انتخاب Context و دسترسی به APIهای کاری با `requires_password_change` در server مسدود است؛ تغییر موفق password سایر sessionهای همان UserAccount را باطل می‌کند.
+- Impersonation بدون Password هدف، با reason اجباری، مدت ۵ تا ۳۰ دقیقه، منع target خارج از Scope و Permission intersection اجرا می‌شود. Audit، Actor واقعی، User مؤثر و `impersonation_id` را جدا نگه می‌دارد و UI banner/بازگشت دارد.
 - Sales permissionهای `sales.queue.read`, `sales.call.create`, `sales.lead.create/read_all/assign/reassign` و `sales.marketing.link` سمت server enforce می‌شوند؛ فهرست assignee و marketing link نیز به Workspace/Company فعال محدود است.
 - فروشنده عادی فقط صف membership خود را می‌بیند، endpoint self-claim ندارد و نمی‌تواند روی Lead فروشنده دیگر تماس ثبت کند. manager برای reassignment به permission و reason نیاز دارد و تغییر در history/Audit ثبت می‌شود.
 - تماس ناموفق relationship/lock نمی‌سازد؛ تماس مؤثر فقط طبق `sales_policies` قابل‌تنظیم relationship/lock می‌سازد. پایان شیفت نیز در policy فعلی باعث انتقال خودکار assignment نمی‌شود.
@@ -30,11 +35,12 @@
 
 ## ریسک باقی‌مانده Prototype
 
-بخش‌های قدیمی همچنان permission client-side و داده در `localStorage` دارند؛ passwordهای نمونه legacy نیز در همان مدل قدیمی وجود دارند. login محلی و Impersonation legacy از مسیر عادی محصول حذف شده‌اند، اما این بخش‌ها همچنان مرز امنیتی سازمانی نیستند و نباید برای داده حساس production استفاده شوند.
+بخش‌های قدیمی همچنان permission client-side و داده در `localStorage` دارند؛ passwordهای نمونه legacy نیز در همان مدل قدیمی وجود دارند. login محلی و Impersonation legacy از مسیر عادی محصول حذف شده‌اند و صفحه «سازمان و مدیریت» از Backend استفاده می‌کند، اما سایر بخش‌های Prototype همچنان مرز امنیتی production نیستند.
 
 ## Gapهای باقی‌مانده
 
 - MFA، recovery، rate limiting و lockout اجرا نشده‌اند.
+- recovery، reset مدیریتی credential و سیاست production برای rotation هنوز اجرا نشده‌اند؛ flow تغییر اجباری credential موقت در development موجود است.
 - TLS توسط خود برنامه local فراهم نمی‌شود و باید در deployment خاتمه یابد.
 - secret manager، backup/restore، retention، encryption-at-rest policy و security monitoring production تعریف نشده‌اند.
 - Audit فعلی append-oriented است، اما tamper-evident storage و Outbox هنوز اجرا نشده‌اند.
