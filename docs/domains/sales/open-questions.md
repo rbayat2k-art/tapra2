@@ -3,7 +3,7 @@
 > Status: DRAFT
 > Source of truth: این سند برای تصمیم‌های حل‌نشده فروش است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against confirmed business-discovery decisions and the Sales Draft archive
+> Last validated: 2026-08-15 against confirmed business decisions and the Sales Draft archive
 > Supersedes: none
 > Superseded by: none
 
@@ -12,7 +12,8 @@
 ## فاکتور، قیمت و مالی
 
 - آیا سطوح بالاتر فروش فقط گزارش می‌بینند یا روی فاکتور اقدام/تأیید اضافه دارند؟
-- جزئیات DTO، state machine و permission کارتابل «تأیید واریزی مشتری» چیست؟
+- stateهای Invoice بیرون از محاسبه مبلغ تأییدشده، transitionهای اصلاح/ابطال و permission دقیق کارتابل مالی چیست؟
+- policy اختلاف مجموع Paymentهای `APPROVED` با مبلغ Invoice، اضافه‌پرداخت و پرداخت ناقص چیست؟
 - سیاست کسر/شناسایی مبلغ فاکتور وقتی کالا تحویل شده ولی خدمت باقی است چیست؟
 - reconciliation بانکی، chargeback و اختلاف مبلغ چگونه مدیریت می‌شوند؟
 
