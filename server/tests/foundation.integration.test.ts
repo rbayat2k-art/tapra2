@@ -787,4 +787,160 @@ describe('Foundation Sprint 1 vertical slice', () => {
       await verifier.end();
     }
   });
+
+  it('manages multi-Company Organization access with scoped Roles, Shared Services, RLS, and Audit', async () => {
+    const admin = request.agent(createApp());
+    let adminSession = await login(admin, 'demo@tapra.local', 'TapraDemo!2026');
+    const workspaceContext = adminSession.memberships.find((item) =>
+      item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
+    if (!workspaceContext) throw new Error('Workspace administrator context was not found.');
+    adminSession = (await admin
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: workspaceContext.membershipId, scopeType: workspaceContext.scope.type, scopeId: workspaceContext.scope.id })
+      .expect(200)).body as SessionResponse;
+
+    const company = await admin
+      .post('/api/v1/organization/companies')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ code: `MC${Date.now()}`, name: 'شرکت آزمون چندشرکتی', description: 'محدوده تست' })
+      .expect(201);
+    const sharedService = await admin
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ type: 'SHARED_SERVICE', code: `MIS${Date.now()}`, name: 'خدمات مشترک داده و MIS', serviceKind: 'MIS' })
+      .expect(201);
+    expect(sharedService.body.unit.companyId).toBeNull();
+    const branch = await admin
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ type: 'BRANCH', companyId: '20000000-0000-4000-8000-000000000001', code: `BR${Date.now()}`, name: 'شعبه آزمون Alpha' })
+      .expect(201);
+    expect(branch.body.unit.companyId).toBe('20000000-0000-4000-8000-000000000001');
+
+    const workspaceUser = await admin
+      .post('/api/v1/organization/users')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ fullName: 'مدیر داده مشترک', email: `shared-data-${Date.now()}@tapra.local` })
+      .expect(201);
+    expect(workspaceUser.body.temporaryPassword).toMatch(/^.{20,}$/);
+    const workspaceMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: workspaceUser.body.account.personId })
+      .expect(201);
+    expect(workspaceMembership.body.membership.companyId).toBeNull();
+    const sharedRole = await admin
+      .post('/api/v1/organization/roles')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({
+        code: `shared_data_${Date.now()}`, name: 'مدیر داده مشترک',
+        permissionCodes: ['organization.read', 'organization.unit.manage'],
+      })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: workspaceMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'WORKSPACE' })
+      .expect(201);
+
+    const sharedAgent = request.agent(createApp());
+    let sharedSession = await login(sharedAgent, workspaceUser.body.account.email, workspaceUser.body.temporaryPassword);
+    const sharedWorkspaceContext = sharedSession.memberships.find((item) => item.scope.type === 'WORKSPACE');
+    if (!sharedWorkspaceContext) throw new Error('Workspace-level Membership did not produce a usable context.');
+    sharedSession = (await sharedAgent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', sharedSession.csrfToken)
+      .send({ membershipId: sharedWorkspaceContext.membershipId, scopeType: sharedWorkspaceContext.scope.type, scopeId: sharedWorkspaceContext.scope.id })
+      .expect(200)).body as SessionResponse;
+    const sharedView = await sharedAgent.get('/api/v1/organization').expect(200);
+    expect(sharedView.body.organization.companies.some((item: { id: string }) => item.id === company.body.company.id)).toBe(true);
+    expect(sharedView.body.organization.units.some((item: { id: string }) => item.id === sharedService.body.unit.id)).toBe(true);
+
+    const scopedUser = await admin
+      .post('/api/v1/organization/users')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ fullName: 'مدیر محدود شرکت', email: `company-manager-${Date.now()}@tapra.local` })
+      .expect(201);
+    const alphaMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: scopedUser.body.account.personId, companyId: '20000000-0000-4000-8000-000000000001' })
+      .expect(201);
+    const otherMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: scopedUser.body.account.personId, companyId: company.body.company.id })
+      .expect(201);
+    const viewerRole = await admin
+      .post('/api/v1/organization/roles')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ code: `viewer_${Date.now()}`, name: 'مشاهده‌گر', permissionCodes: ['organization.read'] })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: alphaMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'COMPANY', scopeId: '20000000-0000-4000-8000-000000000001' })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: otherMembership.body.membership.id, roleId: viewerRole.body.role.id, scopeType: 'COMPANY', scopeId: company.body.company.id })
+      .expect(201);
+
+    const scopedAgent = request.agent(createApp());
+    let scopedSession = await login(scopedAgent, scopedUser.body.account.email, scopedUser.body.temporaryPassword);
+    const alphaContext = scopedSession.memberships.find((item) => item.company?.id === '20000000-0000-4000-8000-000000000001');
+    const otherContext = scopedSession.memberships.find((item) => item.company?.id === company.body.company.id);
+    if (!alphaContext || !otherContext) throw new Error('Multi-Company scoped contexts were not found.');
+    expect(alphaContext.permissions).toContain('organization.unit.manage');
+    expect(otherContext.permissions).not.toContain('organization.unit.manage');
+    scopedSession = (await scopedAgent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ membershipId: alphaContext.membershipId, scopeType: alphaContext.scope.type, scopeId: alphaContext.scope.id })
+      .expect(200)).body as SessionResponse;
+    const companyView = await scopedAgent.get('/api/v1/organization').expect(200);
+    expect(companyView.body.organization.companies.map((item: { id: string }) => item.id)).toEqual(['20000000-0000-4000-8000-000000000001']);
+    expect(companyView.body.organization.units.some((item: { type: string }) => item.type === 'SHARED_SERVICE')).toBe(false);
+    await scopedAgent
+      .post('/api/v1/organization/companies')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ code: 'FORBIDDEN', name: 'شرکت غیرمجاز' })
+      .expect(403);
+    await scopedAgent
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ type: 'SHARED_SERVICE', code: 'FORBIDDEN-MIS', name: 'خدمت غیرمجاز', serviceKind: 'MIS' })
+      .expect(403)
+      .expect(({ body }) => expect(body.error.code).toBe('workspace_scope_required'));
+
+    const runtime = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_organization_rls_negative' });
+    await runtime.connect();
+    try {
+      await runtime.query('BEGIN');
+      await runtime.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', '', true)", ['10000000-0000-4000-8000-000000000001']);
+      await expect(runtime.query(`
+        INSERT INTO organization_units(workspace_id, unit_type, code, name, service_kind)
+        VALUES ('10000000-0000-4000-8000-000000000002', 'SHARED_SERVICE', 'CROSS-TENANT', 'Cross tenant', 'DATA')
+      `)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await runtime.query('ROLLBACK').catch(() => undefined);
+      await runtime.end();
+    }
+
+    await withTenantTransaction({
+      workspaceId: '10000000-0000-4000-8000-000000000001',
+      companyId: '20000000-0000-4000-8000-000000000001',
+    }, async (client) => {
+      const audits = await client.query<{ action: string }>(`
+        SELECT action FROM audit_entries WHERE workspace_id = '10000000-0000-4000-8000-000000000001'
+          AND action LIKE 'organization.%'
+      `);
+      expect(audits.rows.map((row) => row.action)).toEqual(expect.arrayContaining([
+        'organization.company.created', 'organization.unit.created', 'organization.user.created',
+        'organization.membership.upserted', 'organization.role.created', 'organization.role.assigned',
+      ]));
+    });
+  });
 });
