@@ -1,7 +1,7 @@
 import type { DatabaseError, PoolClient } from 'pg';
 import { withTenantTransaction } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
-import { appendAuditEntry } from '../audit/audit-service.js';
+import { appendAuditEntry, auditIdentity } from '../audit/audit-service.js';
 import type { AuthenticatedSession, MembershipContext } from '../identity/types.js';
 
 export type DuplicateMatch = 'EXACT_MATCH' | 'POSSIBLE_DUPLICATE' | 'NO_MATCH';
@@ -537,7 +537,7 @@ export async function createCustomer(
           eventType: 'customer_created', summary: 'پروفایل مشتری ایجاد شد.', metadata: { sourceId },
         });
         await appendAuditEntry(client, {
-          workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+          workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
           action: 'customer.created', resourceType: 'Customer', resourceId: customerId, result: 'success',
           newState: { fullName: input.fullName, sourceId }, correlationId,
         });
@@ -593,7 +593,7 @@ export async function addPhone(
           eventType: 'phone_added', summary: 'شماره تماس جدید افزوده شد.', metadata: { label: input.label ?? 'mobile', sourceId },
         });
         await appendAuditEntry(client, {
-          workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+          workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
           action: 'customer.phone_added', resourceType: 'Customer', resourceId: customerId, result: 'success',
           newState: { label: input.label ?? 'mobile', sourceId }, correlationId,
         });
@@ -645,7 +645,7 @@ export async function addAddress(
           eventType: 'address_added', summary: 'نشانی جدید افزوده شد.', metadata: { label: input.label ?? 'other', sourceId },
         });
         await appendAuditEntry(client, {
-          workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+          workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
           action: 'customer.address_added', resourceType: 'Customer', resourceId: customerId, result: 'success',
           newState: { label: input.label ?? 'other', sourceId }, correlationId,
         });
@@ -747,7 +747,7 @@ export async function mergeCustomers(
         eventType: 'customer_merged', summary: 'این پروفایل در پروفایل اصلی ادغام شد.', metadata,
       });
       await appendAuditEntry(client, {
-        workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+        workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
         action: 'customer.merged', resourceType: 'CustomerMerge', resourceId: operation.rows[0]!.id,
         result: 'success', reason: input.reason, previousState: { canonical: canonical.id, merged: merged.id },
         newState: { canonical: canonical.id, merged: merged.id, status: 'active' }, correlationId,
@@ -791,7 +791,7 @@ export async function unmergeCustomers(
       });
     }
     await appendAuditEntry(client, {
-      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'customer.unmerged', resourceType: 'CustomerMerge', resourceId: operationId,
       result: 'success', reason, previousState: { status: 'active' }, newState: { status: 'reversed' }, correlationId,
     });

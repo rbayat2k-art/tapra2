@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express';
 import { asyncHandler } from '../../shared/async-handler.js';
 import { AppError } from '../../shared/errors.js';
-import { assertMembershipAvailable } from '../organization/context-service.js';
+import { assertMembershipAvailable, limitContextToActor } from '../organization/context-service.js';
 import { assertCsrf, resolveSession } from './session-service.js';
 import type { AuthenticatedSession, MembershipContext } from './types.js';
 
@@ -32,11 +32,18 @@ export const requireCsrf: RequestHandler = (request, response, next) => {
 export const requireActiveContext: RequestHandler = asyncHandler(async (_request, response, next) => {
   const session = getAuthenticatedSession(response.locals);
   if (!session.activeMembershipId) throw new AppError(409, 'active_context_required', 'Select an active Workspace and Company context.');
-  response.locals.activeContext = await assertMembershipAvailable(
+  let context = await assertMembershipAvailable(
     session.userAccountId,
     session.activeMembershipId,
     session.activeScopeType ?? undefined,
     session.activeScopeId ?? undefined,
   );
+  if (session.impersonationId && session.actorMembershipId && session.actorScopeType && session.actorScopeId) {
+    const actorContext = await assertMembershipAvailable(
+      session.actorUserAccountId, session.actorMembershipId, session.actorScopeType, session.actorScopeId,
+    );
+    context = limitContextToActor(context, actorContext);
+  }
+  response.locals.activeContext = context;
   next();
 });

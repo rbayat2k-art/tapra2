@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { query } from '../../infrastructure/database/pool.js';
 import { asyncHandler } from '../../shared/async-handler.js';
 import { AppError } from '../../shared/errors.js';
-import { assertMembershipAvailable, buildSessionView } from '../organization/context-service.js';
+import { assertMembershipAvailable, buildSessionView, limitContextToActor } from '../organization/context-service.js';
 import { getAuthenticatedSession, requireAuthentication, requireCsrf } from './middleware.js';
 import { verifyPassword } from './password.js';
 import { createSession, destroySession } from './session-service.js';
@@ -67,11 +67,23 @@ export function identityRoutes(): Router {
     const selected = await assertMembershipAvailable(
       session.userAccountId, input.membershipId, input.scopeType, input.scopeId,
     );
-    await query(`
-      UPDATE sessions
-      SET active_membership_id = $1, active_scope_type = $2, active_scope_id = $3
-      WHERE id = $4
-    `, [input.membershipId, selected.scope.type, selected.scope.id, session.sessionId]);
+    if (session.impersonationId && session.actorMembershipId && session.actorScopeType && session.actorScopeId) {
+      const actorContext = await assertMembershipAvailable(
+        session.actorUserAccountId, session.actorMembershipId, session.actorScopeType, session.actorScopeId,
+      );
+      limitContextToActor(selected, actorContext);
+      await query(`
+        UPDATE session_impersonations
+        SET target_membership_id = $1, target_scope_type = $2, target_scope_id = $3
+        WHERE id = $4 AND ended_at IS NULL AND expires_at > now()
+      `, [input.membershipId, selected.scope.type, selected.scope.id, session.impersonationId]);
+    } else {
+      await query(`
+        UPDATE sessions
+        SET active_membership_id = $1, active_scope_type = $2, active_scope_id = $3
+        WHERE id = $4
+      `, [input.membershipId, selected.scope.type, selected.scope.id, session.sessionId]);
+    }
     response.json(await buildSessionView({
       ...session,
       activeMembershipId: input.membershipId,

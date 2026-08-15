@@ -7,6 +7,9 @@ import {
   assignRole, createCompany, createMembership, createRole, createUnit, createUser, readOrganization,
   revokeRoleAssignment, updateCompany, updateMembershipStatus, updateUnit, updateUserStatus,
 } from './organization-service.js';
+import { startImpersonation, stopImpersonation } from './impersonation-service.js';
+import { buildSessionView } from './context-service.js';
+import { resolveSession } from '../identity/session-service.js';
 
 const uuid = z.string().uuid();
 const optionalText = (max: number) => z.string().trim().max(max).optional().or(z.literal(''));
@@ -76,6 +79,33 @@ export function organizationRoutes(): Router {
     const input = z.object({ reason: z.string().trim().min(3).max(500) }).parse(request.body);
     await revokeRoleAssignment(mutation(response), uuid.parse(request.params.assignmentId), input.reason);
     response.status(204).send();
+  }));
+  router.post('/impersonation/start', requireCsrf, requirePermission('organization.impersonate'), asyncHandler(async (request, response) => {
+    const input = z.object({
+      targetUserAccountId: uuid, targetMembershipId: uuid,
+      targetScopeType: z.enum(['WORKSPACE', 'COMPANY', 'BRANCH', 'DEPARTMENT', 'TEAM', 'SELF']),
+      targetScopeId: uuid, reason: z.string().trim().min(3).max(500),
+      durationMinutes: z.number().int().min(5).max(30).default(15),
+    }).parse(request.body);
+    await startImpersonation({
+      session: getAuthenticatedSession(response.locals), actorContext: getActiveContext(response.locals),
+      ...input, correlationId: response.locals.correlationId as string,
+    });
+    const resolved = await resolveSession(request);
+    if (!resolved) throw new Error('Session disappeared while starting impersonation.');
+    response.json(await buildSessionView(resolved));
+  }));
+  router.post('/impersonation/stop', requireCsrf, asyncHandler(async (request, response) => {
+    const input = z.object({ reason: z.string().trim().min(3).max(500).default('بازگشت به حساب مدیر') }).parse(request.body ?? {});
+    const session = getAuthenticatedSession(response.locals);
+    await stopImpersonation({ session, activeContext: getActiveContext(response.locals), reason: input.reason, correlationId: response.locals.correlationId as string });
+    response.json(await buildSessionView({
+      ...session,
+      userAccountId: session.actorUserAccountId, personId: session.actorPersonId,
+      fullName: session.actorFullName, email: session.actorEmail,
+      activeMembershipId: session.actorMembershipId, activeScopeType: session.actorScopeType, activeScopeId: session.actorScopeId,
+      impersonationId: null, impersonationReason: null, impersonationExpiresAt: null,
+    }));
   }));
   return router;
 }

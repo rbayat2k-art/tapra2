@@ -10,6 +10,16 @@ export interface AuthenticatedSession {
   activeMembershipId: string | null;
   activeScopeType: OrganizationScopeType | null;
   activeScopeId: string | null;
+  actorUserAccountId: string;
+  actorPersonId: string;
+  actorFullName: string;
+  actorEmail: string;
+  actorMembershipId: string | null;
+  actorScopeType: OrganizationScopeType | null;
+  actorScopeId: string | null;
+  impersonationId: string | null;
+  impersonationReason: string | null;
+  impersonationExpiresAt: string | null;
 }
 
 export interface MembershipContext {
@@ -25,6 +35,8 @@ export interface MembershipContext {
 
 export interface SessionView {
   user: { id: string; personId: string; fullName: string; email: string };
+  actor: { id: string; personId: string; fullName: string; email: string };
+  impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: MembershipContext[];
   activeContext: MembershipContext | null;
   csrfToken: string;

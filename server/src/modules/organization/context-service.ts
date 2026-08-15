@@ -195,8 +195,28 @@ export async function buildSessionView(session: {
   activeMembershipId: string | null;
   activeScopeType: OrganizationScopeType | null;
   activeScopeId: string | null;
+  actorUserAccountId: string;
+  actorPersonId: string;
+  actorFullName: string;
+  actorEmail: string;
+  actorMembershipId: string | null;
+  actorScopeType: OrganizationScopeType | null;
+  actorScopeId: string | null;
+  impersonationId: string | null;
+  impersonationReason: string | null;
+  impersonationExpiresAt: string | null;
 }): Promise<SessionView> {
-  const memberships = await getMembershipContexts(session.userAccountId);
+  let memberships = await getMembershipContexts(session.userAccountId);
+  if (session.impersonationId) {
+    const actorContexts = await getMembershipContexts(session.actorUserAccountId);
+    const actorContext = actorContexts.find((context) => context.membershipId === session.actorMembershipId
+      && context.scope.type === session.actorScopeType && context.scope.id === session.actorScopeId);
+    memberships = actorContext
+      ? memberships.flatMap((context) => {
+        try { return [limitContextToActor(context, actorContext)]; } catch { return []; }
+      })
+      : [];
+  }
   return {
     user: {
       id: session.userAccountId,
@@ -204,11 +224,38 @@ export async function buildSessionView(session: {
       fullName: session.fullName,
       email: session.email,
     },
+    actor: {
+      id: session.actorUserAccountId,
+      personId: session.actorPersonId,
+      fullName: session.actorFullName,
+      email: session.actorEmail,
+    },
+    impersonation: session.impersonationId && session.impersonationReason && session.impersonationExpiresAt
+      ? { id: session.impersonationId, reason: session.impersonationReason, expiresAt: session.impersonationExpiresAt }
+      : null,
     memberships,
     activeContext: memberships.find((membership) => membership.membershipId === session.activeMembershipId
       && membership.scope.type === session.activeScopeType && membership.scope.id === session.activeScopeId) ?? null,
     csrfToken: session.csrfToken,
   };
+}
+
+export function limitContextToActor(target: MembershipContext, actor: MembershipContext): MembershipContext {
+  if (target.workspace.id !== actor.workspace.id) {
+    throw new AppError(403, 'impersonation_scope_forbidden', 'Target context is outside the administrator Workspace.');
+  }
+  if (actor.scope.type === 'SELF') {
+    throw new AppError(403, 'impersonation_scope_forbidden', 'SELF scope cannot impersonate another UserAccount.');
+  }
+  if (actor.scope.type === 'COMPANY' && target.company?.id !== actor.company?.id) {
+    throw new AppError(403, 'impersonation_scope_forbidden', 'Target context is outside the administrator Company.');
+  }
+  if (['BRANCH', 'DEPARTMENT', 'TEAM'].includes(actor.scope.type)
+    && (target.scope.type !== actor.scope.type || target.scope.id !== actor.scope.id)) {
+    throw new AppError(403, 'impersonation_scope_forbidden', 'Target context is outside the administrator Organization unit.');
+  }
+  const actorPermissions = new Set(actor.permissions);
+  return { ...target, permissions: target.permissions.filter((permission) => actorPermissions.has(permission)) };
 }
 
 export async function assertMembershipAvailable(

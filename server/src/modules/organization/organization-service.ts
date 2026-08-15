@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { withWorkspaceTransaction } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
-import { appendAuditEntry } from '../audit/audit-service.js';
+import { appendAuditEntry, auditIdentity } from '../audit/audit-service.js';
 import { hashPassword } from '../identity/password.js';
 import type { AuthenticatedSession, MembershipContext, OrganizationScopeType } from '../identity/types.js';
 
@@ -53,7 +53,7 @@ async function audit(
   await appendAuditEntry(client, {
     workspaceId: mutation.context.workspace.id,
     companyId: auditCompany(mutation.context, entry.companyId ?? null),
-    actorUserAccountId: mutation.session.userAccountId,
+    ...auditIdentity(mutation.session),
     action: entry.action,
     resourceType: entry.resourceType,
     resourceId: entry.resourceId,
@@ -382,7 +382,7 @@ export async function assignRole(mutation: MutationContext, input: { membershipI
         RETURNING id, membership_id AS "membershipId", role_id AS "roleId", scope_type AS "scopeType",
           company_id AS "companyId", organization_unit_id AS "organizationUnitId", valid_until AS "validUntil"
       `, [mutation.context.workspace.id, input.membershipId, input.roleId, input.scopeType,
-        target.companyId, target.organizationUnitId, mutation.session.userAccountId, input.validUntil ?? null]);
+        target.companyId, target.organizationUnitId, mutation.session.actorUserAccountId, input.validUntil ?? null]);
       await audit(client, mutation, { action: 'organization.role.assigned', resourceType: 'role_assignment', resourceId: result.rows[0]?.id, companyId: target.companyId, newState: result.rows[0] });
       return result.rows[0];
     } catch (error) { return translateConflict(error); }
