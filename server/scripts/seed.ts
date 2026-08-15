@@ -28,7 +28,7 @@ const ids = {
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
-  roleWorkspaceAdmin: '60000000-0000-4000-8000-000000000004',
+  roleWorkspaceAdmin: '60000000-0000-4000-8000-000000000006',
   roleAlphaSeller: '60000000-0000-4000-8000-000000000005',
   customerIdentityAlpha: '65000000-0000-4000-8000-000000000001',
   customerIdentityBeta: '65000000-0000-4000-8000-000000000002',
@@ -187,11 +187,26 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($5, $2, 'customer_reader', 'مشاهده‌گر مشتریان'),
         ($6, $2, 'workspace_admin', 'مدیر فضای کاری'),
         ($7, $2, 'sales_seller', 'فروشنده')
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+      ON CONFLICT DO NOTHING
     `, [
       ids.roleAlphaManager, ids.workspaceAlpha, ids.roleBetaManager, ids.workspaceBeta,
       ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller,
     ]);
+    const seededRoles = await client.query<{ id: string; workspace_id: string; code: string }>(`
+      SELECT id, workspace_id, code FROM roles
+      WHERE (workspace_id = $1 AND code IN ('customer_manager', 'customer_reader', 'workspace_admin', 'sales_seller'))
+        OR (workspace_id = $2 AND code = 'customer_manager')
+    `, [ids.workspaceAlpha, ids.workspaceBeta]);
+    const seededRoleId = (workspaceId: string, code: string): string => {
+      const role = seededRoles.rows.find((row) => row.workspace_id === workspaceId && row.code === code);
+      if (!role) throw new Error(`Seed role ${workspaceId}/${code} was not resolved.`);
+      return role.id;
+    };
+    const roleAlphaManager = seededRoleId(ids.workspaceAlpha, 'customer_manager');
+    const roleBetaManager = seededRoleId(ids.workspaceBeta, 'customer_manager');
+    const roleAlphaReader = seededRoleId(ids.workspaceAlpha, 'customer_reader');
+    const roleWorkspaceAdmin = seededRoleId(ids.workspaceAlpha, 'workspace_admin');
+    const roleAlphaSeller = seededRoleId(ids.workspaceAlpha, 'sales_seller');
     await client.query(`
       INSERT INTO role_permissions(role_id, permission_code) VALUES
         ($1, 'customer.read'), ($1, 'customer.create'),
@@ -226,7 +241,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($5, 'sales.sale.create'), ($5, 'sales.invoice.read_own'), ($5, 'sales.payment.record'),
         ($5, 'sales.invoice.edit_draft')
       ON CONFLICT DO NOTHING
-    `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller]);
+    `, [roleAlphaManager, roleBetaManager, roleAlphaReader, roleWorkspaceAdmin, roleAlphaSeller]);
     await client.query(`
       INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
         ($1, $2, $3, 'COMPANY', $4),
@@ -236,10 +251,10 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($1, $13, $12, 'COMPANY', $4)
       ON CONFLICT DO NOTHING
     `, [
-      ids.workspaceAlpha, ids.membershipDemoAlpha, ids.roleAlphaManager, ids.companyAlpha,
-      ids.workspaceBeta, ids.membershipDemoBeta, ids.roleBetaManager, ids.companyBeta,
-      ids.membershipAlphaOnly, ids.roleAlphaReader,
-      ids.membershipSalesOne, ids.roleAlphaSeller,
+      ids.workspaceAlpha, ids.membershipDemoAlpha, roleAlphaManager, ids.companyAlpha,
+      ids.workspaceBeta, ids.membershipDemoBeta, roleBetaManager, ids.companyBeta,
+      ids.membershipAlphaOnly, roleAlphaReader,
+      ids.membershipSalesOne, roleAlphaSeller,
       ids.membershipSalesTwo,
     ]);
     await client.query(`
@@ -250,7 +265,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         AND membership.company_id IS NULL
         AND membership.person_id = $2
       ON CONFLICT DO NOTHING
-    `, [ids.workspaceAlpha, ids.personDemo, ids.roleWorkspaceAdmin]);
+    `, [ids.workspaceAlpha, ids.personDemo, roleWorkspaceAdmin]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

@@ -337,7 +337,9 @@ export async function listSalesInvoices(context: MembershipContext): Promise<Sal
       WHERE ($1::boolean OR sale.seller_membership_id = $2)
       ORDER BY invoice.updated_at DESC, invoice.id DESC
     `, [readAll, context.membershipId]);
-    return Promise.all(result.rows.map((row) => loadInvoice(client, row)));
+    const invoices: SalesInvoiceView[] = [];
+    for (const row of result.rows) invoices.push(await loadInvoice(client, row));
+    return invoices;
   });
 }
 
