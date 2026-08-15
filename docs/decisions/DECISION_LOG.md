@@ -407,6 +407,36 @@ checkoutهای قدیمی و Codex workspaceهای قبلی source branch آین
 
 ---
 
+### Date: 2026-08-11
+
+**Title:** Sales Lead queue vertical slice implemented
+
+**Context:**
+UI معتبر Sales برای Lead، صف، تخصیص و ثبت تماس در Prototype وجود داشت، اما داده و permission آن server-backed نبود. Customer identity قبلاً در سطح Workspace و relationship عملیاتی آن در سطح Company تثبیت شده بود.
+
+**Decision:**
+برش `Customer 360 → Lead → Assignment → Sales Queue → Call Log` با PostgreSQL، `FORCE RLS`، permission سمت server، history و Audit اجرا شد. seller فقط صف membership خود را می‌بیند و امکان self-claim یا تماس روی Lead فروشنده دیگر ندارد. manager می‌تواند با reason و Audit بازتخصیص دهد. تماس ناموفق relationship/lock دائمی ایجاد نمی‌کند؛ تماس مؤثر طبق `sales_policies` قابل‌تنظیم relationship/lock ایجاد می‌کند و پایان شیفت به‌طور خودکار open work را منتقل نمی‌کند.
+
+**Impact:**
+این برش محدود اکنون `CURRENT` است و authority آن `docs/domains/sales/current-lead-operations.md` است. Full Campaign/Promotion engine، Invoice، Commission، AI Sales، تخصیص rule-based و migration خودکار داده Sales قدیمی همچنان Prototype، `APPROVED-FUTURE` یا `DRAFT` باقی می‌مانند. هیچ داده `localStorage` حذف یا خودکار migrate نشد.
+
+---
+
+### Date: 2026-08-11
+
+**Title:** Sales Campaign/Promotion context linkage implemented
+
+**Context:**
+Lead و relationship فروش به context بازاریابی نیاز داشتند، ولی ساخت موتور کامل Campaign/Promotion، pricing یا eligibility خارج از این Run بود. تاریخچه تماس نیز نباید با تغییر context آینده بازنویسی شود.
+
+**Decision:**
+referenceهای typed از نوع `campaign` و `promotion` در `sales_lead_marketing_links` به Lead و relationship همان Company متصل می‌شوند. فقط manager دارای `sales.marketing.link` می‌تواند linkage جدید بسازد. هر Call Log snapshot مستقل linkهای موجود در لحظه تماس را نگه می‌دارد و اتصال بعدی، تماس قبلی را تغییر نمی‌دهد. همه عملیات زیر permission سمت server، `FORCE RLS`، Customer/relationship history و Audit اجرا می‌شوند.
+
+**Impact:**
+linkage و snapshot بازاریابی اکنون `CURRENT` هستند، اما مدیریت Campaign/Promotion، lead generation، eligibility، pricing و discount همچنان Prototype یا `APPROVED-FUTURE` باقی می‌مانند. هیچ Business Rule تازه‌ای برای قیمت یا صلاحیت فروش ایجاد نشد.
+
+---
+
 ### Date: 2026-08-15
 
 **Title:** Central Customer identity separated from Company relationship reconciliation
@@ -422,3 +452,18 @@ Customer 360 پیش از این Identity و normalized phone مشترک Workspac
 
 **Impact:**
 referenceهای آینده مانند Lead و Invoice باید `canonical_identity_id` را نگه دارند و در صورت نیاز lineage ID اولیه را resolve کنند. PRهای قدیمی Sales که مستقیماً به `customers.identity_id` یا migration numbering قبلی وابسته‌اند، پیش از merge باید با migrationهای `0011` و `0012` تطبیق داده شوند. هیچ Sales/Invoice/Finance feature در این تصمیم پیاده‌سازی نشد.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Sales Lead slice adapted to canonical Customer identity and Organization Scope
+
+**Context:**
+PR #10 پیش از migrationهای Organization/Identity ساخته شده بود و شماره‌های `0009`/`0010`، reference مستقیم هویت قدیمی و انتخاب context فقط بر پایه Membership داشت.
+
+**Decision:**
+migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log و Sales relationship مقدار `canonical_identity_id` را نگه می‌دارند و `customer_id` برای relationship عملیاتی Company حفظ می‌شود. reconciliation مرکزی این referenceها را در merge/unmerge همراه lineage به‌روزرسانی می‌کند. Sales فقط در Context امن `COMPANY` یا `SELF` دارای Company اجرا می‌شود؛ Scopeهای واحد سازمانی تا زمان attribution صریح Lead fail-closed هستند.
+
+**Impact:**
+رفتار قبلی Lead، Queue، Assignment/Reassignment، Call Log، lock policy و Campaign/Promotion linkage حفظ شد، درحالی‌که RLS، Audit، Customer 360، Import و مدل Scope جدید تضعیف نشدند. هیچ Feature جدید Sales یا Business Rule تازه اضافه نشد.

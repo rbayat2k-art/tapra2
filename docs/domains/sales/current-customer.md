@@ -1,13 +1,13 @@
 # رفتار فعلی مشتری فروش
 
 > Status: CURRENT
-> Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer و چرخه فروش فعلی است.
+> Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer identity/profile و relationship شرکت است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
-محصول visible فقط یک مسیر Customer دارد: Customer 360 سروری. UIهای فاکتور فروش، Lead، Promotion و Fulfillment از legacy بازیابی شده‌اند، اما backing آن‌ها prototype است و Backend Sales کامل را اثبات نمی‌کنند.
+محصول visible فقط یک مسیر Customer دارد: Customer 360 سروری. Lead، صف، assignment و Call Log محدود نیز server-backed شده‌اند و authority آن‌ها [عملیات فعلی Lead](current-lead-operations.md) است. UIهای فاکتور فروش، Promotion، Campaign کامل و Fulfillment از legacy بازیابی شده‌اند، اما backing آن‌ها prototype است و Backend Sales کامل را اثبات نمی‌کنند.
 
 ## Customer SaaS / PostgreSQL
 
@@ -20,7 +20,7 @@
 - merge رابطه شرکتی دارای permission، confirmation UI، transaction، AuditEntry و انتخاب deterministic canonical است. profile بازنده حذف نمی‌شود و unmerge واقعی داده و استقلال آن را بازمی‌گرداند.
 - UI فقط Customer 360 و Import طبیعی داخل همان workspace را نشان می‌دهد و هیچ انتخاب فناوری database ندارد.
 
-fuzzy matching، ارتباط هویت میان Workspaceها، import انبوه، AI entity resolution و جریان‌های Prospect/Lead/Opportunity هنوز CURRENT نیستند.
+fuzzy matching، ارتباط هویت میان Workspaceها، import انبوه، AI entity resolution و جریان کامل Prospect/Opportunity هنوز CURRENT نیستند. وجود Lead محدود فعلی به معنی پیاده‌سازی کامل موتور Campaign/Opportunity نیست.
 
 ## مرز دو نوع merge
 
@@ -30,7 +30,7 @@ fuzzy matching، ارتباط هویت میان Workspaceها، import انبو�
 - اگر هر دو Identity در یک Company relationship فعال داشته باشند، ابتدا باید relationship merge صریح انجام شود؛ reconciliation مرکزی حق ندارد آن تعارض عملیاتی را پنهان کند.
 - برای recovery، ابتدا identity reconciliation و سپس relationship merge بازگردانی می‌شود. ترتیب معکوس در server رد می‌شود تا دو relationship فعال با یک canonical Identity ساخته نشوند.
 - endpoint جست‌وجوی سراسری Identity وجود ندارد. duplicate check و profile همچنان Company-scoped هستند؛ بنابراین Company A از وجود رابطه یا داده Company B آگاه نمی‌شود.
-- referenceهای آینده مانند Lead و Invoice باید به `canonicalIdentityId` متصل شوند و `identityId` تاریخی را برای lineage قابل‌حل نگه دارند؛ خود قابلیت‌های Lead/Invoice در این Sprint ساخته نشده‌اند.
+- Lead فعلی به `canonicalIdentityId` متصل است و `customerId` را برای relationship عملیاتی همان Company نگه می‌دارد. referenceهای آینده مانند Invoice نیز باید همین مرز را رعایت کنند؛ Invoice در این Sprint ساخته نشده است.
 
 ## Customer Prototype / localStorage compatibility
 

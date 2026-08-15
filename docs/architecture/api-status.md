@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -43,14 +43,21 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/customer-imports/:jobId/apply-safe-decisions` | ثبت پیشنهادهای deterministic کم‌ریسک؛ نیازمند `customer.import.review` |
 | `PUT` | `/api/v1/customer-imports/:jobId/records/:recordId/decision` | تصمیم صریح reviewer برای یک ردیف |
 | `POST` | `/api/v1/customer-imports/:jobId/approve` | اعمال transaction نهایی و idempotent به Customer 360؛ نیازمند `customer.import.approve` |
+| `GET` | `/api/v1/sales/leads` | صف فروش context فعال؛ فروشنده فقط Leadهای تخصیص‌یافته به membership خود را می‌بیند |
+| `GET` | `/api/v1/sales/assignees` | فهرست assigneeهای مجاز همان Workspace/Company؛ فقط manager |
+| `GET` | `/api/v1/sales/leads/:leadId` | Lead، assignment history، Call Log، timeline، marketing links و relationship فعلی |
+| `POST` | `/api/v1/sales/leads` | ایجاد idempotent Lead برای Customer موجود در Company فعال، همراه Campaign/Promotion context اختیاری |
+| `POST` | `/api/v1/sales/leads/:leadId/assignments` | assignment/reassignment idempotent؛ بازتخصیص به permission و دلیل نیاز دارد |
+| `POST` | `/api/v1/sales/leads/:leadId/marketing-links` | اتصال idempotent Campaign/Promotion context به Lead/relationship؛ نیازمند `sales.marketing.link` |
+| `POST` | `/api/v1/sales/leads/:leadId/calls` | ثبت تماس توسط assignee فعلی و اعمال policy تماس مؤثر |
 
-قرارداد کامل CURRENT این endpointها در [Customer Import](../domains/sales/customer-import.md) توضیح داده شده است.
+قرارداد دامنه‌ای endpointهای CURRENT در [Customer Import](../domains/sales/customer-import.md) و [عملیات فعلی Lead](../domains/sales/current-lead-operations.md) توضیح داده شده است.
 
 ## قراردادهای مشترک
 
 - session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
-- Customer relationship routeها به active Workspace/Company و permission متناسب نیاز دارند. Identity reconciliation فقط در Workspace context مجاز است. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
+- Customer relationship و Sales routeها به active Workspace/Company، Scope و permission متناسب نیاز دارند. Sales فعلی فقط `COMPANY`/`SELF` دارای Company را می‌پذیرد و Scopeهای واحد سازمانی را تا زمان attribution صریح Lead به unit به‌صورت fail-closed رد می‌کند. Identity reconciliation فقط در Workspace context مجاز است. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
 - mutationهای Organization فقط در Workspace/Company/Unit مجاز اجرا می‌شوند؛ Shared Service فقط Workspace-scoped است.
 - Impersonation حداکثر ۳۰ دقیقه است، Password هدف را دریافت نمی‌کند و Permission مؤثر را به اشتراک Actor و target محدود می‌کند.
@@ -60,4 +67,4 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 ## مرز آینده
 
-endpointهای مالی، Support، Sales Invoice، Lead، Catalog و integrationها هنوز وجود ندارند. طراحی احتمالی آن‌ها باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.
+endpointهای مالی، Support، Sales Invoice، موتور مدیریت Campaign/Promotion، Commission، AI Sales و integrationها هنوز وجود ندارند. endpoint موجود فقط reference و snapshot بازاریابی را به Lead/relationship متصل می‌کند و موتور Campaign، pricing یا eligibility نیست. طراحی احتمالی قابلیت‌های کامل باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند. endpointهای Lead بالا فقط vertical slice فعلی را پوشش می‌دهند و API کامل Sales نیستند.

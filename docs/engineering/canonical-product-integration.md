@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت اجرایی ادغام محصول legacy با Foundation SaaS است.
 > Owner: Product Integration
-> Last validated: 2026-08-15 against `agent/organization-access-foundation@afdd254`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -34,8 +34,9 @@ Tapra2 اکنون یک shell واحد دارد. کاربر با Foundation login
 | Login، session، Workspace، Company، Branch/Department/Team/Shared Service، Membership/Role/Scope/Permission، Organization Admin و Impersonation | `SaaS-backed` |
 | Customer 360، identity/relationship، phone/address/source/timeline، merge/unmerge | `SaaS-backed` |
 | Customer Import و reconciliation | `SaaS-backed` |
+| Sales Lead، Queue، Assignment/Reassignment، Call Log و Campaign/Promotion context | `SaaS-backed` |
 | Dashboard، navigation، tabs و theme | `Hybrid`؛ session جدید و state نمایشی محلی |
-| Sales غیرCustomer، Finance، Support و Communications | `Prototype-backed` تا vertical sliceهای بعدی |
+| مدیریت کامل Campaign/Promotion، Sales Invoice/Commission، Finance، Support و Communications | `Prototype-backed` تا vertical sliceهای بعدی |
 | bank/Issabel/SMS/portal/inventory/commission/GL/DR/BPMN | `Future` |
 
 جزئیات capability-by-capability، شاهد Git/stash و تصمیم preservation در [Legacy Product Preservation Matrix](../archive/legacy-product-preservation-matrix.md) ثبت شده است. آن ماتریس همچنین Legacy → SaaS migration map و role mapping را نگه می‌دارد و این سند آن محتوا را تکرار نمی‌کند.
@@ -50,8 +51,8 @@ login محلی legacy در مسیر عادی قابل‌استفاده نیست.
 
 - `npm run lint`: موفق برای Web و Backend.
 - `npm run build`: موفق؛ هشدار bundle بزرگ باقی است.
-- `npm test`: `419/419` موفق در `24` فایل، شامل PostgreSQL، migration populated database و تست‌های domain legacy.
-- browser: Login، context selection/switching، Organization Admin، Impersonation، Dashboard، Sales queue، Finance vendor directory، Support، Customer 360 و Import بررسی شدند.
+- `npm test`: `430/430` موفق در `25` فایل، شامل PostgreSQL، Organization/Scope، Customer identity reconciliation، Sales isolation/policy/marketing linkage، migration populated database و تست‌های domain legacy.
+- browser: Login، context selection/switching، Organization Admin، Impersonation، Dashboard، Sales Lead/queue/assignment/call/relationship lock/marketing context، Customer 360 و Import بررسی شدند.
 - tenant check مرورگر: Company بتا Customer نمونه بتا را دید و Customer نمونه آلفا را ندید.
 - browser console: بدون warning/error در سناریوی بررسی‌شده.
 

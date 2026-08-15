@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای فهرست ماژول‌های پیاده‌سازی‌شده و مرز مسئولیت آن‌ها است.
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,8 +21,9 @@
 | ساختار سازمانی | `CompaniesView`, `CostCentersView` | شرکت‌ها، حساب‌های بانکی و مراکز هزینه | [current data model](../data/current-data-model.md) |
 | ذی‌نفعان | `VendorsView`, `VendorCategoriesView` | دفترچه ذی‌نفعان و دسته‌بندی آن‌ها | [current data model](../data/current-data-model.md) |
 | پشتیبانی | `SupportView`, `SupportCaseFormModal`, `SupportCaseDetailModal` | پرونده شکایت/عودت و ارسال ردیف تأییدشده به خزانه | [support business rules](../domains/support/business-rules.md) |
-| مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | نمای جامع مشتری و Import سروری؛ relationship شرکتی مستقل و foundation آشتی هویت مرکزی Workspace | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
-| Sales queue/campaign | `SalesQueueView`, `LeadAssignmentView`, `CampaignsView` | UI و منطق prototype برای lead، تماس، assignment و campaign | [integration status](../engineering/canonical-product-integration.md) |
+| مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | نمای جامع مشتری و Import سروری؛ relationship شرکتی مستقل و آشتی هویت مرکزی Workspace | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
+| Sales Lead/queue | `SaasSalesQueueView`, `SaasLeadAssignmentView` | Lead، صف شخصی، assignment/reassignment، Call Log و Campaign/Promotion context متصل به PostgreSQL | [current lead operations](../domains/sales/current-lead-operations.md) |
+| Sales campaign | `CampaignsView` | Campaign UI و منطق prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales catalog | `ProductsView`, `ServicesView`, `PromotionsView` | catalog و promotion prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales invoice/coordination | `SalesInvoiceView`, `BatchInvoiceImportView`, `CoordinationInboxView`, `SalesFinancialConfirmationView` | workflow prototype ثبت، هماهنگی و بررسی مالی Sales | [integration status](../engineering/canonical-product-integration.md) |
 | Sales organization | `SalesOrganizationView`, `SalesPersonnelLifecycleView` | hierarchy و چرخه عمر نیروی فروش prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
@@ -45,4 +46,4 @@
 
 ## خارج از وضعیت فعلی
 
-Backend و API Foundation اکنون CURRENT هستند. UI و منطق prototype فاکتور فروش، Lead، Catalog، Coordination و Fulfillment نیز وجود دارند، اما server-backed نیستند؛ endpoint و persistence production آن‌ها هنوز CURRENT نیست. Inventory واقعی، Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.
+Backend و API Foundation، Customer 360/Import و برش محدود Sales Lead/Queue/Assignment/Call/Marketing Context اکنون CURRENT هستند. UI و منطق مدیریت کامل Campaign/Promotion، فاکتور فروش، Catalog، Coordination و Fulfillment همچنان prototype-backed هستند؛ linkage فعلی فقط reference و snapshot تاریخی را ثبت می‌کند. Inventory واقعی، Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.
