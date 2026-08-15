@@ -53,7 +53,7 @@ export function organizationRoutes(): Router {
   }));
   router.post('/organization/users', requireCsrf, requirePermission('organization.user.manage'), asyncHandler(async (request, response) => {
     const input = z.object({ fullName: z.string().trim().min(2).max(200), email: z.string().trim().email().transform((value) => value.toLowerCase()) }).parse(request.body);
-    response.status(201).json(await createUser(mutation(response), input));
+    response.status(201).json(await createUser(mutation(response), input as { fullName: string; email: string }));
   }));
   router.patch('/organization/users/:userAccountId/status', requireCsrf, requirePermission('organization.user.manage'), asyncHandler(async (request, response) => {
     const input = z.object({ isActive: z.boolean() }).parse(request.body);

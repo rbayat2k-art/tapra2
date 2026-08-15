@@ -9,6 +9,7 @@ interface CompaniesViewProps {
   currentUser: User | null;
   onUpdateCompanies: (companies: Company[]) => void;
   onUpdateCompanyBankAccounts?: (accounts: CompanyBankAccount[]) => void;
+  serverManagedCompanies?: boolean;
 }
 
 const COMMON_BANKS = [
@@ -34,7 +35,8 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
   companyBankAccounts: propAccounts,
   currentUser,
   onUpdateCompanies,
-  onUpdateCompanyBankAccounts
+  onUpdateCompanyBankAccounts,
+  serverManagedCompanies = false,
 }) => {
   const isAdmin = currentUser?.role === 'admin';
 
@@ -285,7 +287,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
               <span>افزودن شماره حساب جدید</span>
             </button>
           ) : (
-            isAdmin && (
+            isAdmin && !serverManagedCompanies && (
               <button
                 onClick={handleOpenAddCompany}
                 className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-2 cursor-pointer"
@@ -449,7 +451,9 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
 
       {/* SECTION 2: COMPANIES LIST */}
       {activeTab === 'companies' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-3">
+          {serverManagedCompanies && <div className="rounded-xl border border-emerald-800 bg-emerald-950/30 p-3 text-xs text-emerald-200">ایجاد، ویرایش و فعال‌سازی Company اکنون فقط از «سازمان و مدیریت» و Backend انجام می‌شود. داده بانکی legacy در این صفحه حفظ شده است.</div>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {companies.map((comp) => (
             <div
               key={comp.id}
@@ -460,7 +464,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                   کد: {comp.code}
                 </span>
 
-                {isAdmin && (
+                {isAdmin && !serverManagedCompanies && (
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleOpenEditCompany(comp)}
@@ -526,6 +530,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
 
@@ -653,7 +658,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
       )}
 
       {/* Modal for Add/Edit Company */}
-      {(showAddCompanyModal || editingCompany) && (
+      {!serverManagedCompanies && (showAddCompanyModal || editingCompany) && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center-safe justify-center-safe p-4 dir-rtl overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 text-right space-y-4 max-h-[90vh] overflow-y-auto my-8">
             <h3 className="text-base font-bold text-white">

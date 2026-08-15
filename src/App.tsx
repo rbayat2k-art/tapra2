@@ -62,6 +62,7 @@ import { useFoundationSession } from './foundation/auth/FoundationSessionContext
 import { FoundationLogin } from './foundation/auth/FoundationLogin';
 import { ContextSelector } from './foundation/organization/ContextSelector';
 import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
+import { OrganizationAdminView } from './foundation/organization/OrganizationAdminView';
 import { SaasCustomerWorkspace } from './foundation/customers/SaasCustomerWorkspace';
 import { resolveLegacyShellUser } from './integration/legacyShellIdentity';
 
@@ -282,10 +283,11 @@ export default function App() {
     // The mature shell receives presentation identity from the trusted Foundation session.
     // It is deliberately not persisted as a local login and cannot authorize an API request.
     setCurrentUser(resolveLegacyShellUser(session, users));
-    setImpersonatorAdmin(null);
-    localStorage.removeItem('shavaz_impersonator_admin');
+    setImpersonatorAdmin(session.impersonation
+      ? resolveLegacyShellUser({ ...session, user: session.actor, impersonation: null }, users)
+      : null);
     resetTabsToDashboard();
-  }, [foundation.session?.user.id, foundation.session?.activeContext?.membershipId, users]);
+  }, [foundation.session?.user.id, foundation.session?.activeContext?.contextKey, foundation.session?.impersonation?.id, users]);
 
   // Effective permissions of the REAL logged-in identity (never affected by whichever user is
   // currently being viewed while impersonating) — the ONLY thing consulted to authorize
@@ -342,18 +344,11 @@ export default function App() {
   };
 
   const handleExitImpersonation = () => {
-    if (impersonatorAdmin) {
-      if (currentUser) {
-        endOpenImpersonationLogEntry(impersonatorAdmin.id, currentUser.id);
-        logAudit({ action: 'impersonation_end', effectiveUser: impersonatorAdmin, roles, targetId: currentUser.id, details: `پایان مشاهده به‌جای ${currentUser.fullName}` });
-      }
-      setCurrentUser(impersonatorAdmin);
-      storage.setCurrentUser(impersonatorAdmin);
-      setImpersonatorAdmin(null);
-      localStorage.removeItem('shavaz_impersonator_admin');
+    if (!foundation.session?.impersonation) return;
+    void foundation.stopImpersonation('بازگشت مدیر از نمای کاربر').then(() => {
       resetTabsToDashboard();
       openTab('admin');
-    }
+    });
   };
 
   // Aggressive Tab Guard: whenever the open tab set or the current user's effective
@@ -1570,6 +1565,7 @@ export default function App() {
                       currentUser={currentUser}
                       onUpdateCompanies={setCompanies}
                       onUpdateCompanyBankAccounts={setCompanyBankAccounts}
+                      serverManagedCompanies
                     />
                   )}
 
@@ -1648,20 +1644,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'admin' && (
-                    <AdminPanel
-                      users={users}
-                      companies={companies}
-                      costCenters={costCenters}
-                      requests={requests}
-                      roles={roles}
-                      currentUser={currentUser}
-                      realActor={realActor}
-                      impersonatorAdmin={impersonatorAdmin}
-                      realActorPermissions={realActorPermissions}
-                      onUpdateUsers={setUsers}
-                      onUpdateCompanies={setCompanies}
-                      onUpdateCostCenters={setCostCenters}
-                    />
+                    <OrganizationAdminView initialTab="users" />
                   )}
                 </div>
               ))}

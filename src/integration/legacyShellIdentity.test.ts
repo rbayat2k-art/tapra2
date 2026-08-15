@@ -11,10 +11,16 @@ const users: User[] = [{
 function session(email: string, permissions: string[]): FoundationSession {
   return {
     user: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
+    actor: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
+    impersonation: null,
     memberships: [], csrfToken: 'csrf',
     activeContext: {
       membershipId: 'membership', workspace: { id: 'workspace', name: 'فضای کاری', slug: 'workspace' },
       company: { id: 'company', name: 'شرکت', code: 'COMPANY' }, permissions,
+      organizationUnit: null,
+      scope: { type: 'COMPANY', id: 'company' },
+      contextKey: 'membership:COMPANY:company',
+      roles: [],
     },
   };
 }

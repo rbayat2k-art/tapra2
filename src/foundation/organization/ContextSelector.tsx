@@ -1,8 +1,18 @@
+import { useEffect } from 'react';
 import { Building2, LogOut } from 'lucide-react';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
 
 export function ContextSelector() {
   const { session, selectContext, logout } = useFoundationSession();
+  useEffect(() => {
+    if (!session) return;
+    const workspaces = new Set(session.memberships.map((item) => item.workspace.id));
+    const companyContexts = session.memberships.filter((item) => item.scope.type === 'COMPANY');
+    const companies = new Set(companyContexts.map((item) => item.company?.id).filter(Boolean));
+    if (workspaces.size === 1 && companies.size === 1 && companyContexts.length === 1) {
+      void selectContext(companyContexts[0]);
+    }
+  }, [selectContext, session]);
   if (!session) return null;
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 dir-rtl">
@@ -13,10 +23,10 @@ export function ContextSelector() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {session.memberships.map((membership) => (
-            <button key={membership.membershipId} onClick={() => void selectContext(membership.membershipId)} className="text-right rounded-2xl border border-slate-700 bg-slate-950 p-4 hover:border-emerald-500 transition">
+            <button key={membership.contextKey} onClick={() => void selectContext(membership)} className="text-right rounded-2xl border border-slate-700 bg-slate-950 p-4 hover:border-emerald-500 transition">
               <Building2 className="text-emerald-400 mb-3" />
               <strong className="block">{membership.workspace.name}</strong>
-              <span className="text-xs text-slate-400">{membership.company?.name ?? 'بدون شرکت'}</span>
+              <span className="text-xs text-slate-400">{membership.company?.name ?? 'سطح Workspace'} · {membership.organizationUnit?.name ?? membership.scope.type}</span>
             </button>
           ))}
         </div>
