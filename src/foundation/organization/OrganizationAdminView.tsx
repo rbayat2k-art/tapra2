@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Building2, CheckCircle2, Eye, KeyRound, LogIn, Network, Plus, RefreshCw,
-  ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Users,
+  Building2, CheckCircle2, Eye, KeyRound, LogIn, Network, Pencil, Plus, RefreshCw,
+  ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Users, X,
 } from 'lucide-react';
 import { foundationApi, FoundationApiError } from '../api/client';
 import type { OrganizationScopeType, OrganizationSnapshot } from '../api/contracts';
@@ -24,7 +24,9 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
   const [temporaryCredential, setTemporaryCredential] = useState<{ email: string; password: string } | null>(null);
 
   const [companyForm, setCompanyForm] = useState({ code: '', name: '', description: '' });
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [unitForm, setUnitForm] = useState({ type: 'BRANCH' as OrganizationSnapshot['units'][number]['type'], companyId: '', code: '', name: '', serviceKind: 'MIS' as 'HR' | 'DATA' | 'MIS' | 'OTHER' });
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [userForm, setUserForm] = useState({ fullName: '', email: '' });
   const [membershipForm, setMembershipForm] = useState({ personId: '', companyId: '' });
   const [roleForm, setRoleForm] = useState({ code: '', name: '', permissionCodes: [] as string[] });
@@ -106,29 +108,41 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
       </nav>
 
       {tab === 'companies' && <div className="space-y-4">
-        {can('organization.company.manage') && workspaceScope && (
-          <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => { await foundationApi.createCompany(companyForm, session!.csrfToken); setCompanyForm({ code: '', name: '', description: '' }); }); }} className="grid gap-2 md:grid-cols-[1fr_2fr_3fr_auto] rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        {can('organization.company.manage') && (workspaceScope || editingCompanyId) && (
+          <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => {
+            const editing = snapshot.companies.find((company) => company.id === editingCompanyId);
+            if (editing) await foundationApi.updateCompany(editing.id, { ...companyForm, isActive: editing.isActive }, session!.csrfToken);
+            else await foundationApi.createCompany(companyForm, session!.csrfToken);
+            setCompanyForm({ code: '', name: '', description: '' }); setEditingCompanyId(null);
+          }); }} className="grid gap-2 md:grid-cols-[1fr_2fr_3fr_auto_auto] rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <input required placeholder="Code" value={companyForm.code} onChange={(e) => setCompanyForm({ ...companyForm, code: e.target.value })} className="input-shell" />
             <input required placeholder="نام Company" value={companyForm.name} onChange={(e) => setCompanyForm({ ...companyForm, name: e.target.value })} className="input-shell" />
             <input placeholder="توضیح" value={companyForm.description} onChange={(e) => setCompanyForm({ ...companyForm, description: e.target.value })} className="input-shell" />
-            <button disabled={busy} className="rounded-xl bg-emerald-600 px-4 text-white"><Plus /></button>
+            <button disabled={busy} className="rounded-xl bg-emerald-600 px-4 text-white" title={editingCompanyId ? 'ذخیره ویرایش Company' : 'ایجاد Company'}>{editingCompanyId ? <Pencil /> : <Plus />}</button>
+            {editingCompanyId && <button type="button" onClick={() => { setEditingCompanyId(null); setCompanyForm({ code: '', name: '', description: '' }); }} className="rounded-xl border border-slate-700 px-3 text-slate-300" title="لغو ویرایش"><X /></button>}
           </form>
         )}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{snapshot.companies.map((company) => <article key={company.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
           <div className="flex items-center justify-between"><strong className="text-white">{company.name}</strong><span className="text-[10px] font-mono text-indigo-300">{company.code}</span></div><p className="mt-2 min-h-8 text-xs text-slate-400">{company.description || 'بدون توضیح'}</p>
-          <div className="mt-3 flex items-center justify-between text-xs"><span className={company.isActive ? 'text-emerald-400' : 'text-rose-400'}>{company.isActive ? 'فعال' : 'غیرفعال'}</span>{can('organization.company.manage') && <button disabled={busy} onClick={() => void mutate(async () => { await foundationApi.updateCompany(company.id, { code: company.code, name: company.name, description: company.description ?? '', isActive: !company.isActive }, session!.csrfToken); })} className="p-1 text-slate-300" title="فعال/غیرفعال">{company.isActive ? <ToggleRight /> : <ToggleLeft />}</button>}</div>
+          <div className="mt-3 flex items-center justify-between text-xs"><span className={company.isActive ? 'text-emerald-400' : 'text-rose-400'}>{company.isActive ? 'فعال' : 'غیرفعال'}</span>{can('organization.company.manage') && <div className="flex items-center gap-1"><button disabled={busy} onClick={() => { setEditingCompanyId(company.id); setCompanyForm({ code: company.code, name: company.name, description: company.description ?? '' }); }} className="p-1 text-slate-300" title="ویرایش Company"><Pencil /></button><button disabled={busy} onClick={() => void mutate(async () => { await foundationApi.updateCompany(company.id, { code: company.code, name: company.name, description: company.description ?? '', isActive: !company.isActive }, session!.csrfToken); })} className="p-1 text-slate-300" title="فعال/غیرفعال">{company.isActive ? <ToggleRight /> : <ToggleLeft />}</button></div>}</div>
         </article>)}</div>
       </div>}
 
       {tab === 'units' && <div className="space-y-4">
         {can('organization.unit.manage') && (
-          <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => { await foundationApi.createOrganizationUnit({ type: unitForm.type, companyId: unitForm.type === 'SHARED_SERVICE' ? undefined : unitForm.companyId, code: unitForm.code, name: unitForm.name, serviceKind: unitForm.type === 'SHARED_SERVICE' ? unitForm.serviceKind : undefined }, session!.csrfToken); setUnitForm({ ...unitForm, code: '', name: '' }); }); }} className="grid gap-2 md:grid-cols-2 lg:grid-cols-5 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+          <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => {
+            const input = { type: unitForm.type, companyId: unitForm.type === 'SHARED_SERVICE' ? undefined : unitForm.companyId, code: unitForm.code, name: unitForm.name, serviceKind: unitForm.type === 'SHARED_SERVICE' ? unitForm.serviceKind : undefined };
+            const editing = snapshot.units.find((unit) => unit.id === editingUnitId);
+            if (editing) await foundationApi.updateOrganizationUnit(editing.id, { ...input, isActive: editing.isActive }, session!.csrfToken);
+            else await foundationApi.createOrganizationUnit(input, session!.csrfToken);
+            setUnitForm({ ...unitForm, code: '', name: '' }); setEditingUnitId(null);
+          }); }} className="grid gap-2 md:grid-cols-2 lg:grid-cols-6 rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <select value={unitForm.type} onChange={(e) => setUnitForm({ ...unitForm, type: e.target.value as typeof unitForm.type })} className="input-shell">{Object.entries(unitLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
             {unitForm.type === 'SHARED_SERVICE' ? <select value={unitForm.serviceKind} onChange={(e) => setUnitForm({ ...unitForm, serviceKind: e.target.value as typeof unitForm.serviceKind })} className="input-shell"><option value="HR">HR</option><option value="DATA">Data</option><option value="MIS">MIS</option><option value="OTHER">Other</option></select> : <select required value={unitForm.companyId} onChange={(e) => setUnitForm({ ...unitForm, companyId: e.target.value })} className="input-shell"><option value="">Company…</option>{snapshot.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
-            <input required placeholder="Code" value={unitForm.code} onChange={(e) => setUnitForm({ ...unitForm, code: e.target.value })} className="input-shell" /><input required placeholder="نام واحد" value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} className="input-shell" /><button disabled={busy || (unitForm.type === 'SHARED_SERVICE' && !workspaceScope)} className="rounded-xl bg-emerald-600 px-4 text-white">افزودن</button>
+            <input required placeholder="Code" value={unitForm.code} onChange={(e) => setUnitForm({ ...unitForm, code: e.target.value })} className="input-shell" /><input required placeholder="نام واحد" value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} className="input-shell" /><button disabled={busy || (unitForm.type === 'SHARED_SERVICE' && !workspaceScope)} className="rounded-xl bg-emerald-600 px-4 text-white">{editingUnitId ? 'ذخیره' : 'افزودن'}</button>{editingUnitId && <button type="button" onClick={() => { setEditingUnitId(null); setUnitForm({ ...unitForm, code: '', name: '' }); }} className="rounded-xl border border-slate-700 px-3 text-slate-300" title="لغو ویرایش"><X /></button>}
           </form>
         )}
-        <div className="overflow-x-auto rounded-2xl border border-slate-800"><table className="w-full text-xs"><thead className="bg-slate-900 text-slate-400"><tr><th className="p-3">نوع</th><th>نام</th><th>Company/Service</th><th>وضعیت</th></tr></thead><tbody>{snapshot.units.map((unit) => <tr key={unit.id} className="border-t border-slate-800"><td className="p-3">{unitLabels[unit.type]}</td><td>{unit.name} <span className="text-slate-500">({unit.code})</span></td><td>{unit.companyId ? companiesById.get(unit.companyId)?.name : unit.serviceKind}</td><td className={unit.isActive ? 'text-emerald-400' : 'text-rose-400'}>{unit.isActive ? 'فعال' : 'غیرفعال'}</td></tr>)}</tbody></table></div>
+        <div className="overflow-x-auto rounded-2xl border border-slate-800"><table className="w-full text-xs"><thead className="bg-slate-900 text-slate-400"><tr><th className="p-3">نوع</th><th>نام</th><th>Company/Service</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>{snapshot.units.map((unit) => <tr key={unit.id} className="border-t border-slate-800"><td className="p-3">{unitLabels[unit.type]}</td><td>{unit.name} <span className="text-slate-500">({unit.code})</span></td><td>{unit.companyId ? companiesById.get(unit.companyId)?.name : unit.serviceKind}</td><td className={unit.isActive ? 'text-emerald-400' : 'text-rose-400'}>{unit.isActive ? 'فعال' : 'غیرفعال'}</td><td><div className="flex gap-1"><button disabled={busy} onClick={() => { setEditingUnitId(unit.id); setUnitForm({ type: unit.type, companyId: unit.companyId ?? '', code: unit.code, name: unit.name, serviceKind: unit.serviceKind ?? 'OTHER' }); }} className="p-1.5 rounded-lg bg-slate-800" title="ویرایش واحد"><Pencil size={15} /></button><button disabled={busy} onClick={() => void mutate(async () => { await foundationApi.updateOrganizationUnit(unit.id, { type: unit.type, companyId: unit.companyId ?? undefined, code: unit.code, name: unit.name, serviceKind: unit.serviceKind ?? undefined, isActive: !unit.isActive }, session!.csrfToken); })} className="p-1.5 rounded-lg bg-slate-800" title="فعال/غیرفعال">{unit.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}</button></div></td></tr>)}</tbody></table></div>
       </div>}
 
       {tab === 'users' && <div className="space-y-4">

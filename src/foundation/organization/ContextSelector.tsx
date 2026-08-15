@@ -27,6 +27,7 @@ export function ContextSelector() {
               <Building2 className="text-emerald-400 mb-3" />
               <strong className="block">{membership.workspace.name}</strong>
               <span className="text-xs text-slate-400">{membership.company?.name ?? 'سطح Workspace'} · {membership.organizationUnit?.name ?? membership.scope.type}</span>
+              <span className="mt-1 block text-[10px] text-indigo-300">{membership.roles.map((role) => role.name).join('، ') || 'بدون Role'}</span>
             </button>
           ))}
         </div>

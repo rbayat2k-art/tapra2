@@ -14,7 +14,7 @@ export function FoundationContextBar() {
             const next = session.memberships.find((item) => item.contextKey === event.target.value);
             if (next) void selectContext(next);
           }} className="rounded-lg border border-emerald-700 bg-emerald-900 px-2 py-1">
-            {session.memberships.map((item) => <option key={item.contextKey} value={item.contextKey}>{item.workspace.name} / {item.company?.name ?? 'Workspace'} / {item.organizationUnit?.name ?? item.scope.type}</option>)}
+            {session.memberships.map((item) => <option key={item.contextKey} value={item.contextKey}>{item.workspace.name} / {item.company?.name ?? 'Workspace'} / {item.organizationUnit?.name ?? item.scope.type} / {item.roles.map((role) => role.name).join('، ') || 'بدون Role'}</option>)}
           </select>
         )}
         <button onClick={() => void selectContext(current)} title="بازخوانی دسترسی" className="p-1"><RefreshCw size={15} /></button>
