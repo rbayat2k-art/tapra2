@@ -491,3 +491,31 @@ migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log
 
 **Impact:**
 دانش کسب‌وکار در source of truth ثبت شد، ولی هیچ application code، migration، API، database یا runtime behavior تغییر نکرد. Sale entry و Invoice/Payment تا زمان implementation و validation با وضعیت `APPROVED-FUTURE` باقی می‌مانند.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Invoice release, fulfillment, cancellation and payment exception policies approved
+
+**Context:**
+پیش از Backend کردن Invoice و Fulfillment لازم بود مرز پرداخت کامل، Inventory reservation، اجرای مستقل Lineها، Warehouse چندشرکتی، Shipment جزئی، Service completion، لغو و exceptionهای مالی بدون اتکا به Prototype مشخص شود.
+
+**Decision:**
+
+1. تا مجموع Paymentهای `APPROVED` دقیقاً با مبلغ Invoice برابر نباشد هیچ Line وارد اجرا و هیچ Inventory رزرو نمی‌شود. اضافه‌پرداخت و Chargeback پرونده exception مستقل می‌سازند و تاریخچه را بازنویسی نمی‌کنند.
+2. پس از Financial Approval، Lineهای کالا و خدمت مستقل اجرا می‌شوند؛ نبود موجودی فقط Line کالا را در انتظار نگه می‌دارد. ارسال جزئی پشتیبانی می‌شود ولی پیش‌فرض ارسال کامل است و ارسال جزئی Permission و تأیید Customer می‌خواهد.
+3. Warehouse location، مالک اقتصادی، seller، fulfillment company و operator unit مستقل‌اند. در Single-company این پیچیدگی پشت‌صحنه به همان Company resolve می‌شود؛ در Multi-company، Contract و permission مرجع‌اند و Shared Service شرکت مصنوعی نیست.
+4. `COD` در مدل حفظ ولی در Flow عادی غیرفعال است. Payment method، Financial Account و Payment Gateway قابل مدیریت Company-scoped هستند و UI همه statusها را فارسی نمایش می‌دهد.
+5. روش Service از گزینه‌های مجاز Catalog/Contract هنگام Sale انتخاب و snapshot می‌شود. Evidence، manager review، Customer Confirmation و نقطه `BILLABLE` از policy همان Service به دست می‌آیند.
+6. درخواست لغو در تمام مراحل ممکن است، ولی بعد از Financial Approval یا شروع اجرا از Support Case و تصمیم Line-level عبور می‌کند. Shipment/Service تکمیل‌شده حذف یا جعل معکوس نمی‌شود.
+7. Invoice با تغییر مهم revision تازه و re-approval می‌گیرد؛ تغییر کم‌خطر فقط Audit می‌شود. Permissionهای edit/correct/amend مستقل و server-side هستند.
+
+**Affected authority documents:**
+
+- `docs/domains/sales/fulfillment-policy.md` برای قواعد تفصیلی پذیرفته‌شده؛
+- `docs/domains/sales/approved-design.md` برای جهت کلی Sales؛
+- `docs/domains/sales/open-questions.md` برای جزئیات واقعاً حل‌نشده implementation.
+
+**Impact:**
+این تصمیم‌ها `APPROVED-FUTURE` هستند. Implementation باید از vertical slice `Sale → Invoice → Payment → Financial Review` آغاز شود و قبل از code معتبر، هیچ قابلیت Invoice/Fulfillment به‌عنوان CURRENT معرفی نشود.

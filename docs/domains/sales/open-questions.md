@@ -12,10 +12,9 @@
 ## فاکتور، قیمت و مالی
 
 - آیا سطوح بالاتر فروش فقط گزارش می‌بینند یا روی فاکتور اقدام/تأیید اضافه دارند؟
-- stateهای Invoice بیرون از محاسبه مبلغ تأییدشده، transitionهای اصلاح/ابطال و permission دقیق کارتابل مالی چیست؟
-- policy اختلاف مجموع Paymentهای `APPROVED` با مبلغ Invoice، اضافه‌پرداخت و پرداخت ناقص چیست؟
+- stateهای جزئی Invoice و permission دقیق هر transition در implementation چگونه نام‌گذاری و نگاشت شوند؟ قواعد اصلی release، revision و cancellation در [fulfillment policy](fulfillment-policy.md) تصویب شده‌اند.
 - سیاست کسر/شناسایی مبلغ فاکتور وقتی کالا تحویل شده ولی خدمت باقی است چیست؟
-- reconciliation بانکی، chargeback و اختلاف مبلغ چگونه مدیریت می‌شوند؟
+- schema و integration دقیق reconciliation بانکی چگونه پیاده شود؟ رفتار Chargeback و financial hold در [fulfillment policy](fulfillment-policy.md) تصویب شده است.
 
 ## Customer و Import
 
@@ -40,9 +39,9 @@
 
 ## کالا، خدمت، انبار و ارسال
 
-- روش فعال‌سازی هر خدمت از catalog ثابت است یا مشتری میان self-service و تماس انتخاب می‌کند؟
-- schema وضعیت، مسئول، مدرک و retry فعال‌سازی چیست؟
-- reservation و کسر موجودی چه زمانی رخ می‌دهد و فروش کالای ناموجود چگونه کنترل می‌شود؟
+- نام و transitionهای دقیق stateهای Service، Shipment و Inventory در implementation چیست؟ قواعد کسب‌وکار آن‌ها در [fulfillment policy](fulfillment-policy.md) تصویب شده‌اند.
+- ظرفیت، quota، entitlement و SLA escalation هر نوع Service چگونه تنظیم می‌شود؟
+- کسر قطعی Inventory، adjustment و count reconciliation بعد از reservation چه مدل اجرایی دارد؟
 - قرارداد شرکت پستی، fallback، مرجوعی و reconciliation تحویل چیست؟
 - مسئولیت و کنترل بدهی/کسری موجودی امانی نماینده چگونه تفکیک می‌شود؟
 

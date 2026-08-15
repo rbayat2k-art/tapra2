@@ -43,7 +43,7 @@
 | واژه‌های دامنه | [glossary.md](glossary.md) |
 | قواعد مالی و دسترسی | [finance rules](domains/finance/business-rules.md)، [roles](domains/finance/roles-and-permissions.md) |
 | قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) |
-| فروش فعلی و آینده | [current customer](domains/sales/current-customer.md)، [current lead operations](domains/sales/current-lead-operations.md)، [approved design](domains/sales/approved-design.md)، [open questions](domains/sales/open-questions.md) |
+| فروش فعلی و آینده | [current customer](domains/sales/current-customer.md)، [current lead operations](domains/sales/current-lead-operations.md)، [approved design](domains/sales/approved-design.md)، [fulfillment policy](domains/sales/fulfillment-policy.md)، [open questions](domains/sales/open-questions.md) |
 | ورود کنترل‌شده Customer | [domains/sales/customer-import.md](domains/sales/customer-import.md) |
 | امنیت و حریم خصوصی | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) |
 | معماری و API آینده | [future platform](architecture/future-platform.md)، [API draft](future/api-contract-draft.md) |
@@ -79,6 +79,7 @@
 | تصمیم‌های معماری Foundation SaaS | [decisions/adr/README.md](decisions/adr/README.md) | `ACCEPTED`؛ آینده پیاده‌سازی‌نشده |
 | API آینده | [future/api-contract-draft.md](future/api-contract-draft.md) | `DRAFT` |
 | طراحی پذیرفته‌شده فروش | [domains/sales/approved-design.md](domains/sales/approved-design.md) | `APPROVED-FUTURE` |
+| سیاست Invoice و Fulfillment آینده | [domains/sales/fulfillment-policy.md](domains/sales/fulfillment-policy.md) | `APPROVED-FUTURE` |
 | پرسش‌های باز فروش | [domains/sales/open-questions.md](domains/sales/open-questions.md) | `DRAFT` |
 | تاریخچه تصمیمات | [decisions/DECISION_LOG.md](decisions/DECISION_LOG.md) | `HISTORICAL` |
 | مسیریابی AI | [ai/start-here.md](ai/start-here.md) | `CURRENT` |
@@ -171,6 +172,7 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | Customer Import، staging و reconciliation فعلی | `docs/domains/sales/customer-import.md` با شواهد code | `docs/domains/sales/customer-import.md` | Sales Domain Owner | `ACTIVE` | current customer, data model, API status, security |
 | عملیات فعلی Lead، Sales Queue، Assignment، Call Log و Marketing Context | `docs/domains/sales/current-lead-operations.md` با شواهد migration/service/test | `docs/domains/sales/current-lead-operations.md` | Sales Domain Owner | `ACTIVE` | module catalog, current system, data model, API status, security |
 | طراحی پذیرفته‌شده آینده sales | `docs/domains/sales/approved-design.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | future platform, decisions |
+| سیاست پذیرفته‌شده Invoice release، Warehouse، Logistics، Service execution و cancellation | `docs/domains/sales/fulfillment-policy.md` | `docs/domains/sales/fulfillment-policy.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | approved sales design, open questions, future platform, decisions |
 | پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |
 | راه‌اندازی و development workflow | `docs/engineering/development.md` | `docs/engineering/development.md` | Engineering Owner | `ACTIVE` | `README.md`, AI instructions |
 | Git lineage و محل شروع توسعه | `docs/engineering/source-of-truth.md` | `docs/engineering/source-of-truth.md` | Engineering Owner | `ACTIVE` | `README.md`, `AGENTS.md`, AI instructions |
