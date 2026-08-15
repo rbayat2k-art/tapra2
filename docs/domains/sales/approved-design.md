@@ -7,7 +7,7 @@
 > Supersedes: none
 > Superseded by: none
 
-این سند رفتار CURRENT نیست. Customer 360 و vertical slice محدود Lead/Queue/Assignment/Call/Marketing Context در اسناد CURRENT ثبت شده‌اند؛ Opportunity، موتور کامل Campaign/Promotion/Assignment، import گسترده و identity resolution این سند همچنان آینده‌اند. linkage فعلی Campaign/Promotion فقط reference و snapshot تاریخی است و نباید با موتور آینده eligibility، pricing یا lead generation اشتباه شود. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
+این سند رفتار CURRENT نیست. Customer 360، Lead/Queue/Assignment/Call/Marketing Context و vertical slice محدود Sale/Invoice/Payment در اسناد CURRENT ثبت شده‌اند؛ Opportunity، موتور کامل Campaign/Promotion/Assignment، import گسترده و identity resolution این سند همچنان آینده‌اند. linkage فعلی Campaign/Promotion فقط reference و snapshot تاریخی است و نباید با موتور آینده eligibility، pricing یا lead generation اشتباه شود. متن طراحی اولیه بدون حذف در [Sales Draft archive](../../archive/sales/SALES_ARCHITECTURE_DRAFT.md) و Snapshot حفظ می‌شود.
 
 ## اصول سراسری
 
@@ -69,7 +69,7 @@ Customer باید پیش از Sale با flow شماره‌محور [authority ف
 - بازگرداندن Payment به توضیح مالی اجباری نیاز دارد و فقط همان Payment را برای اصلاح برمی‌گرداند؛ Paymentهای دیگر و خود Invoice نباید بی‌دلیل بازنویسی شوند.
 - وضعیت پرداخت Invoice از مجموع Paymentهای `APPROVED` محاسبه می‌شود، نه صرفاً از اعلام واریز یا وجود یک رسید.
 
-state machine کامل Invoice، policy اختلاف مبلغ و permission دقیق کارتابل مالی همچنان در [پرسش‌های باز](open-questions.md#فاکتور-قیمت-و-مالی) باقی می‌ماند. این بخش `APPROVED-FUTURE` است و به معنی وجود Backend Invoice/Payment نیست.
+زیرمجموعه اجراشده state، permission و اختلاف مبلغ در [سند CURRENT Invoice/Payment](current-invoice-payment.md) نگهداری می‌شود. adjustment پس از Payment، Chargeback، Refund و اتصال به Fulfillment همچنان `APPROVED-FUTURE` هستند.
 
 - Promotion زمینه مکالمه است؛ فروشنده می‌تواند کالا و خدمت مجاز را ردیف‌به‌ردیف اضافه کند و منشأ اصلی/Cross-sell/Upsell هر ردیف حفظ می‌شود.
 - فروشنده فاکتور را مستقیم ثبت می‌کند؛ ابتدا سرپرست صحت آن را تأیید می‌کند، سپس پرداخت کارت‌به‌کارت به کارتابل مستقل تأیید واریزی مشتری می‌رود.

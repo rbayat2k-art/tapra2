@@ -11,8 +11,6 @@
 
 ## فاکتور، قیمت و مالی
 
-- آیا سطوح بالاتر فروش فقط گزارش می‌بینند یا روی فاکتور اقدام/تأیید اضافه دارند؟
-- stateهای جزئی Invoice و permission دقیق هر transition در implementation چگونه نام‌گذاری و نگاشت شوند؟ قواعد اصلی release، revision و cancellation در [fulfillment policy](fulfillment-policy.md) تصویب شده‌اند.
 - سیاست کسر/شناسایی مبلغ فاکتور وقتی کالا تحویل شده ولی خدمت باقی است چیست؟
 - schema و integration دقیق reconciliation بانکی چگونه پیاده شود؟ رفتار Chargeback و financial hold در [fulfillment policy](fulfillment-policy.md) تصویب شده است.
 

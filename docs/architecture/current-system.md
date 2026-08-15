@@ -31,9 +31,9 @@ Tapra2 اکنون یک vertical slice از معماری SaaS را در کنار 
 - صفحه Customer فقط تجربه واحد `SaasCustomerWorkspace` را نشان می‌دهد؛ فناوری persistence از UI عادی حذف شده است.
 - هیچ داده قدیمی `localStorage` حذف یا خودکار migrate نمی‌شود.
 - domainهای مالی، Support، Letters، Chat و Sales خارج از vertical slice فعلی در shell حفظ شده‌اند، اما هنوز server-backed نشده‌اند.
-- موتور کامل Campaign/Promotion، Invoice، Commission، AI Sales، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند؛ فقط linkage و snapshot بازاریابی Lead اکنون اجرا شده است.
+- موتور کامل Campaign/Promotion، Warehouse/Fulfillment، Commission، AI Sales، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند. Invoice/Payment محدود فروش اکنون اجرا شده، اما Finance عمومی یا accounting ledger نیست.
 
-Customer 360 foundation هویت Workspace-level را نگه می‌دارد و عملیات Sales فعلی فقط relationship/activity شرکت را به آن متصل می‌کند. fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Campaign، Catalog، Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ وجود vertical slice Lead به معنی Backend کامل Sales نیست.
+Customer 360 foundation هویت Workspace-level را نگه می‌دارد و عملیات Sales فعلی relationship/activity، Sale و Invoice شرکت را به آن متصل می‌کند. fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Campaign، Catalog، Batch Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ `SaasSalesInvoiceView` برای ثبت Sale/Invoice و Financial Review از Backend استفاده می‌کند، اما وجود این vertical slice به معنی Backend کامل Sales/Finance نیست.
 
 ## Technology stack
 

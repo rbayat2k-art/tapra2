@@ -37,7 +37,7 @@
 
 ## حوزه‌های contract که هنوز تعریف نشده‌اند
 
-Support Case، Customer فراتر از create/read فعلی، Lead، Sales Invoice، catalog، logistics، inventory، inter-company settlement، notification، audit query و integrationهای بانکی/Issabel قرارداد مصوب ندارند.
+Support Case، Customer فراتر از endpointهای CURRENT، Sales فراتر از Lead و Sale/Invoice/Payment فعلی، catalog، logistics، inventory، inter-company settlement، notification، audit query و integrationهای بانکی/Issabel قرارداد مصوب ندارند. endpointهای اجراشده فقط در [API status](../architecture/api-status.md) مرجع هستند و نباید در این DRAFT تکرار شوند.
 
 ## معیار ارتقا از DRAFT
 

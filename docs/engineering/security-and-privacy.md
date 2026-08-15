@@ -35,7 +35,7 @@
 
 ## ریسک باقی‌مانده Prototype
 
-بخش‌های قدیمی همچنان permission client-side و داده در `localStorage` دارند؛ passwordهای نمونه legacy نیز در همان مدل قدیمی وجود دارند. login محلی و Impersonation legacy از مسیر عادی محصول حذف شده‌اند و صفحه «سازمان و مدیریت» از Backend استفاده می‌کند، اما سایر بخش‌های Prototype همچنان مرز امنیتی production نیستند.
+بخش‌های قدیمی همچنان permission client-side و داده در `localStorage` دارند؛ passwordهای نمونه legacy نیز در همان مدل قدیمی وجود دارند. login محلی و Impersonation legacy از مسیر عادی محصول حذف شده‌اند و صفحه‌های «سازمان و مدیریت»، «فاکتور فروش» و «تأیید مالی فروش» از Backend استفاده می‌کنند، اما سایر بخش‌های Prototype همچنان مرز امنیتی production نیستند.
 
 ## Gapهای باقی‌مانده
 

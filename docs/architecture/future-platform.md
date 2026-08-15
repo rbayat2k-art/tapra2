@@ -50,7 +50,7 @@ Foundation فعلی مرزهای اولیه Backend، PostgreSQL، Identity، te
 1. تعریف identity، organization scope، audit و قراردادهای نسخه‌دار.
 2. انتقال persistence از browser به database با import کنترل‌شده.
 3. انتقال use caseهای مالی و پشتیبانی با حفظ tracking/history.
-4. ساخت Customer/Lead/Sales domains بر اساس طراحی پذیرفته‌شده و حل پرسش‌های باز.
+4. تکمیل بخش‌های باقی‌مانده Sales پس از Customer/Lead و Sale/Invoice/Payment اجراشده، بر اساس طراحی پذیرفته‌شده و حل پرسش‌های باز.
 5. افزودن integrationها پس از تثبیت domain contracts.
 
 ## موارد deferred و غیرمسدودکننده Foundation

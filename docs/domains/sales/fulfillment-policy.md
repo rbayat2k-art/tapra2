@@ -7,22 +7,20 @@
 > Supersedes: بخش‌های متناقض Payment return و COD در طراحی قدیمی Sales
 > Superseded by: none
 
-این سند رفتار CURRENT نیست. تا زمانی که migration، Backend، Permission، RLS، Audit، test و UI مرتبط تکمیل و اعتبارسنجی نشده‌اند، Invoice، Payment و Fulfillment جدید `APPROVED-FUTURE` باقی می‌مانند.
+مرحله `Sale → Invoice → Payment → Financial Review` اکنون اجرا شده و مرجع رفتار آن [فروش، فاکتور و پرداخت فعلی](current-invoice-payment.md) است. این سند فقط برای بخش‌های هنوز اجرا‌نشده Warehouse، Shipment، Service execution، Cancellation/Refund و settlement مرجع `APPROVED-FUTURE` است؛ وجود foundation مالی به معنی اجرای این مراحل آینده نیست.
 
-## دروازه مالی Fulfillment
+## ورودی پذیرفته‌شده از مرحله CURRENT
 
-- هر Invoice می‌تواند چند Payment مستقل داشته باشد و هر Payment جداگانه بررسی می‌شود.
-- هیچ Invoice Line پیش از برابری دقیق مجموع Paymentهای `APPROVED` با مبلغ نهایی Invoice وارد اجرا نمی‌شود.
-- Payment ناقص، حتی اگر مبلغ آن با یک Line برابر باشد، همان Line را آزاد نمی‌کند.
-- اضافه‌پرداخت اجرای Invoice را آزاد نمی‌کند؛ مبلغ اضافه در پرونده `OVERPAYMENT` برای Refund، Customer credit یا تخصیص مجاز آینده تعیین تکلیف می‌شود.
+- Invoice چند Payment مستقل، review جداگانه و revision غیرمخرب دارد؛ جزئیات اجرا در [سند CURRENT](current-invoice-payment.md) است.
+- هیچ Invoice Line پیش از برابری دقیق مجموع Paymentهای `approved` با مبلغ نهایی Invoice وارد مراحل آینده Fulfillment نمی‌شود.
+- اضافه‌پرداخت اکنون اجرای Invoice را آزاد نمی‌کند؛ ساخت پرونده Refund، Customer credit یا تخصیص مبلغ اضافه همچنان آینده است.
 - Payment برگشتی یا Chargeback بعد از شروع اجرا، تاریخچه را بازنویسی نمی‌کند. Line شروع‌نشده روی financial hold می‌رود، Line در حال اجرا برای تصمیم انسانی علامت‌گذاری و تعهد تکمیل‌شده حفظ می‌شود.
 - `COD` باید در مدل قابل پشتیبانی باشد، ولی در Flow عادی فعلی غیرفعال است و فعال‌سازی آینده آن به policy، Permission، Contract، settlement و Audit مستقل نیاز دارد.
 
-## Invoice و نسخه‌بندی
+## ادامه آینده Invoice و نسخه‌بندی
 
-- ثبت Sale یک Invoice مرتبط ایجاد می‌کند؛ seller واقعی، actor ثبت‌کننده و entry mode مستقل ثبت می‌شوند.
-- Permission ویرایش بر پایه Role و Scope در Backend محاسبه می‌شود و پنهان‌کردن دکمه در UI مجوز ایجاد نمی‌کند.
-- تغییر مهم مانند Customer، seller، Company، Line، تعداد، قیمت، تخفیف، مبلغ، شرایط پرداخت یا نشانی مؤثر بر ارسال، Invoice قبلی را overwrite نمی‌کند؛ revision تازه می‌سازد و Approvalهای مرتبط را دوباره باز می‌کند.
+- ثبت Sale، جدایی seller/actor و revision اقلام اکنون CURRENT هستند و در [سند اجرا](current-invoice-payment.md) نگهداری می‌شوند.
+- تغییر Customer، seller، Company، شرایط پرداخت یا نشانی مؤثر بر ارسال و adjustment پس از Payment هنوز به policy و API آینده نیاز دارد.
 - تغییر کم‌خطر مانند یادداشت داخلی یا اطلاعات تکمیلی غیرمؤثر بر تعهد، با Audit ثبت می‌شود و Approval را بی‌دلیل باطل نمی‌کند.
 - Permissionهای مستقل `edit draft`، `correct returned invoice` و `amend approved invoice` لازم‌اند.
 
@@ -70,7 +68,7 @@
 
 Vertical sliceها باید به این ترتیب پیش بروند:
 
-1. `Sale → Invoice → Payment → Financial Review`؛
+1. `Sale → Invoice → Payment → Financial Review` — تکمیل‌شده و CURRENT؛
 2. Warehouse ledger و reservation پس از پرداخت کامل؛
 3. Product Shipment/Delivery؛
 4. Service Execution/Activation؛
