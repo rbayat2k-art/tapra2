@@ -452,3 +452,18 @@ Customer 360 پیش از این Identity و normalized phone مشترک Workspac
 
 **Impact:**
 referenceهای آینده مانند Lead و Invoice باید `canonical_identity_id` را نگه دارند و در صورت نیاز lineage ID اولیه را resolve کنند. PRهای قدیمی Sales که مستقیماً به `customers.identity_id` یا migration numbering قبلی وابسته‌اند، پیش از merge باید با migrationهای `0011` و `0012` تطبیق داده شوند. هیچ Sales/Invoice/Finance feature در این تصمیم پیاده‌سازی نشد.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Sales Lead slice adapted to canonical Customer identity and Organization Scope
+
+**Context:**
+PR #10 پیش از migrationهای Organization/Identity ساخته شده بود و شماره‌های `0009`/`0010`، reference مستقیم هویت قدیمی و انتخاب context فقط بر پایه Membership داشت.
+
+**Decision:**
+migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log و Sales relationship مقدار `canonical_identity_id` را نگه می‌دارند و `customer_id` برای relationship عملیاتی Company حفظ می‌شود. reconciliation مرکزی این referenceها را در merge/unmerge همراه lineage به‌روزرسانی می‌کند. Sales فقط در Context امن `COMPANY` یا `SELF` دارای Company اجرا می‌شود؛ Scopeهای واحد سازمانی تا زمان attribution صریح Lead fail-closed هستند.
+
+**Impact:**
+رفتار قبلی Lead، Queue، Assignment/Reassignment، Call Log، lock policy و Campaign/Promotion linkage حفظ شد، درحالی‌که RLS، Audit، Customer 360، Import و مدل Scope جدید تضعیف نشدند. هیچ Feature جدید Sales یا Business Rule تازه اضافه نشد.

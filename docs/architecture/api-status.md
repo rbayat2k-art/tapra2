@@ -57,7 +57,7 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 - session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
-- Customer relationship و Sales routeها به active Workspace/Company، Scope و permission متناسب نیاز دارند. Identity reconciliation فقط در Workspace context مجاز است. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
+- Customer relationship و Sales routeها به active Workspace/Company، Scope و permission متناسب نیاز دارند. Sales فعلی فقط `COMPANY`/`SELF` دارای Company را می‌پذیرد و Scopeهای واحد سازمانی را تا زمان attribution صریح Lead به unit به‌صورت fail-closed رد می‌کند. Identity reconciliation فقط در Workspace context مجاز است. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
 - mutationهای Organization فقط در Workspace/Company/Unit مجاز اجرا می‌شوند؛ Shared Service فقط Workspace-scoped است.
 - Impersonation حداکثر ۳۰ دقیقه است، Password هدف را دریافت نمی‌کند و Permission مؤثر را به اشتراک Actor و target محدود می‌کند.

@@ -45,7 +45,7 @@
 
 ## مدل Prototype
 
-مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قرارداد دقیق Sales اجراشده در migration `0009_sales_lead_queue.sql` است و نباید با typeهای Prototype یکی فرض شود.
+مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قرارداد دقیق Sales اجراشده در migration `0013_sales_lead_queue.sql` است و نباید با typeهای Prototype یکی فرض شود.
 
 ## قواعد تغییر
 

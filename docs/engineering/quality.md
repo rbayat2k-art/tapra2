@@ -34,4 +34,4 @@
 
 Browser validation دستی Sales شامل ایجاد Lead برای Customer 360، assignment، ورود فروشنده، مشاهده صف شخصی، تماس ناموفق بدون lock، تماس مؤثر با `until_reassigned`، بازتخصیص manager با reason و اتصال Promotion پس از ایجاد relationship بود. فروشنده context جدید را در صف/تاریخچه دید و snapshot تماس‌های قبلی تغییر نکرد؛ console مرورگر error/warning نداشت.
 
-تعداد دقیق testهای موفق این adaptation پس از اجرای کامل quality gate در همین PR ثبت می‌شود. build Web هشدار chunk بزرگ‌تر از `500 kB` دارد و code splitting یک کار آینده است.
+آخرین اجرای کامل این adaptation شامل `25/25` فایل و `430/430` test موفق بود. build Web هشدار chunk بزرگ‌تر از `500 kB` دارد و code splitting یک کار آینده است.

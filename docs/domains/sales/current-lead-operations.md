@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار پیاده‌سازی‌شده Lead، Sales Queue، Assignment، Call Log و اتصال Campaign/Promotion است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: backing مبتنی بر `localStorage` برای صفحه‌های صف فروش و تخصیص Lead
 > Superseded by: none
 
@@ -17,7 +17,7 @@ UI فارسی/RTL قبلی حفظ شده، اما صفحه‌های «صف فر�
 
 ## مرز داده
 
-- `customer_identity_id` هویت مشترک Customer در Workspace است.
+- `canonical_identity_id` هویت مرکزی فعال Customer در Workspace است؛ `customer_id` همچنان رابطه عملیاتی همان Company را مشخص می‌کند.
 - `customer_id`، Lead، assignment، تماس، رابطه فروش و timeline عملیاتی همگی Company-scoped هستند.
 - Company و Workspace از session فعال استخراج می‌شوند و client اجازه تعیین آن‌ها در payload را ندارد.
 - هر Call Log زمان، Company، User، Lead، Customer identity/relationship، نتیجه، context و snapshot مستقل Campaign/Promotion موجود در لحظه تماس را حفظ می‌کند.
@@ -35,6 +35,8 @@ UI فارسی/RTL قبلی حفظ شده، اما صفحه‌های «صف فر�
 | `sales.marketing.link` | اتصال Campaign/Promotion به Lead و relationship همان Company؛ فقط manager |
 
 فروشنده عادی permission تخصیص ندارد و endpoint self-claim نیز وجود ندارد. بازتخصیص manager در `sales_lead_assignments`، Lead timeline و `audit_entries` ثبت می‌شود. اگر رابطه Customer lock فعال داشته باشد، همان transaction مالک lock را نیز منتقل و history آن را append می‌کند.
+
+Sales فعلی در Contextهای `COMPANY` و `SELF` دارای Company قابل استفاده است. Contextهای `BRANCH`، `DEPARTMENT` و `TEAM` تا زمانی که Lead به واحد سازمانی مشخص attribution نداشته باشد fail-closed رد می‌شوند؛ در نتیجه Permission سطح واحد سازمانی به اشتباه به مشاهده کل Company تبدیل نمی‌شود.
 
 ## Campaign/Promotion context
 
@@ -67,8 +69,8 @@ Outcome مؤثر، relationship شرکتی را ایجاد/به‌روزرسان
 
 ## شواهد پیاده‌سازی
 
-- `server/migrations/0009_sales_lead_queue.sql`
-- `server/migrations/0010_sales_marketing_context_links.sql`
+- `server/migrations/0013_sales_lead_queue.sql`
+- `server/migrations/0014_sales_marketing_context_links.sql`
 - `server/src/modules/sales/`
 - `server/tests/sales.integration.test.ts`
 - `src/foundation/sales/`

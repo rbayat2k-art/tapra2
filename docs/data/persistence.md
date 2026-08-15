@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,8 +18,10 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 - ایجاد profile، افزودن phone/address و merge/unmerge همراه timeline و AuditEntry در transaction واحد انجام می‌شوند.
 - migration `0004_customer_360_identity.sql` ردیف‌های Sprint 1 را بدون حذف backfill می‌کند و اجرای تکراری migration runner با checksum کنترل می‌شود.
 - migration `0008_customer_identity_scope.sql` identity را Workspace-wide و relationship را Company-scoped می‌کند؛ backfill داده موجود زیر transaction انجام و `FORCE RLS` پیش از commit بازگردانده می‌شود.
-- migration `0009_sales_lead_queue.sql` policy، Lead، assignment، Call Log، relationship و history فروش را Company-scoped اضافه می‌کند؛ assignment/call/relationship/audit در transaction واحد به‌روزرسانی می‌شوند.
-- migration `0010_sales_marketing_context_links.sql` Campaign/Promotion reference و snapshot تماس را بدون ساخت موتور Campaign یا pricing اضافه می‌کند؛ link، relationship history، Customer timeline و Audit در transaction tenant-scoped ثبت می‌شوند.
+- migrationهای `0009` و `0010` ساختار Organization/Scope و Impersonation ممیزی‌شده را اضافه می‌کنند.
+- migrationهای `0011` و `0012` reconciliation مرکزی Identity، lineage/recovery و eventهای timeline را بدون یکی‌کردن relationshipهای Company اضافه می‌کنند.
+- migration `0013_sales_lead_queue.sql` policy، Lead، assignment، Call Log، relationship و history فروش را Company-scoped اضافه می‌کند؛ assignment/call/relationship/audit در transaction واحد به‌روزرسانی می‌شوند.
+- migration `0014_sales_marketing_context_links.sql` Campaign/Promotion reference و snapshot تماس را بدون ساخت موتور Campaign یا pricing اضافه می‌کند؛ link، relationship history، Customer timeline و Audit در transaction tenant-scoped ثبت می‌شوند.
 - Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
 ## localStorage
