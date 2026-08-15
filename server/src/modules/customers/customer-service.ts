@@ -1,5 +1,5 @@
 import type { DatabaseError, PoolClient } from 'pg';
-import { withTenantTransaction } from '../../infrastructure/database/pool.js';
+import { withTenantTransaction, withWorkspaceTransaction } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
 import { appendAuditEntry, auditIdentity } from '../audit/audit-service.js';
 import type { AuthenticatedSession, MembershipContext } from '../identity/types.js';
@@ -49,6 +49,8 @@ export interface AddAddressInput {
 
 export interface CustomerSummary {
   id: string;
+  identityId: string;
+  canonicalIdentityId: string;
   fullName: string;
   phonePrimary: string;
   status: 'active' | 'merged';
@@ -58,6 +60,8 @@ export interface CustomerSummary {
 
 interface CustomerRow {
   id: string;
+  identity_id: string;
+  canonical_identity_id: string;
   full_name: string;
   phone_primary: string;
   status: 'active' | 'merged';
@@ -127,6 +131,36 @@ interface MergeRow {
   reversal_reason: string | null;
 }
 
+interface IdentityRow {
+  id: string;
+  normalized_primary_phone: string;
+  status: 'active' | 'merged';
+  merged_into_identity_id: string | null;
+  created_at: Date;
+}
+
+interface IdentityMergeRow {
+  id: string;
+  canonical_identity_id: string;
+  merged_identity_id: string;
+  status: 'active' | 'reversed';
+  reason: string;
+  merged_at: Date;
+  reversed_at: Date | null;
+  reversal_reason: string | null;
+}
+
+export interface CustomerIdentityMergeOperation {
+  id: string;
+  canonicalIdentityId: string;
+  mergedIdentityId: string;
+  status: 'active' | 'reversed';
+  reason: string;
+  mergedAt: string;
+  reversedAt: string | null;
+  reversalReason: string | null;
+}
+
 export interface CustomerProfile extends CustomerSummary {
   phones: Array<{
     id: string; originalCustomerId: string; value: string; normalizedValue: string; label: string;
@@ -160,11 +194,26 @@ function requireCompany(context: MembershipContext): { id: string; name: string;
 function mapSummary(row: CustomerRow): CustomerSummary {
   return {
     id: row.id,
+    identityId: row.identity_id,
+    canonicalIdentityId: row.canonical_identity_id,
     fullName: row.full_name,
     phonePrimary: row.phone_primary,
     status: row.status,
     mergedIntoCustomerId: row.merged_into_customer_id,
     createdAt: row.created_at.toISOString(),
+  };
+}
+
+function mapIdentityMerge(row: IdentityMergeRow): CustomerIdentityMergeOperation {
+  return {
+    id: row.id,
+    canonicalIdentityId: row.canonical_identity_id,
+    mergedIdentityId: row.merged_identity_id,
+    status: row.status,
+    reason: row.reason,
+    mergedAt: row.merged_at.toISOString(),
+    reversedAt: row.reversed_at?.toISOString() ?? null,
+    reversalReason: row.reversal_reason,
   };
 }
 
@@ -181,7 +230,7 @@ async function ensureIdentityPhone(
   workspaceId: string,
   identityId: string,
   value: string,
-): Promise<string> {
+): Promise<{ normalizedValue: string; ownerIdentityId: string }> {
   const normalized = await normalizePhoneValue(client, value);
   await client.query(`
     INSERT INTO customer_identity_phones(workspace_id, identity_id, normalized_value)
@@ -192,10 +241,18 @@ async function ensureIdentityPhone(
     SELECT identity_id FROM customer_identity_phones
     WHERE workspace_id = $1 AND normalized_value = $2
   `, [workspaceId, normalized])).rows[0];
-  if (!owner || owner.identity_id !== identityId) {
+  if (!owner) {
     throw new AppError(409, 'customer_phone_conflict', 'This phone cannot be attached to the selected Customer identity.');
   }
-  return normalized;
+  const identities = await client.query<{ id: string; canonical_identity_id: string }>(`
+    SELECT id, COALESCE(merged_into_identity_id, id) AS canonical_identity_id
+    FROM customer_identities WHERE id = ANY($1::uuid[])
+  `, [[owner.identity_id, identityId]]);
+  const roots = new Map(identities.rows.map((row) => [row.id, row.canonical_identity_id]));
+  if (roots.get(owner.identity_id) !== roots.get(identityId)) {
+    throw new AppError(409, 'customer_phone_conflict', 'This phone belongs to another Customer identity.');
+  }
+  return { normalizedValue: normalized, ownerIdentityId: owner.identity_id };
 }
 
 async function resolveCustomerIdentity(
@@ -204,23 +261,35 @@ async function resolveCustomerIdentity(
   primaryPhone: string,
 ): Promise<string> {
   const normalized = await normalizePhoneValue(client, primaryPhone);
+  const existingOwner = (await client.query<{ identity_id: string }>(`
+    SELECT identity_id FROM customer_identity_phones
+    WHERE workspace_id = $1 AND normalized_value = $2
+  `, [workspaceId, normalized])).rows[0];
+  if (existingOwner) {
+    const existingIdentity = (await client.query<{ canonical_identity_id: string }>(`
+      SELECT COALESCE(merged_into_identity_id, id) AS canonical_identity_id
+      FROM customer_identities WHERE workspace_id = $1 AND id = $2
+    `, [workspaceId, existingOwner.identity_id])).rows[0];
+    if (!existingIdentity) throw new AppError(409, 'customer_identity_conflict', 'Customer identity could not be resolved.');
+    return existingIdentity.canonical_identity_id;
+  }
   await client.query(`
     INSERT INTO customer_identities(workspace_id, normalized_primary_phone)
     VALUES ($1, $2)
     ON CONFLICT (workspace_id, normalized_primary_phone) DO NOTHING
   `, [workspaceId, normalized]);
-  const identity = (await client.query<{ id: string }>(`
-    SELECT id FROM customer_identities
+  const identity = (await client.query<{ id: string; canonical_identity_id: string }>(`
+    SELECT id, COALESCE(merged_into_identity_id, id) AS canonical_identity_id FROM customer_identities
     WHERE workspace_id = $1 AND normalized_primary_phone = $2
   `, [workspaceId, normalized])).rows[0];
   if (!identity) throw new AppError(409, 'customer_identity_conflict', 'Customer identity could not be resolved.');
   await ensureIdentityPhone(client, workspaceId, identity.id, primaryPhone);
-  return identity.id;
+  return identity.canonical_identity_id;
 }
 
 async function loadCustomerProfile(client: PoolClient, customerId: string): Promise<CustomerProfile> {
   const customerResult = await client.query<CustomerRow>(`
-    SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
+    SELECT id, identity_id, canonical_identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
     FROM customers WHERE id = $1
   `, [customerId]);
   const customer = customerResult.rows[0];
@@ -340,9 +409,9 @@ export async function createImportedCustomerWithinTransaction(
   const identityId = await resolveCustomerIdentity(client, scope.workspaceId, input.phonePrimary);
   const created = await client.query<{ id: string }>(`
     INSERT INTO customers(
-      workspace_id, company_id, identity_id, full_name, phone_primary, phone_secondary,
+      workspace_id, company_id, identity_id, canonical_identity_id, full_name, phone_primary, phone_secondary,
       address, province, city, postal_code, created_by_user_account_id, idempotency_key
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     ON CONFLICT (workspace_id, company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
     DO NOTHING RETURNING id
   `, [
@@ -359,21 +428,21 @@ export async function createImportedCustomerWithinTransaction(
   const sourceId = await insertSource(client, {
     workspaceId: scope.workspaceId, companyId: scope.companyId, customerId, actorId: scope.actorId,
   }, input.source);
-  await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phonePrimary);
+  const primaryPhone = await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phonePrimary);
   await client.query(`
     INSERT INTO customer_phones(
       workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
       label, is_primary, verification_status, idempotency_key
     ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'mobile', true, 'unverified', $7)
-  `, [scope.workspaceId, scope.companyId, customerId, identityId, sourceId, input.phonePrimary, idempotencyKey]);
+  `, [scope.workspaceId, scope.companyId, customerId, primaryPhone.ownerIdentityId, sourceId, input.phonePrimary, idempotencyKey]);
   if (input.phoneSecondary) {
-    await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phoneSecondary);
+    const secondaryPhone = await ensureIdentityPhone(client, scope.workspaceId, identityId, input.phoneSecondary);
     await client.query(`
       INSERT INTO customer_phones(
         workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
         label, is_primary, verification_status, idempotency_key
       ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'secondary', false, 'unverified', $7)
-    `, [scope.workspaceId, scope.companyId, customerId, identityId, sourceId, input.phoneSecondary, `${idempotencyKey}:secondary`]);
+    `, [scope.workspaceId, scope.companyId, customerId, secondaryPhone.ownerIdentityId, sourceId, input.phoneSecondary, `${idempotencyKey}:secondary`]);
   }
   if (input.address) {
     await client.query(`
@@ -432,7 +501,8 @@ function databaseConflict(error: unknown): never {
   const databaseError = error as Partial<DatabaseError>;
   if (databaseError.code === '23505') {
     if (
-      databaseError.constraint === 'customers_company_identity_unique_idx'
+      databaseError.constraint === 'customers_company_canonical_identity_active_idx'
+      || databaseError.constraint === 'customers_company_identity_unique_idx'
       || databaseError.constraint === 'customers_workspace_id_company_id_phone_primary_key'
       || databaseError.constraint === 'customer_phones_relationship_normalized_unique_idx'
     ) {
@@ -447,7 +517,7 @@ export async function listCustomers(context: MembershipContext): Promise<Custome
   const company = requireCompany(context);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
     const result = await client.query<CustomerRow>(`
-      SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
+      SELECT id, identity_id, canonical_identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
       FROM customers WHERE status = 'active'
       ORDER BY created_at DESC, id DESC LIMIT 200
     `);
@@ -481,9 +551,9 @@ export async function createCustomer(
       const identityId = await resolveCustomerIdentity(client, context.workspace.id, input.phonePrimary);
       const created = await client.query<{ id: string }>(`
         INSERT INTO customers(
-          workspace_id, company_id, identity_id, full_name, phone_primary, phone_secondary,
+          workspace_id, company_id, identity_id, canonical_identity_id, full_name, phone_primary, phone_secondary,
           address, province, city, postal_code, created_by_user_account_id, idempotency_key
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (workspace_id, company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
         DO NOTHING RETURNING id
       `, [
@@ -504,21 +574,21 @@ export async function createCustomer(
         const sourceId = await insertSource(client, {
           workspaceId: context.workspace.id, companyId: company.id, customerId, actorId: session.userAccountId,
         }, input.source);
-        await ensureIdentityPhone(client, context.workspace.id, identityId, input.phonePrimary);
+        const primaryPhone = await ensureIdentityPhone(client, context.workspace.id, identityId, input.phonePrimary);
         await client.query(`
           INSERT INTO customer_phones(
             workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
             label, is_primary, verification_status
           ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'mobile', true, 'unverified')
-        `, [context.workspace.id, company.id, customerId, identityId, sourceId, input.phonePrimary]);
+        `, [context.workspace.id, company.id, customerId, primaryPhone.ownerIdentityId, sourceId, input.phonePrimary]);
         if (input.phoneSecondary) {
-          await ensureIdentityPhone(client, context.workspace.id, identityId, input.phoneSecondary);
+          const secondaryPhone = await ensureIdentityPhone(client, context.workspace.id, identityId, input.phoneSecondary);
           await client.query(`
             INSERT INTO customer_phones(
               workspace_id, company_id, customer_id, identity_id, source_id, value, normalized_value,
               label, is_primary, verification_status
             ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), 'secondary', false, 'unverified')
-          `, [context.workspace.id, company.id, customerId, identityId, sourceId, input.phoneSecondary]);
+          `, [context.workspace.id, company.id, customerId, secondaryPhone.ownerIdentityId, sourceId, input.phoneSecondary]);
         }
         if (input.address) {
           await client.query(`
@@ -556,8 +626,8 @@ export async function addPhone(
   const company = requireCompany(context);
   try {
     return await withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-      const customer = (await client.query<CustomerRow & { identity_id: string }>(`
-        SELECT id, identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
+      const customer = (await client.query<CustomerRow>(`
+        SELECT id, identity_id, canonical_identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
         FROM customers WHERE id = $1 FOR UPDATE
       `, [customerId])).rows[0];
       if (!customer) throw new AppError(404, 'customer_not_found', 'Customer was not found in the active context.');
@@ -567,7 +637,7 @@ export async function addPhone(
         'SELECT id FROM customer_phones WHERE idempotency_key = $1', [idempotencyKey],
       );
       if (!existing.rowCount) {
-        await ensureIdentityPhone(client, context.workspace.id, customer.identity_id, input.value);
+        const identityPhone = await ensureIdentityPhone(client, context.workspace.id, customer.identity_id, input.value);
         const sourceId = await insertSource(client, {
           workspaceId: context.workspace.id, companyId: company.id, customerId, actorId: session.userAccountId,
         }, input.source);
@@ -580,7 +650,7 @@ export async function addPhone(
             is_primary, verification_status, idempotency_key
           ) VALUES ($1, $2, $3, $4, $5, $6, normalize_customer_phone($6), $7, $8, $9, $10)
         `, [
-          context.workspace.id, company.id, customerId, customer.identity_id, sourceId, input.value, input.label ?? 'mobile',
+          context.workspace.id, company.id, customerId, identityPhone.ownerIdentityId, sourceId, input.value, input.label ?? 'mobile',
           input.isPrimary ?? false, input.verificationStatus ?? 'unverified', idempotencyKey,
         ]);
         if (input.isPrimary) {
@@ -664,7 +734,8 @@ export async function checkDuplicates(
   const company = requireCompany(context);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
     const exact = await client.query<CustomerRow>(`
-      SELECT DISTINCT c.id, c.full_name, c.phone_primary, c.status, c.merged_into_customer_id, c.created_at
+      SELECT DISTINCT c.id, c.identity_id, c.canonical_identity_id, c.full_name, c.phone_primary,
+        c.status, c.merged_into_customer_id, c.created_at
       FROM customer_phones p JOIN customers c ON c.id = p.customer_id
       WHERE p.normalized_value = normalize_customer_phone($1)
         AND c.status = 'active' AND ($2::uuid IS NULL OR c.id <> $2)
@@ -673,7 +744,7 @@ export async function checkDuplicates(
     if (exact.rowCount) return { match: 'EXACT_MATCH', candidates: exact.rows.map(mapSummary) };
     if (input.fullName) {
       const possible = await client.query<CustomerRow>(`
-        SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
+        SELECT id, identity_id, canonical_identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
         FROM customers
         WHERE status = 'active' AND lower(trim(full_name)) = lower(trim($1))
           AND ($2::uuid IS NULL OR id <> $2)
@@ -702,7 +773,7 @@ export async function mergeCustomers(
       }
 
       const selected = await client.query<CustomerRow>(`
-        SELECT id, full_name, phone_primary, status, merged_into_customer_id, created_at
+        SELECT id, identity_id, canonical_identity_id, full_name, phone_primary, status, merged_into_customer_id, created_at
         FROM customers WHERE id = ANY($1::uuid[]) ORDER BY created_at, id FOR UPDATE
       `, [[input.customerId, input.targetCustomerId]]);
       if (selected.rowCount !== 2) {
@@ -772,6 +843,20 @@ export async function unmergeCustomers(
     `, [operationId])).rows[0];
     if (!operation) throw new AppError(404, 'customer_merge_not_found', 'Merge operation was not found in the active context.');
     if (operation.status !== 'active') throw new AppError(409, 'customer_merge_already_reversed', 'This merge has already been reversed.');
+    const relationshipIdentities = await client.query<{ canonical_identity_id: string }>(`
+      SELECT canonical_identity_id FROM customers
+      WHERE id = ANY($1::uuid[]) FOR UPDATE
+    `, [[operation.canonical_customer_id, operation.merged_customer_id]]);
+    if (
+      relationshipIdentities.rowCount === 2
+      && relationshipIdentities.rows[0]?.canonical_identity_id === relationshipIdentities.rows[1]?.canonical_identity_id
+    ) {
+      throw new AppError(
+        409,
+        'customer_relationship_unmerge_identity_conflict',
+        'Reverse the central identity reconciliation before restoring both Company relationships.',
+      );
+    }
     await client.query(`
       UPDATE customer_merge_operations
       SET status = 'reversed', reversed_by_user_account_id = $1, reversed_at = now(), reversal_reason = $2
@@ -799,5 +884,265 @@ export async function unmergeCustomers(
       canonicalCustomer: await loadCustomerProfile(client, operation.canonical_customer_id),
       restoredCustomer: await loadCustomerProfile(client, operation.merged_customer_id),
     };
+  });
+}
+
+function requireWorkspaceIdentityContext(context: MembershipContext): void {
+  if (context.scope.type !== 'WORKSPACE' || context.company) {
+    throw new AppError(
+      403,
+      'customer_identity_workspace_scope_required',
+      'Central Customer identity reconciliation requires an authorized Workspace context.',
+    );
+  }
+}
+
+async function setCompanyDatabaseContext(client: PoolClient, companyId: string | null): Promise<void> {
+  await client.query("SELECT set_config('app.company_id', $1, true)", [companyId ?? '']);
+}
+
+export async function mergeCustomerIdentities(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  input: { identityId: string; targetIdentityId: string; reason: string },
+  idempotencyKey: string,
+  correlationId: string,
+): Promise<CustomerIdentityMergeOperation> {
+  requireWorkspaceIdentityContext(context);
+  if (input.identityId === input.targetIdentityId) {
+    throw new AppError(400, 'customer_identity_merge_same_identity', 'Two different Customer identities are required.');
+  }
+
+  return withWorkspaceTransaction({ workspaceId: context.workspace.id, companyId: null }, async (client) => {
+    const prior = (await client.query<IdentityMergeRow>(`
+      SELECT id, canonical_identity_id, merged_identity_id, status, reason, merged_at, reversed_at, reversal_reason
+      FROM customer_identity_merge_operations
+      WHERE workspace_id = $1 AND idempotency_key = $2
+    `, [context.workspace.id, idempotencyKey])).rows[0];
+    if (prior) return mapIdentityMerge(prior);
+
+    const selected = await client.query<IdentityRow>(`
+      SELECT id, normalized_primary_phone, status, merged_into_identity_id, created_at
+      FROM customer_identities
+      WHERE workspace_id = $1 AND id = ANY($2::uuid[])
+      ORDER BY created_at, id
+      FOR UPDATE
+    `, [context.workspace.id, [input.identityId, input.targetIdentityId]]);
+    if (selected.rowCount !== 2) {
+      throw new AppError(404, 'customer_identity_reconciliation_not_found', 'The requested Customer identities are not available.');
+    }
+    if (selected.rows.some((identity) => identity.status !== 'active' || identity.merged_into_identity_id)) {
+      throw new AppError(409, 'customer_identity_merge_state_invalid', 'Only active, independent Customer identities can be reconciled.');
+    }
+    const activeDescendant = await client.query(`
+      SELECT id FROM customer_identity_merge_operations
+      WHERE workspace_id = $1 AND status = 'active' AND canonical_identity_id = ANY($2::uuid[])
+      LIMIT 1
+    `, [context.workspace.id, [input.identityId, input.targetIdentityId]]);
+    if (activeDescendant.rowCount) {
+      throw new AppError(409, 'customer_identity_merge_chain_unsupported', 'Reverse existing identity reconciliations before creating another merge chain.');
+    }
+
+    const canonical = selected.rows[0]!;
+    const merged = selected.rows[1]!;
+    const identityPhones = await client.query<{ id: string; identity_id: string; normalized_value: string }>(`
+      SELECT id, identity_id, normalized_value FROM customer_identity_phones
+      WHERE workspace_id = $1 AND identity_id = ANY($2::uuid[])
+      ORDER BY created_at, id
+    `, [context.workspace.id, [canonical.id, merged.id]]);
+    const companies = await client.query<{ id: string }>(`
+      SELECT id FROM companies WHERE workspace_id = $1 ORDER BY id
+    `, [context.workspace.id]);
+    const relationships: Array<{
+      id: string; companyId: string; identityId: string; canonicalIdentityId: string; status: 'active' | 'merged';
+    }> = [];
+
+    for (const company of companies.rows) {
+      await setCompanyDatabaseContext(client, company.id);
+      const companyRelationships = await client.query<{
+        id: string; company_id: string; identity_id: string; canonical_identity_id: string; status: 'active' | 'merged';
+      }>(`
+        SELECT id, company_id, identity_id, canonical_identity_id, status
+        FROM customers
+        WHERE canonical_identity_id = ANY($1::uuid[])
+        ORDER BY created_at, id
+        FOR UPDATE
+      `, [[canonical.id, merged.id]]);
+      const activeIdentityIds = new Set(
+        companyRelationships.rows.filter((row) => row.status === 'active').map((row) => row.canonical_identity_id),
+      );
+      if (activeIdentityIds.has(canonical.id) && activeIdentityIds.has(merged.id)) {
+        throw new AppError(
+          409,
+          'customer_identity_relationship_conflict',
+          'Merge the duplicate Company relationships before reconciling their central identities.',
+        );
+      }
+      relationships.push(...companyRelationships.rows.map((row) => ({
+        id: row.id,
+        companyId: row.company_id,
+        identityId: row.identity_id,
+        canonicalIdentityId: row.canonical_identity_id,
+        status: row.status,
+      })));
+    }
+
+    await setCompanyDatabaseContext(client, null);
+    const operation = (await client.query<IdentityMergeRow>(`
+      INSERT INTO customer_identity_merge_operations(
+        workspace_id, canonical_identity_id, merged_identity_id, reason,
+        merged_by_user_account_id, idempotency_key, lineage_snapshot
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, canonical_identity_id, merged_identity_id, status, reason, merged_at, reversed_at, reversal_reason
+    `, [
+      context.workspace.id,
+      canonical.id,
+      merged.id,
+      input.reason,
+      session.actorUserAccountId,
+      idempotencyKey,
+      JSON.stringify({
+        identities: selected.rows.map((identity) => ({
+          id: identity.id,
+          normalizedPrimaryPhone: identity.normalized_primary_phone,
+          status: identity.status,
+        })),
+        phones: identityPhones.rows.map((phone) => ({
+          id: phone.id,
+          identityId: phone.identity_id,
+          normalizedValue: phone.normalized_value,
+        })),
+        relationships,
+      }),
+    ])).rows[0]!;
+
+    await client.query(`
+      UPDATE customer_identities
+      SET status = 'merged', merged_into_identity_id = $1, updated_at = now()
+      WHERE workspace_id = $2 AND id = $3
+    `, [canonical.id, context.workspace.id, merged.id]);
+
+    for (const company of companies.rows) {
+      await setCompanyDatabaseContext(client, company.id);
+      const updated = await client.query<{ id: string }>(`
+        UPDATE customers SET canonical_identity_id = $1, updated_at = now()
+        WHERE canonical_identity_id = $2
+        RETURNING id
+      `, [canonical.id, merged.id]);
+      for (const relationship of updated.rows) {
+        await appendTimeline(client, {
+          workspaceId: context.workspace.id,
+          companyId: company.id,
+          customerId: relationship.id,
+          actorId: session.actorUserAccountId,
+          eventType: 'customer_identity_merged',
+          summary: 'هویت مرکزی مشتری با بررسی انسانی یکپارچه شد.',
+          metadata: { operationId: operation.id, canonicalIdentityId: canonical.id, mergedIdentityId: merged.id },
+        });
+      }
+    }
+
+    await setCompanyDatabaseContext(client, null);
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id,
+      companyId: null,
+      ...auditIdentity(session),
+      action: 'customer.identity_merged',
+      resourceType: 'CustomerIdentityMerge',
+      resourceId: operation.id,
+      result: 'success',
+      reason: input.reason,
+      previousState: { canonicalIdentityId: canonical.id, mergedIdentityId: merged.id, status: 'independent' },
+      newState: { canonicalIdentityId: canonical.id, mergedIdentityId: merged.id, status: 'merged' },
+      correlationId,
+    });
+    return mapIdentityMerge(operation);
+  });
+}
+
+export async function unmergeCustomerIdentity(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  operationId: string,
+  reason: string,
+  correlationId: string,
+): Promise<CustomerIdentityMergeOperation> {
+  requireWorkspaceIdentityContext(context);
+  return withWorkspaceTransaction({ workspaceId: context.workspace.id, companyId: null }, async (client) => {
+    const operation = (await client.query<IdentityMergeRow>(`
+      SELECT id, canonical_identity_id, merged_identity_id, status, reason, merged_at, reversed_at, reversal_reason
+      FROM customer_identity_merge_operations
+      WHERE workspace_id = $1 AND id = $2
+      FOR UPDATE
+    `, [context.workspace.id, operationId])).rows[0];
+    if (!operation) {
+      throw new AppError(404, 'customer_identity_reconciliation_not_found', 'The requested Customer identity reconciliation is not available.');
+    }
+    if (operation.status === 'reversed') return mapIdentityMerge(operation);
+
+    const mergedIdentity = (await client.query<IdentityRow>(`
+      SELECT id, normalized_primary_phone, status, merged_into_identity_id, created_at
+      FROM customer_identities
+      WHERE workspace_id = $1 AND id = $2
+      FOR UPDATE
+    `, [context.workspace.id, operation.merged_identity_id])).rows[0];
+    if (
+      !mergedIdentity
+      || mergedIdentity.status !== 'merged'
+      || mergedIdentity.merged_into_identity_id !== operation.canonical_identity_id
+    ) {
+      throw new AppError(409, 'customer_identity_unmerge_state_invalid', 'Identity lineage no longer matches this reconciliation.');
+    }
+
+    const companies = await client.query<{ id: string }>(`
+      SELECT id FROM companies WHERE workspace_id = $1 ORDER BY id
+    `, [context.workspace.id]);
+    for (const company of companies.rows) {
+      await setCompanyDatabaseContext(client, company.id);
+      const restored = await client.query<{ id: string }>(`
+        UPDATE customers SET canonical_identity_id = $1, updated_at = now()
+        WHERE identity_id = $1 AND canonical_identity_id = $2
+        RETURNING id
+      `, [operation.merged_identity_id, operation.canonical_identity_id]);
+      for (const relationship of restored.rows) {
+        await appendTimeline(client, {
+          workspaceId: context.workspace.id,
+          companyId: company.id,
+          customerId: relationship.id,
+          actorId: session.actorUserAccountId,
+          eventType: 'customer_identity_split',
+          summary: 'یکپارچه‌سازی هویت مرکزی پس از بررسی بازگردانی شد.',
+          metadata: { operationId: operation.id, restoredIdentityId: operation.merged_identity_id },
+        });
+      }
+    }
+
+    await setCompanyDatabaseContext(client, null);
+    await client.query(`
+      UPDATE customer_identities
+      SET status = 'active', merged_into_identity_id = NULL, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2
+    `, [context.workspace.id, operation.merged_identity_id]);
+    const reversed = (await client.query<IdentityMergeRow>(`
+      UPDATE customer_identity_merge_operations
+      SET status = 'reversed', reversed_by_user_account_id = $1,
+        reversed_at = now(), reversal_reason = $2
+      WHERE workspace_id = $3 AND id = $4
+      RETURNING id, canonical_identity_id, merged_identity_id, status, reason, merged_at, reversed_at, reversal_reason
+    `, [session.actorUserAccountId, reason, context.workspace.id, operation.id])).rows[0]!;
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id,
+      companyId: null,
+      ...auditIdentity(session),
+      action: 'customer.identity_unmerged',
+      resourceType: 'CustomerIdentityMerge',
+      resourceId: operation.id,
+      result: 'success',
+      reason,
+      previousState: { status: 'merged', mergedIdentityId: operation.merged_identity_id },
+      newState: { status: 'active', restoredIdentityId: operation.merged_identity_id },
+      correlationId,
+    });
+    return mapIdentityMerge(reversed);
   });
 }

@@ -125,6 +125,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('customer.create', 'Create Customers in the active context'),
         ('customer.identity.manage', 'Manage Customer identity details in the active context'),
         ('customer.merge', 'Merge and unmerge Customers in the active context'),
+        ('customer.identity.reconcile', 'Merge and reverse Workspace Customer identities with lineage and audit'),
         ('customer.import.read', 'Read sanitized Customer import summaries in the active context'),
         ('customer.import.create', 'Create a staged Customer CSV import in the active context'),
         ('customer.import.review', 'Review and reconcile staged Customer import records'),
@@ -158,7 +159,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
         ($2, 'customer.import.read'), ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
         ($3, 'customer.read'),
-        ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'), ($4, 'customer.merge'),
+        ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'), ($4, 'customer.merge'), ($4, 'customer.identity.reconcile'),
         ($4, 'customer.import.read'), ($4, 'customer.import.create'), ($4, 'customer.import.review'), ($4, 'customer.import.approve'),
         ($4, 'organization.read'), ($4, 'organization.company.manage'), ($4, 'organization.unit.manage'),
         ($4, 'organization.user.manage'), ($4, 'organization.membership.manage'),
@@ -221,8 +222,8 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
           ON CONFLICT DO NOTHING
         `, [context.workspaceId, context.identityId, context.phone]);
         await runtime.query(`
-          INSERT INTO customers(id, workspace_id, company_id, identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          INSERT INTO customers(id, workspace_id, company_id, identity_id, canonical_identity_id, full_name, phone_primary, created_by_user_account_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8)
           ON CONFLICT (id) DO NOTHING
         `, [context.customerId, context.workspaceId, context.companyId, context.identityId, context.name, context.phone, ids.accountDemo, `seed-${context.customerId}`]);
         await runtime.query(`

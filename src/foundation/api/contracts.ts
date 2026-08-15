@@ -35,11 +35,24 @@ export interface OrganizationSnapshot {
 
 export interface FoundationCustomer {
   id: string;
+  identityId: string;
+  canonicalIdentityId: string;
   fullName: string;
   phonePrimary: string;
   status: 'active' | 'merged';
   mergedIntoCustomerId: string | null;
   createdAt: string;
+}
+
+export interface CustomerIdentityMergeOperation {
+  id: string;
+  canonicalIdentityId: string;
+  mergedIdentityId: string;
+  status: 'active' | 'reversed';
+  reason: string;
+  mergedAt: string;
+  reversedAt: string | null;
+  reversalReason: string | null;
 }
 
 export interface FoundationCustomerProfile extends FoundationCustomer {
