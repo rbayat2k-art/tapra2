@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-16 against `agent/sale-invoice-payment-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -52,12 +52,14 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/sales/leads/:leadId/calls` | ثبت تماس توسط assignee فعلی و اعمال policy تماس مؤثر |
 | `GET` | `/api/v1/sales/invoices` | فهرست Invoiceهای Company؛ seller فقط Invoiceهای خود و manager دارای permission همه را می‌بیند |
 | `GET` | `/api/v1/sales/invoices/:invoiceId` | Invoice، revision فعلی، Lineها، Paymentها و history مجاز |
-| `GET` | `/api/v1/sales/payment-infrastructure` | حساب‌های مقصد فعال و policy روش‌های پرداخت مجاز Company |
+| `GET` | `/api/v1/sales/payment-infrastructure` | حساب‌های وصول پوشیده، policy روش پرداخت و تنظیم تأیید سرپرست Company |
+| `POST`, `PUT` | `/api/v1/sales/collection-accounts[/:accountId]` | ایجاد/ویرایش/فعال‌غیرفعال‌سازی حساب وصول با Permission، RLS و Audit |
+| `PUT` | `/api/v1/sales/settings/supervisor-approval` | تغییر policy تأیید سرپرست برای Invoiceهای جدید Company |
 | `POST` | `/api/v1/sales/sales` | ثبت idempotent Sale مستقیم یا کاغذی و ساخت خودکار یک Invoice |
 | `PUT` | `/api/v1/sales/invoices/:invoiceId` | ساخت revision جدید اقلام بدون overwrite نسخه قبلی |
 | `POST` | `/api/v1/sales/invoices/:invoiceId/supervisor-approval` | تأیید سرپرست با منع self-approval فروشنده |
 | `POST` | `/api/v1/sales/invoices/:invoiceId/payments` | ثبت idempotent Payment مستقل یا correction برای Payment برگشتی |
-| `POST` | `/api/v1/sales/invoices/:invoiceId/payments/:paymentId/review` | تأیید، برگشت برای اصلاح یا رد مستقل هر Payment توسط reviewer مجاز |
+| `POST` | `/api/v1/sales/invoices/:invoiceId/payments/:paymentId/review` | تأیید یا برگشت مستقل هر Payment؛ reason برای برگشت و maker-checker سمت server الزامی است |
 
 قرارداد دامنه‌ای endpointهای CURRENT در [Customer Import](../domains/sales/customer-import.md)، [عملیات فعلی Lead](../domains/sales/current-lead-operations.md) و [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) توضیح داده شده است.
 
@@ -75,4 +77,4 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 ## مرز آینده
 
-endpointهای Finance/Treasury عمومی، Support، Warehouse/Shipment، Service Fulfillment، Refund، موتور مدیریت Campaign/Promotion، Commission، AI Sales و integrationهای بیرونی هنوز وجود ندارند. endpointهای Invoice/Payment بالا فقط vertical slice فروش و بررسی مالی مشتری را پوشش می‌دهند و accounting ledger یا Finance کامل نیستند. endpoint Marketing موجود فقط reference و snapshot را به Lead/relationship متصل می‌کند و موتور Campaign، pricing یا eligibility نیست. طراحی احتمالی قابلیت‌های کامل باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.
+مبلغ‌های مالی endpointهای Invoice/Payment رشته decimal صحیح در Rial هستند و نباید در client به `JavaScript number` تبدیل شوند. endpointهای Finance/Treasury عمومی، Payment Gateway اجرایی، Support، Warehouse/Shipment، Service Fulfillment، Refund، موتور مدیریت Campaign/Promotion، Commission، AI Sales و integrationهای بیرونی هنوز وجود ندارند. endpointهای Invoice/Payment بالا فقط vertical slice فروش و بررسی مالی مشتری را پوشش می‌دهند و accounting ledger یا Finance کامل نیستند. endpoint Marketing موجود فقط reference و snapshot را به Lead/relationship متصل می‌کند و موتور Campaign، pricing یا eligibility نیست. طراحی احتمالی قابلیت‌های کامل باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.

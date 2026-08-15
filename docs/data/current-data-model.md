@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-16 against migrations `0001`–`0017`
 > Supersedes: none
 > Superseded by: none
 
@@ -29,7 +29,7 @@
 | Sales relationship/history | `sales_customer_relationships`, `sales_customer_relationship_events`, `sales_lead_timeline_events` برای lock و history قابل‌ردیابی |
 | Sales marketing context | `sales_lead_marketing_links` برای reference و snapshot نوع `campaign`/`promotion` متصل به Lead و relationship همان Company |
 | Sale/Invoice | `sales_transactions` برای seller/actor/entry mode و Identity/relationship؛ `sales_invoices`، `sales_invoice_lines` و `sales_invoice_revisions` برای یک Invoice در هر Sale و revisionهای غیرمخرب |
-| Payment review | `financial_accounts`، `payment_gateways`، `sales_payment_method_policies`، `sales_payments` و `sales_payment_review_events` برای پرداخت‌های مستقل و زیرساخت Company-scoped |
+| Payment review | `financial_accounts`، `sales_payment_method_policies`، `sales_invoice_policies`، `sales_payments` و `sales_payment_review_events` برای پرداخت‌های مستقل، حساب وصول و approval policy در Company؛ `payment_gateways` فقط foundation رزروشده و بدون endpoint اجرایی است |
 | Invoice history | `sales_invoice_events` و Customer timeline برای transitionهای Invoice/Payment و Audit قابل‌ردیابی |
 | Impersonation | `session_impersonations` برای نمای زمان‌دار، دلیل، actor/target context و پایان نشست |
 | Audit | `audit_entries` با actor واقعی، user مؤثر، impersonation، context، action، resource و correlation |
@@ -48,7 +48,7 @@
 
 ## مدل Prototype
 
-مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قراردادهای Sales اجراشده در migrationهای `0013` تا `0015` هستند؛ Warehouse، Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند.
+مبلغ‌های Invoice/Payment در PostgreSQL `bigint` و در API رشته decimal Rial هستند. `sales_payments` actor واقعی و user مؤثر سازنده را جدا نگه می‌دارد تا maker-checker حتی در Impersonation enforce شود. مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قراردادهای Sales اجراشده در migrationهای `0013` تا `0017` هستند؛ Warehouse، Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند.
 
 ## قواعد تغییر
 

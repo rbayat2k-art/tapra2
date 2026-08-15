@@ -519,3 +519,23 @@ migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log
 
 **Impact:**
 این تصمیم‌ها `APPROVED-FUTURE` هستند. Implementation باید از vertical slice `Sale → Invoice → Payment → Financial Review` آغاز شود و قبل از code معتبر، هیچ قابلیت Invoice/Fulfillment به‌عنوان CURRENT معرفی نشود.
+
+---
+
+### Date: 2026-08-16
+
+**Title:** Payment review safety and Company-scoped Sales configuration implemented
+
+**Context:**
+بازبینی پیش از merge PR #15 چهار gap اجرایی را نشان داد: استفاده از `JavaScript number` برای Rial، state مستقل و تصویب‌نشده `rejected`، نبود maker-checker کامل در Impersonation و وابستگی تنظیمات حساب وصول/تأیید سرپرست به seed. همچنین upgrade تاریخچه دقیق migrationهای قدیمی Sales باید به‌صورت خودکار اثبات می‌شد.
+
+**Decision:**
+مبلغ‌های API به رشته decimal صحیح Rial، محاسبه Backend به `bigint` و ذخیره PostgreSQL به `bigint` محدود شد. Payment پس از ثبت `submitted` است و review فقط `approved` یا `needs_correction` دارد؛ برگشت reason می‌خواهد و correction رکورد قبلی را `superseded` می‌کند. Financial Review در Impersonation ممنوع است و actor واقعی و user مؤثر سازنده Payment هیچ‌کدام reviewer همان Payment نمی‌شوند. overpayment هنگام approval fail-closed است.
+
+الزام تأیید سرپرست policy قابل‌مدیریت Company است که پیش‌فرض روشن دارد و هنگام ساخت روی Invoice snapshot می‌شود. حساب وصول با reference پوشیده و Permission مستقل ایجاد/ویرایش/فعال‌غیرفعال می‌شود. Company تازه تمام policyهای لازم Sales را اتمیک دریافت می‌کند. Gateway اجرایی در این Slice ساخته نشد. Scopeهای `BRANCH`، `DEPARTMENT` و `TEAM` برای Sale/Invoice تا attribution صریح Line همچنان fail-closed هستند.
+
+**Evidence:**
+`server/migrations/0016_payment_review_safety.sql`، `server/migrations/0017_sales_collection_policy.sql`، `server/tests/sales.integration.test.ts` و `server/tests/sales-migration-compatibility.test.ts`.
+
+**Impact:**
+authority CURRENT این رفتار [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) است. migrationهای `0015` و تاریخچه قبلی بازنویسی نشدند؛ اصلاح‌ها فقط با migrationهای افزایشی اعمال شدند. Warehouse، Shipment، Service Fulfillment، Refund، accounting ledger و Payment Gateway اجرایی همچنان خارج از محدوده CURRENT هستند.
