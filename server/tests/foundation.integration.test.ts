@@ -777,6 +777,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send({ fullName: 'رابطه مستقل همان مشتری در شرکت دوم', phonePrimary: '+98 912 666 7788' })
       .expect(201);
     expect(secondRelationship.body.customer.id).not.toBe(firstRelationship.body.customer.id);
+    expect(secondRelationship.body.customer.identityId).toBe(firstRelationship.body.customer.identityId);
+    expect(secondRelationship.body.customer.canonicalIdentityId).toBe(firstRelationship.body.customer.canonicalIdentityId);
     await agent
       .post(`/api/v1/customers/${secondRelationship.body.customer.id}/addresses`)
       .set('x-csrf-token', session.csrfToken)
@@ -812,6 +814,183 @@ describe('Foundation Sprint 1 vertical slice', () => {
           AND normalized_value = '09126667788'
       `);
       expect(centralPhones.rows[0]?.count).toBe('1');
+      await verifier.query('COMMIT');
+    } finally {
+      await verifier.query('ROLLBACK').catch(() => undefined);
+      await verifier.end();
+    }
+  });
+
+  it('reconciles central identities separately from Company relationships with reversible lineage', async () => {
+    const agent = request.agent(createApp());
+    let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
+    const alphaCompanyContext = session.memberships.find((item) =>
+      item.company?.id === '20000000-0000-4000-8000-000000000001');
+    const alphaWorkspaceContext = session.memberships.find((item) =>
+      item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
+    if (!alphaCompanyContext || !alphaWorkspaceContext) throw new Error('Required Alpha contexts were not found.');
+
+    const selectMembership = async (membership: SessionResponse['memberships'][number]) => {
+      session = (await agent
+        .post('/api/v1/session/context')
+        .set('x-csrf-token', session.csrfToken)
+        .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
+        .expect(200)).body as SessionResponse;
+    };
+
+    await selectMembership(alphaCompanyContext);
+    const first = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'مشتری با اطلاعات اولیه', phonePrimary: '09128880101' })
+      .expect(201);
+    const second = await agent
+      .post('/api/v1/customers')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'نام کامل‌شده مشتری', phonePrimary: '09128880102' })
+      .expect(201);
+    expect(first.body.customer.identityId).not.toBe(second.body.customer.identityId);
+    expect(first.body.customer.identityId).toBe(first.body.customer.canonicalIdentityId);
+
+    await selectMembership(alphaWorkspaceContext);
+    await agent
+      .post('/api/v1/customer-identities/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({
+        identityId: first.body.customer.identityId,
+        targetIdentityId: second.body.customer.identityId,
+        reason: 'دو رابطه فعال یک شرکت نباید با merge هویت پنهان شوند.',
+      })
+      .expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('customer_identity_relationship_conflict'));
+    await selectMembership(alphaCompanyContext);
+
+    const relationshipMerge = await agent
+      .post('/api/v1/customers/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({
+        customerId: first.body.customer.id,
+        targetCustomerId: second.body.customer.id,
+        reason: 'ابتدا رابطه‌های تکراری همین شرکت یکپارچه شدند.',
+      })
+      .expect(200);
+
+    await agent
+      .post('/api/v1/customer-identities/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({
+        identityId: first.body.customer.identityId,
+        targetIdentityId: second.body.customer.identityId,
+        reason: 'Company scope must not reconcile Workspace identities.',
+      })
+      .expect(403)
+      .expect(({ body }) => expect(body.error.code).toBe('customer_identity_workspace_scope_required'));
+
+    await selectMembership(alphaWorkspaceContext);
+    expect(session.activeContext?.permissions).toContain('customer.identity.reconcile');
+    const identityMergeKey = randomUUID();
+    const identityMerge = await agent
+      .post('/api/v1/customer-identities/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', identityMergeKey)
+      .send({
+        identityId: first.body.customer.identityId,
+        targetIdentityId: second.body.customer.identityId,
+        reason: 'دو شماره پس از بررسی انسانی متعلق به یک شخص تشخیص داده شدند.',
+      })
+      .expect(200);
+    expect(identityMerge.body.operation.status).toBe('active');
+    expect([
+      first.body.customer.identityId,
+      second.body.customer.identityId,
+    ]).toContain(identityMerge.body.operation.canonicalIdentityId);
+
+    await agent
+      .post('/api/v1/customer-identities/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', identityMergeKey)
+      .send({
+        identityId: first.body.customer.identityId,
+        targetIdentityId: second.body.customer.identityId,
+        reason: 'درخواست idempotent همان عملیات.',
+      })
+      .expect(200)
+      .expect(({ body }) => expect(body.operation.id).toBe(identityMerge.body.operation.id));
+
+    await agent
+      .post('/api/v1/customer-identities/merge')
+      .set('x-csrf-token', session.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({
+        identityId: first.body.customer.identityId,
+        targetIdentityId: randomUUID(),
+        reason: 'هویت خارج از Workspace نباید قابل کشف باشد.',
+      })
+      .expect(404)
+      .expect(({ body }) => expect(body.error.code).toBe('customer_identity_reconciliation_not_found'));
+
+    await selectMembership(alphaCompanyContext);
+    const reconciledFirst = await agent.get(`/api/v1/customers/${first.body.customer.id}`).expect(200);
+    const reconciledSecond = await agent.get(`/api/v1/customers/${second.body.customer.id}`).expect(200);
+    expect(reconciledFirst.body.customer.canonicalIdentityId)
+      .toBe(reconciledSecond.body.customer.canonicalIdentityId);
+    await agent
+      .post(`/api/v1/customers/merges/${relationshipMerge.body.operationId}/unmerge`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({ reason: 'ترتیب ناامن بازگردانی باید رد شود.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('customer_relationship_unmerge_identity_conflict'));
+
+    await selectMembership(alphaWorkspaceContext);
+    const reversedIdentity = await agent
+      .post(`/api/v1/customer-identities/merges/${identityMerge.body.operation.id}/unmerge`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({ reason: 'بازگردانی کنترل‌شده پس از بازبینی lineage.' })
+      .expect(200);
+    expect(reversedIdentity.body.operation.status).toBe('reversed');
+
+    await selectMembership(alphaCompanyContext);
+    const restoredRelationships = await agent
+      .post(`/api/v1/customers/merges/${relationshipMerge.body.operationId}/unmerge`)
+      .set('x-csrf-token', session.csrfToken)
+      .send({ reason: 'رابطه‌های شرکتی پس از جداسازی هویت بازیابی شدند.' })
+      .expect(200);
+    expect(restoredRelationships.body.canonicalCustomer.status).toBe('active');
+    expect(restoredRelationships.body.restoredCustomer.status).toBe('active');
+    expect(restoredRelationships.body.canonicalCustomer.canonicalIdentityId)
+      .not.toBe(restoredRelationships.body.restoredCustomer.canonicalIdentityId);
+    const identityEvents = [
+      ...restoredRelationships.body.canonicalCustomer.timeline,
+      ...restoredRelationships.body.restoredCustomer.timeline,
+    ].map((event: { eventType: string }) => event.eventType);
+    expect(identityEvents).toContain('customer_identity_merged');
+    expect(identityEvents).toContain('customer_identity_split');
+
+    const verifier = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_identity_reconciliation_verify' });
+    await verifier.connect();
+    try {
+      await verifier.query('BEGIN');
+      await verifier.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', '', true)", [
+        '10000000-0000-4000-8000-000000000001',
+      ]);
+      const lineage = await verifier.query<{ identity_count: number }>(`
+        SELECT jsonb_array_length(lineage_snapshot->'identities') AS identity_count
+        FROM customer_identity_merge_operations WHERE id = $1
+      `, [identityMerge.body.operation.id]);
+      expect(lineage.rows[0]?.identity_count).toBe(2);
+      const audit = await verifier.query(`
+        SELECT id FROM audit_entries
+        WHERE resource_id = $1 AND action IN ('customer.identity_merged', 'customer.identity_unmerged')
+      `, [identityMerge.body.operation.id]);
+      expect(audit.rows).toHaveLength(2);
+      await verifier.query("SELECT set_config('app.workspace_id', $1, true)", ['10000000-0000-4000-8000-000000000002']);
+      const isolated = await verifier.query('SELECT id FROM customer_identity_merge_operations WHERE id = $1', [identityMerge.body.operation.id]);
+      expect(isolated.rows).toHaveLength(0);
       await verifier.query('COMMIT');
     } finally {
       await verifier.query('ROLLBACK').catch(() => undefined);

@@ -30,6 +30,8 @@ const eventLabels: Record<string, string> = {
   source_linked: 'اتصال منبع',
   customer_merged: 'ادغام پروفایل',
   customer_split: 'بازگردانی ادغام',
+  customer_identity_merged: 'یکپارچه‌سازی هویت مرکزی',
+  customer_identity_split: 'بازگردانی هویت مرکزی',
 };
 
 const sourceLabels: Record<string, string> = {
@@ -143,7 +145,7 @@ export function SaasCustomersView() {
       <header className="rounded-3xl border border-emerald-800/40 bg-slate-900 p-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl bg-emerald-500/15 p-3 text-emerald-400"><Users /></div>
-          <div><h2 className="font-extrabold text-lg">Customer 360</h2><p className="text-xs text-slate-400 mt-1">پروفایل پایدار و امن مشتری در محیط کاری فعال</p></div>
+          <div><h2 className="font-extrabold text-lg">نمای جامع مشتری</h2><p className="text-xs text-slate-400 mt-1">پروفایل پایدار و امن مشتری در محیط کاری فعال</p></div>
         </div>
         <button onClick={() => void load()} className="rounded-xl border border-slate-700 p-2 text-slate-300" title="بازخوانی"><RefreshCw size={18} /></button>
       </header>
@@ -279,15 +281,15 @@ function CustomerProfilePanel({
         {profile.sources.map((source) => <div key={source.id} className="rounded-xl bg-slate-950 p-3 text-sm"><strong>{sourceLabels[source.sourceType] ?? source.sourceType}</strong><p className="mt-1 text-slate-400">{source.sourceName}</p><small className="text-slate-500">ورود: {formatDate(source.ingestedAt)}</small></div>)}
       </ProfileCard>
 
-      <ProfileCard icon={<History size={18} />} title="Timeline">
+      <ProfileCard icon={<History size={18} />} title="تاریخچه">
         {profile.timeline.map((event) => <div key={event.id} className="border-r-2 border-emerald-800 pr-3"><strong className="text-sm">{eventLabels[event.eventType] ?? event.eventType}</strong><p className="text-xs text-slate-400">{event.summary}</p><time className="text-[11px] text-slate-500">{formatDate(event.occurredAt)}</time></div>)}
       </ProfileCard>
     </div>
 
-    {canMerge && <ProfileCard icon={<Merge size={18} />} title="ادغام کنترل‌شده و قابل بازگشت">
+    {canMerge && <ProfileCard icon={<Merge size={18} />} title="ادغام رابطه شرکتی؛ کنترل‌شده و قابل بازگشت">
       {mergeCandidates.length > 0 && <div className="grid gap-2 md:grid-cols-2"><select aria-label="انتخاب پروفایل برای ادغام" value={mergeTarget} onChange={(event) => { setMergeTarget(event.target.value); setMergeConfirmed(false); }} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm"><option value="">انتخاب مشتری دیگر</option>{mergeCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.fullName} — {candidate.phonePrimary}</option>)}</select><input aria-label="دلیل ادغام" value={mergeReason} onChange={(event) => setMergeReason(event.target.value)} minLength={3} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm" /></div>}
-      {mergeTarget && <label className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"><input type="checkbox" checked={mergeConfirmed} onChange={(event) => setMergeConfirmed(event.target.checked)} /> تأیید می‌کنم هر دو پروفایل بررسی شده‌اند و ادغام باید قابل بازگشت بماند.</label>}
-      {mergeTarget && <button type="button" disabled={!mergeConfirmed || busy} onClick={merge} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold disabled:opacity-50">ادغام تأییدشده</button>}
+      {mergeTarget && <label className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"><input type="checkbox" checked={mergeConfirmed} onChange={(event) => setMergeConfirmed(event.target.checked)} /> تأیید می‌کنم هر دو رابطه شرکتی بررسی شده‌اند و ادغام باید قابل بازگشت بماند.</label>}
+      {mergeTarget && <button type="button" disabled={!mergeConfirmed || busy} onClick={merge} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold disabled:opacity-50">ادغام رابطه شرکتی</button>}
       {profile.merges.filter((item) => item.status === 'active' && item.canonicalCustomerId === profile.id).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 p-3 text-sm"><span>یک ادغام فعال · {formatDate(item.mergedAt)}</span><button type="button" disabled={busy} onClick={() => unmerge(item.id)} className="flex items-center gap-1 rounded-lg border border-slate-600 px-3 py-2 text-xs"><RotateCcw size={14} />{unmergeConfirmId === item.id ? 'تأیید بازگردانی' : 'بازگردانی ادغام'}</button></div>)}
     </ProfileCard>}
   </article>;

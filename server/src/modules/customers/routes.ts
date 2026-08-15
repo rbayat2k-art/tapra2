@@ -16,9 +16,11 @@ import {
   checkDuplicates,
   createCustomer,
   listCustomers,
+  mergeCustomerIdentities,
   mergeCustomers,
   readCustomer,
   readTimeline,
+  unmergeCustomerIdentity,
   unmergeCustomers,
 } from './customer-service.js';
 
@@ -72,6 +74,11 @@ const mergeInput = z.object({
   reason: z.string().trim().min(3).max(500),
 });
 const unmergeInput = z.object({ reason: z.string().trim().min(3).max(500) });
+const identityMergeInput = z.object({
+  identityId: z.string().uuid(),
+  targetIdentityId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(500),
+});
 
 const customerId = z.string().uuid();
 const operationId = z.string().uuid();
@@ -107,6 +114,20 @@ export function customerRoutes(): Router {
       getActiveContext(response.locals), getAuthenticatedSession(response.locals), operationId.parse(request.params.operationId),
       unmergeInput.parse(request.body).reason, response.locals.correlationId as string,
     ));
+  }));
+
+  router.post('/customer-identities/merge', requireCsrf, requirePermission('customer.identity.reconcile'), asyncHandler(async (request, response) => {
+    response.json({ operation: await mergeCustomerIdentities(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), identityMergeInput.parse(request.body),
+      requireIdempotencyKey(request), response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.post('/customer-identities/merges/:operationId/unmerge', requireCsrf, requirePermission('customer.identity.reconcile'), asyncHandler(async (request, response) => {
+    response.json({ operation: await unmergeCustomerIdentity(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), operationId.parse(request.params.operationId),
+      unmergeInput.parse(request.body).reason, response.locals.correlationId as string,
+    ) });
   }));
 
   router.get('/customers/:customerId', requirePermission('customer.read'), asyncHandler(async (request, response) => {

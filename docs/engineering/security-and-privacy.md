@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-15 against `agent/organization-access-foundation`
+> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
 > Supersedes: none
 > Superseded by: none
 
@@ -21,6 +21,8 @@
 - Customer create، phone/address، merge/unmerge، timeline و AuditEntryهای مربوط در server و transaction ثبت می‌شوند.
 - duplicate check فقط داخل context فعال query می‌کند و اطلاعات Tenant دیگر را برنمی‌گرداند.
 - identity و normalized phone در Workspace مرکزی هستند، اما relationship/query عملیاتی Customer همچنان Company-scoped است؛ test چندCompany نبود existence oracle را بررسی می‌کند.
+- reconciliation مرکزی فقط با `customer.identity.reconcile` و Context فعال `WORKSPACE` اجرا می‌شود. endpoint عمومی برای enumerate/search هویت‌های Workspace وجود ندارد؛ داشتن permission در Company context نیز کافی نیست.
+- merge مرکزی Identity را حذف نمی‌کند و Actor واقعی، user مؤثر، reason، idempotency، lineage snapshot و reverse را ثبت می‌کند. دو relationship فعال یک Company باید پیش از آن صریحاً در سطح Company reconcile شوند.
 - permissionهای حساس `customer.identity.manage` و `customer.merge` سمت server enforce می‌شوند؛ UI مرز امنیتی نیست.
 - response خطا secret و password را برنمی‌گرداند و correlation ID برای پیگیری دارد.
 - مدیریت Company، Organization unit، UserAccount، Membership و RoleAssignment با Permission و Scope سمت server و Audit انجام می‌شود. RLS اجباری روی `organization_units` مرز Workspace را مستقل از filter برنامه کنترل می‌کند؛ جدول‌های bootstrap هویت همچنان به guard و queryهای Workspace-scoped برنامه متکی‌اند.

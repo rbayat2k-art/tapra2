@@ -7,6 +7,7 @@ import type {
   FoundationSession,
   CustomerImportAction,
   CustomerImportJob,
+  CustomerIdentityMergeOperation,
   FoundationMembership,
   OrganizationScopeType,
   OrganizationSnapshot,
@@ -97,6 +98,15 @@ export const foundationApi = {
     body: JSON.stringify(input),
   }, csrfToken),
   unmergeCustomers: (operationId: string, reason: string, csrfToken: string) => request<{ canonicalCustomer: FoundationCustomerProfile; restoredCustomer: FoundationCustomerProfile }>(`/customers/merges/${operationId}/unmerge`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }, csrfToken),
+  mergeCustomerIdentities: (input: { identityId: string; targetIdentityId: string; reason: string }, csrfToken: string) => request<{ operation: CustomerIdentityMergeOperation }>('/customer-identities/merge', {
+    method: 'POST',
+    headers: { 'idempotency-key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  }, csrfToken),
+  unmergeCustomerIdentity: (operationId: string, reason: string, csrfToken: string) => request<{ operation: CustomerIdentityMergeOperation }>(`/customer-identities/merges/${operationId}/unmerge`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }, csrfToken),
