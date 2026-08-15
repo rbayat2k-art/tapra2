@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت اجرایی ادغام محصول legacy با Foundation SaaS است.
 > Owner: Product Integration
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `agent/access-verification-matrix`
 > Supersedes: none
 > Superseded by: none
 
@@ -51,9 +51,11 @@ login محلی legacy در مسیر عادی قابل‌استفاده نیست.
 
 - `npm run lint`: موفق برای Web و Backend.
 - `npm run build`: موفق؛ هشدار bundle بزرگ باقی است.
-- `npm test`: `430/430` موفق در `25` فایل، شامل PostgreSQL، Organization/Scope، Customer identity reconciliation، Sales isolation/policy/marketing linkage، migration populated database و تست‌های domain legacy.
+- `npm test`: `461/461` موفق در `26` فایل، شامل PostgreSQL، ماتریس ۳۰ سناریویی Role/Permission/Scope، Organization/Scope، Customer identity reconciliation، Sales isolation/policy/marketing linkage، migration populated database و تست‌های domain legacy.
 - browser: Login، context selection/switching، Organization Admin، Impersonation، Dashboard، Sales Lead/queue/assignment/call/relationship lock/marketing context، Customer 360 و Import بررسی شدند.
 - tenant check مرورگر: Company بتا Customer نمونه بتا را دید و Customer نمونه آلفا را ندید.
 - browser console: بدون warning/error در سناریوی بررسی‌شده.
+
+Browser validation ماتریس Access نشان داد Backend در Context فاقد `organization.read` صفحه مدیریت را رد می‌کند و در Context مجاز `WORKSPACE`، Organization Admin و Role/Scope server-backed قابل‌استفاده‌اند. نمایش لینک legacy در Context فاقد permission و باقی‌ماندن بعضی واژه‌های فنی English در Organization UI بدهی UX هستند؛ هیچ‌کدام bypass سمت server ایجاد نمی‌کنند.
 
 این validation گواه production readiness کامل نیست. ماژول‌های prototype-backed باید به‌ترتیب vertical slice به Backend منتقل شوند.

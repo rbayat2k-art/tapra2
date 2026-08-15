@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای مدل نقش، permission و محدودیت‌های دسترسی فعلی است.
 > Owner: Access Control Owner
-> Last validated: 2026-08-15 against `agent/organization-access-foundation`
+> Last validated: 2026-08-15 against `agent/access-verification-matrix`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,9 +18,27 @@
 - Permissionهای Organization فعلی: `organization.read`، `organization.company.manage`، `organization.unit.manage`، `organization.user.manage`، `organization.membership.manage`، `organization.role.manage` و `organization.impersonate`.
 - نقش‌های legacy حذف یا به‌صورت حدسی تبدیل نشده‌اند. `legacy_role_mappings` وضعیت `UNMAPPED/PARTIAL/MAPPED/REVIEW_REQUIRED` را برای migration تدریجی نگه می‌دارد؛ تا ثبت mapping، نقش legacy فقط در Prototype معتبر است.
 
-## مدل مؤثر دسترسی Prototype
+## ماتریس واقعی Role/Permission/Scope
 
-## مدل مؤثر دسترسی
+این جدول وضعیت enforcement فعلی را نشان می‌دهد، نه Role bundle پیشنهادی. Roleهای Server سفارشی‌اند و فقط Permission/Scope صریح اختیار می‌دهد؛ نام‌هایی مانند Data Manager، MIS یا Supervisor به‌تنهایی Permission ایجاد نمی‌کنند.
+
+| سناریوی نقش | چه چیزی می‌بیند/انجام می‌دهد | چه چیزی نمی‌بیند/انجام نمی‌دهد | Scope و enforcement فعلی |
+|---|---|---|---|
+| Super Admin | Organization و contextهای Company همان Workspace مطابق Permissionهای صریح | Workspace مستقل دیگر؛ Permission اضافه target در Impersonation | Server؛ `WORKSPACE` و permission intersection |
+| Workspace Manager | Companyها و Shared Serviceهای همان Workspace طبق `organization.*` | mutation فاقد Permission؛ Tenant دیگر | Server؛ `WORKSPACE` |
+| Data Manager | Customer/Import چندCompany فقط با `customer.*` و `customer.import.*` صریح | Sales assignment یا Organization mutation ضمنی؛ داده Workspace دیگر | Server؛ معمولاً `WORKSPACE`، exact bundle هنوز policy جدا می‌خواهد |
+| MIS | نمای مجاز سازمانی/تجمیعی فقط با Permission صریح | Customer mutation یا دسترسی business ضمنی | Server foundation می‌تواند `WORKSPACE` را enforce کند؛ Role bundle نهایی تعریف نشده است |
+| Sales Manager | Leadهای Company، assignment/reassignment و marketing linkage با Permissionهای Sales | Lead Company دیگر؛ Permission Organization ضمنی | Server؛ `COMPANY`؛ Audit و RLS فعال |
+| Supervisor | context دقیق Branch/Department/Team در access engine | گسترش Scope واحد به کل Company یا واحد هم‌سطح دیگر | Server scope engine؛ Sales Lead فعلی تا attribution صریح واحد fail-closed است |
+| Salesperson | Customer مجاز، صف خود و Call Log Lead تخصیص‌یافته | self-claim، صف فروشنده دیگر، reassignment و Cross-Company | Server؛ `COMPANY` یا `SELF` دارای Company |
+| Finance User | صفحات و actionهای Prototype طبق legacy RBAC | هیچ Permission Backend صرفاً از نام نقش legacy دریافت نمی‌کند | Prototype/client-side؛ هنوز security boundary SaaS نیست |
+| Support User | پرونده‌های Prototype طبق permissionهای Support legacy | هیچ Customer/Organization Permission Backend ضمنی دریافت نمی‌کند | Prototype/client-side؛ هنوز security boundary SaaS نیست |
+
+فایل `server/tests/access-matrix.test.ts` سی سناریوی صریح `A01` تا `A30` را روی projection واقعی Scope و Permission در `limitContextToActor` اجرا می‌کند. سناریوها Alpha/Beta، Workspace، Shared Services، Company، Branch، Department، Team، SELF، permission intersection، Customer/Import privacy و جلوگیری از نشت Roleهای Finance/Support Prototype به Backend را پوشش می‌دهند. تست‌های PostgreSQL در `server/tests/foundation.integration.test.ts` نیز Unauthorized mutation، Impersonation ممیزی‌شده، RLS، Customer privacy و Import privacy را در سطح HTTP/database بررسی می‌کنند.
+
+این validation به معنی نهایی‌شدن mapping کسب‌وکار Roleهای Data/MIS/Supervisor/Finance/Support نیست. mappingهای حل‌نشده باید در `legacy_role_mappings` باقی بمانند و بدون تصمیم دامنه به `MAPPED` تغییر نکنند.
+
+## مدل مؤثر دسترسی Prototype
 
 `getEffectiveUserPermissions(user, roles)` مجموعه بدون تکرار زیر را می‌سازد:
 
