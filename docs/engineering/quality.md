@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current quality checks and gaps
 > Owner: Engineering Owner
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-15 against `agent/access-verification-matrix`
 > Supersedes: none
 > Superseded by: none
 
@@ -13,7 +13,7 @@
 |---|---|---|
 | TypeScript | `npm run lint` | Web و Backend |
 | Production build | `npm run build` | bundle Web و compile Backend |
-| Automated tests | `npm test` | PostgreSQL Foundation/Customer/Import/Identity reconciliation/Sales و unit testهای Sales/Finance/Support/RBAC بازیابی‌شده |
+| Automated tests | `npm test` | PostgreSQL Foundation/Customer/Import/Identity reconciliation/Sales، ماتریس ۳۰ سناریویی Role/Permission/Scope و unit testهای Sales/Finance/Support/RBAC بازیابی‌شده |
 | Migration verification | اجرای test suite | ساخت schema تا `0014` از ابتدا و upgrade از database دارای Customer قبل از `0008` روی `tapra2_test` |
 | Pull Request CI | `.github/workflows/ci.yml` | PostgreSQL 18، install، typecheck، lint، build، test، migration و repeat migration |
 
@@ -34,4 +34,6 @@
 
 Browser validation دستی Sales شامل ایجاد Lead برای Customer 360، assignment، ورود فروشنده، مشاهده صف شخصی، تماس ناموفق بدون lock، تماس مؤثر با `until_reassigned`، بازتخصیص manager با reason و اتصال Promotion پس از ایجاد relationship بود. فروشنده context جدید را در صف/تاریخچه دید و snapshot تماس‌های قبلی تغییر نکرد؛ console مرورگر error/warning نداشت.
 
-آخرین اجرای کامل این adaptation شامل `25/25` فایل و `430/430` test موفق بود. build Web هشدار chunk بزرگ‌تر از `500 kB` دارد و code splitting یک کار آینده است.
+ماتریس `server/tests/access-matrix.test.ts` شامل سناریوهای `A01` تا `A30` است و با یک invariant اضافه برای تعداد/شناسه، `31/31` تست متمرکز دارد. این تست projection واقعی Scope و permission در Impersonation را بررسی می‌کند؛ HTTP/RLS/Audit همچنان در integration testهای PostgreSQL اثبات می‌شوند.
+
+آخرین اجرای کامل شامل `26/26` فایل و `461/461` test موفق بود. Browser validation این Run، صفحه server-backed Organization و Role/Scope را در Context مجاز `WORKSPACE` با UI فارسی/RTL و بدون console warning/error بررسی کرد. در Context فاقد `organization.read`، Backend صفحه مدیریت را fail-closed رد کرد؛ navigation presentation legacy هنوز ممکن است لینک آن را نشان دهد و این یک UX debt باقی‌مانده است. build Web هشدار chunk بزرگ‌تر از `500 kB` دارد و code splitting یک کار آینده است.
