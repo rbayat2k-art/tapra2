@@ -13,16 +13,19 @@ export const invoiceLineSourceTypes = ['promotion_core', 'cross_sell', 'upsell',
 export type InvoiceLineSourceType = typeof invoiceLineSourceTypes[number];
 export const paymentMethods = ['card_to_card', 'bank_transfer', 'payment_gateway', 'cash', 'cheque', 'cod'] as const;
 export type PaymentMethod = typeof paymentMethods[number];
-export const paymentReviewDecisions = ['approved', 'needs_correction', 'rejected'] as const;
+export const paymentReviewDecisions = ['approved', 'needs_correction'] as const;
 export type PaymentReviewDecision = typeof paymentReviewDecisions[number];
+
+const postgresBigintMax = 9_223_372_036_854_775_807n;
+const rialPattern = /^(0|[1-9][0-9]*)$/;
 
 export interface InvoiceLineInput {
   itemType: InvoiceItemType;
   catalogReference?: string;
   itemName: string;
   quantity: number;
-  unitPrice: number;
-  discountAmount: number;
+  unitPrice: string;
+  discountAmount: string;
   sourceType: InvoiceLineSourceType;
   snapshot?: Record<string, unknown>;
 }
@@ -37,7 +40,7 @@ export interface CreateSaleInput {
 }
 
 export interface RecordPaymentInput {
-  amount: number;
+  amount: string;
   paymentMethod: Exclude<PaymentMethod, 'payment_gateway'>;
   occurredAt: string;
   lastFourDigits?: string;
@@ -52,6 +55,13 @@ export interface ReviewPaymentInput {
   reason?: string;
 }
 
+export interface CollectionAccountInput {
+  displayName: string;
+  bankName: string;
+  maskedReference: string;
+  isActive?: boolean;
+}
+
 interface InvoiceRow {
   id: string;
   invoice_code: string;
@@ -62,6 +72,7 @@ interface InvoiceRow {
   subtotal_amount: string;
   discount_amount: string;
   final_amount: string;
+  sales_approval_required: boolean;
   supervisor_approved_by_user_account_id: string | null;
   supervisor_approved_at: Date | string | null;
   created_at: Date | string;
@@ -85,10 +96,11 @@ export interface SalesInvoiceView {
   status: string;
   paymentStatus: string;
   currency: 'IRR';
-  subtotalAmount: number;
-  discountAmount: number;
-  finalAmount: number;
-  approvedPaymentAmount: number;
+  subtotalAmount: string;
+  discountAmount: string;
+  finalAmount: string;
+  approvedPaymentAmount: string;
+  salesApprovalRequired: boolean;
   supervisorApproval: null | { userAccountId: string; at: string };
   sale: {
     id: string;
@@ -100,12 +112,12 @@ export interface SalesInvoiceView {
   };
   lines: Array<{
     id: string; lineNumber: number; itemType: InvoiceItemType; catalogReference: string | null;
-    itemName: string; quantity: number; unitPrice: number; discountAmount: number;
-    lineTotal: number; sourceType: InvoiceLineSourceType; fulfillmentStatus: string;
+    itemName: string; quantity: number; unitPrice: string; discountAmount: string;
+    lineTotal: string; sourceType: InvoiceLineSourceType; fulfillmentStatus: string;
     snapshot: Record<string, unknown>;
   }>;
   payments: Array<{
-    id: string; amount: number; method: PaymentMethod; occurredAt: string;
+    id: string; amount: string; method: PaymentMethod; occurredAt: string;
     lastFourDigits: string | null; destinationAccountId: string | null;
     destinationAccountName: string | null; trackingNumber: string | null;
     receiptReference: string | null; status: string; recorderName: string;
@@ -137,26 +149,57 @@ function iso(value: Date | string | null): string | null {
   return value === null ? null : new Date(value).toISOString();
 }
 
+function parseRial(value: string, options: { positive?: boolean; field: string }): bigint {
+  if (!rialPattern.test(value)) {
+    throw new AppError(400, 'invoice_amount_invalid', `${options.field} must be an integer decimal string in Rial.`);
+  }
+  const amount = BigInt(value);
+  if (amount > postgresBigintMax || (options.positive ? amount <= 0n : amount < 0n)) {
+    throw new AppError(400, 'invoice_amount_invalid', `${options.field} is outside the supported Rial range.`);
+  }
+  return amount;
+}
+
+async function lockIdempotencyKey(client: PoolClient, namespace: string, key: string): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`${namespace}:${key}`]);
+}
+
 function calculateLines(lines: InvoiceLineInput[]) {
   const normalized = lines.map((line, index) => {
-    const gross = line.quantity * line.unitPrice;
-    if (!Number.isSafeInteger(gross) || line.discountAmount > gross) {
+    const unitPrice = parseRial(line.unitPrice, { field: `Invoice Line ${index + 1} unit price` });
+    const discountAmount = parseRial(line.discountAmount, { field: `Invoice Line ${index + 1} discount` });
+    const gross = BigInt(line.quantity) * unitPrice;
+    if (gross > postgresBigintMax || discountAmount > gross) {
       throw new AppError(400, 'invoice_amount_invalid', `Invoice Line ${index + 1} has an invalid amount.`);
     }
-    return { ...line, lineNumber: index + 1, lineTotal: gross - line.discountAmount };
+    return {
+      ...line,
+      unitPrice: unitPrice.toString(),
+      discountAmount: discountAmount.toString(),
+      lineNumber: index + 1,
+      lineTotal: (gross - discountAmount).toString(),
+      grossAmount: gross,
+    };
   });
-  const subtotalAmount = normalized.reduce((total, line) => total + line.quantity * line.unitPrice, 0);
-  const discountAmount = normalized.reduce((total, line) => total + line.discountAmount, 0);
+  const subtotalAmount = normalized.reduce((total, line) => total + line.grossAmount, 0n);
+  const discountAmount = normalized.reduce((total, line) => total + BigInt(line.discountAmount), 0n);
   const finalAmount = subtotalAmount - discountAmount;
-  if (!Number.isSafeInteger(finalAmount) || finalAmount <= 0) {
-    throw new AppError(400, 'invoice_amount_invalid', 'Invoice final amount must be a positive safe integer.');
+  if (subtotalAmount > postgresBigintMax || discountAmount > postgresBigintMax
+    || finalAmount <= 0n || finalAmount > postgresBigintMax) {
+    throw new AppError(400, 'invoice_amount_invalid', 'Invoice totals are outside the supported Rial range.');
   }
-  return { lines: normalized, subtotalAmount, discountAmount, finalAmount };
+  return {
+    lines: normalized.map(({ grossAmount: _grossAmount, ...line }) => line),
+    subtotalAmount: subtotalAmount.toString(),
+    discountAmount: discountAmount.toString(),
+    finalAmount: finalAmount.toString(),
+  };
 }
 
 const invoiceSelect = `
   SELECT invoice.id, invoice.invoice_code, invoice.revision, invoice.status, invoice.payment_status,
     invoice.currency, invoice.subtotal_amount, invoice.discount_amount, invoice.final_amount,
+    invoice.sales_approval_required,
     invoice.supervisor_approved_by_user_account_id, invoice.supervisor_approved_at,
     invoice.created_at, invoice.updated_at, sale.id AS sale_id, sale.entry_mode,
     sale.seller_membership_id, seller_person.full_name AS seller_name,
@@ -171,7 +214,12 @@ const invoiceSelect = `
   JOIN customers customer ON customer.id = sale.customer_id
 `;
 
-async function assertInvoiceReadable(client: PoolClient, context: MembershipContext, invoiceId: string): Promise<InvoiceRow> {
+async function assertInvoiceReadable(
+  client: PoolClient,
+  context: MembershipContext,
+  invoiceId: string,
+  lock = false,
+): Promise<InvoiceRow> {
   const readAll = hasPermission(context, 'sales.invoice.read_all');
   if (!readAll && !hasPermission(context, 'sales.invoice.read_own')) {
     throw new AppError(403, 'permission_denied', 'Permission to read Sales Invoices is required.');
@@ -179,6 +227,7 @@ async function assertInvoiceReadable(client: PoolClient, context: MembershipCont
   const result = await client.query<InvoiceRow>(`
     ${invoiceSelect}
     WHERE invoice.id = $1 AND ($2::boolean OR sale.seller_membership_id = $3)
+    ${lock ? 'FOR UPDATE OF invoice' : ''}
   `, [invoiceId, readAll, context.membershipId]);
   const row = result.rows[0];
   if (!row) throw new AppError(404, 'sales_invoice_not_found', 'Sales Invoice was not found in the active scope.');
@@ -234,8 +283,9 @@ async function loadInvoice(client: PoolClient, rowOrId: InvoiceRow | string): Pr
   return {
     id: row.id, code: row.invoice_code, revision: row.revision, status: row.status,
     paymentStatus: row.payment_status, currency: row.currency,
-    subtotalAmount: Number(row.subtotal_amount), discountAmount: Number(row.discount_amount),
-    finalAmount: Number(row.final_amount), approvedPaymentAmount: Number(approved.rows[0]?.total ?? 0),
+    subtotalAmount: row.subtotal_amount, discountAmount: row.discount_amount,
+    finalAmount: row.final_amount, approvedPaymentAmount: approved.rows[0]?.total ?? '0',
+    salesApprovalRequired: row.sales_approval_required,
     supervisorApproval: row.supervisor_approved_at ? {
       userAccountId: row.supervisor_approved_by_user_account_id!, at: iso(row.supervisor_approved_at)!,
     } : null,
@@ -249,12 +299,12 @@ async function loadInvoice(client: PoolClient, rowOrId: InvoiceRow | string): Pr
     lines: lines.rows.map((line) => ({
       id: line.id, lineNumber: line.line_number, itemType: line.item_type,
       catalogReference: line.catalog_reference, itemName: line.item_name, quantity: line.quantity,
-      unitPrice: Number(line.unit_price), discountAmount: Number(line.discount_amount),
-      lineTotal: Number(line.line_total), sourceType: line.source_type,
+      unitPrice: line.unit_price, discountAmount: line.discount_amount,
+      lineTotal: line.line_total, sourceType: line.source_type,
       fulfillmentStatus: line.fulfillment_status, snapshot: line.item_snapshot ?? {},
     })),
     payments: payments.rows.map((payment) => ({
-      id: payment.id, amount: Number(payment.amount), method: payment.payment_method,
+      id: payment.id, amount: payment.amount, method: payment.payment_method,
       occurredAt: iso(payment.occurred_at)!, lastFourDigits: payment.last_four_digits,
       destinationAccountId: payment.destination_account_id,
       destinationAccountName: payment.destination_account_name,
@@ -367,6 +417,7 @@ export async function createSaleAndInvoice(
   }
   const calculation = calculateLines(input.lines);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    await lockIdempotencyKey(client, 'sales.sale', idempotencyKey);
     const repeated = await client.query<{ invoice_id: string }>(`
       SELECT invoice.id AS invoice_id FROM sales_transactions sale
       JOIN sales_invoices invoice ON invoice.sale_id = sale.id
@@ -379,7 +430,8 @@ export async function createSaleAndInvoice(
       JOIN role_assignments assignment ON assignment.membership_id = membership.id
         AND assignment.workspace_id = membership.workspace_id
         AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
-        AND (assignment.scope_type = 'WORKSPACE' OR assignment.company_id = $2)
+        AND assignment.scope_type IN ('COMPANY', 'SELF')
+        AND assignment.company_id = $2
       JOIN role_permissions permission ON permission.role_id = assignment.role_id
       WHERE membership.id = $1 AND membership.company_id = $2 AND membership.status = 'active'
         AND membership.valid_from <= now() AND (membership.valid_until IS NULL OR membership.valid_until > now())
@@ -408,6 +460,12 @@ export async function createSaleAndInvoice(
     const saleId = randomUUID();
     const invoiceId = randomUUID();
     const invoiceCode = `INV-${new Date().getUTCFullYear()}-${invoiceId.replaceAll('-', '').slice(0, 8).toUpperCase()}`;
+    const invoicePolicy = await client.query<{ supervisor_approval_required: boolean }>(`
+      SELECT supervisor_approval_required FROM sales_invoice_policies
+      WHERE workspace_id = $1 AND company_id = $2
+    `, [context.workspace.id, company.id]);
+    const salesApprovalRequired = invoicePolicy.rows[0]?.supervisor_approval_required ?? true;
+    const initialStatus = salesApprovalRequired ? 'awaiting_supervisor_approval' : 'awaiting_payment';
     await client.query(`
       INSERT INTO sales_transactions(
         id, workspace_id, company_id, canonical_identity_id, customer_id, lead_id,
@@ -421,11 +479,13 @@ export async function createSaleAndInvoice(
     await client.query(`
       INSERT INTO sales_invoices(
         id, workspace_id, company_id, sale_id, invoice_code,
-        subtotal_amount, discount_amount, final_amount, created_by_user_account_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        subtotal_amount, discount_amount, final_amount, created_by_user_account_id,
+        status, sales_approval_required
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [
       invoiceId, context.workspace.id, company.id, saleId, invoiceCode,
       calculation.subtotalAmount, calculation.discountAmount, calculation.finalAmount, session.userAccountId,
+      initialStatus, salesApprovalRequired,
     ]);
     await insertInvoiceLines(client, context, invoiceId, 1, calculation.lines);
     await client.query(`
@@ -434,7 +494,7 @@ export async function createSaleAndInvoice(
       ) VALUES ($1, $2, $3, 1, $4, $5)
     `, [context.workspace.id, company.id, invoiceId, JSON.stringify(revisionSnapshot(calculation)), session.userAccountId]);
     await appendInvoiceEvent(client, context, session, invoiceId, 'invoice_created', correlationId, {
-      newState: { status: 'awaiting_supervisor_approval', revision: 1, finalAmount: calculation.finalAmount },
+      newState: { status: initialStatus, revision: 1, finalAmount: calculation.finalAmount, salesApprovalRequired },
     });
     if (input.leadId) {
       await client.query(`UPDATE sales_leads SET status = 'closed_won', updated_at = now(), version = version + 1 WHERE id = $1`, [input.leadId]);
@@ -471,23 +531,25 @@ export async function reviseSalesInvoice(
   const company = companyFrom(context);
   const calculation = calculateLines(lines);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-    const invoice = await assertInvoiceReadable(client, context, invoiceId);
+    const invoice = await assertInvoiceReadable(client, context, invoiceId, true);
     const isDraft = invoice.status === 'awaiting_supervisor_approval';
-    requirePermission(context, isDraft ? 'sales.invoice.edit_draft' : 'sales.invoice.amend');
+    const automaticallyApprovedDraft = !invoice.sales_approval_required && invoice.status === 'awaiting_payment';
+    requirePermission(context, isDraft || automaticallyApprovedDraft ? 'sales.invoice.edit_draft' : 'sales.invoice.amend');
     if (!isDraft && invoice.status !== 'awaiting_payment') {
       throw new AppError(409, 'invoice_revision_blocked', 'Only an unapproved Invoice or an approved Invoice without Payment activity can be revised.');
     }
-    if (!isDraft && (!reason || reason.trim().length < 3)) {
+    if (!isDraft && !automaticallyApprovedDraft && (!reason || reason.trim().length < 3)) {
       throw new AppError(400, 'invoice_revision_reason_required', 'An approved Invoice amendment requires a reason.');
     }
     const payments = await client.query<{ count: string }>(`
       SELECT count(*)::text AS count FROM sales_payments
-      WHERE invoice_id = $1 AND status NOT IN ('rejected', 'superseded')
+      WHERE invoice_id = $1 AND status <> 'superseded'
     `, [invoiceId]);
     if (Number(payments.rows[0]?.count) > 0) {
       throw new AppError(409, 'invoice_has_payments', 'An Invoice with Payment activity cannot be revised by this flow.');
     }
     const nextRevision = invoice.revision + 1;
+    const nextStatus = invoice.sales_approval_required ? 'awaiting_supervisor_approval' : 'awaiting_payment';
     await insertInvoiceLines(client, context, invoiceId, nextRevision, calculation.lines);
     await client.query(`
       INSERT INTO sales_invoice_revisions(
@@ -495,25 +557,25 @@ export async function reviseSalesInvoice(
       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
     `, [
       context.workspace.id, company.id, invoiceId, nextRevision,
-      JSON.stringify(revisionSnapshot(calculation)), reason ?? 'Draft Invoice edited before approval', session.userAccountId,
+      JSON.stringify(revisionSnapshot(calculation)), reason ?? 'Draft Invoice edited before financial activity', session.userAccountId,
     ]);
     await client.query(`
       UPDATE sales_invoices SET revision = $2, subtotal_amount = $3, discount_amount = $4,
-        final_amount = $5, status = 'awaiting_supervisor_approval', payment_status = 'unpaid',
+        final_amount = $5, status = $6, payment_status = 'unpaid',
         supervisor_approved_by_user_account_id = NULL, supervisor_approved_at = NULL,
         updated_at = now(), version = version + 1 WHERE id = $1
-    `, [invoiceId, nextRevision, calculation.subtotalAmount, calculation.discountAmount, calculation.finalAmount]);
+    `, [invoiceId, nextRevision, calculation.subtotalAmount, calculation.discountAmount, calculation.finalAmount, nextStatus]);
     await appendInvoiceEvent(client, context, session, invoiceId, 'invoice_revised', correlationId, {
-      previousState: { revision: invoice.revision, finalAmount: Number(invoice.final_amount), status: invoice.status },
-      newState: { revision: nextRevision, finalAmount: calculation.finalAmount, status: 'awaiting_supervisor_approval' },
+      previousState: { revision: invoice.revision, finalAmount: invoice.final_amount, status: invoice.status },
+      newState: { revision: nextRevision, finalAmount: calculation.finalAmount, status: nextStatus },
       reason,
     });
     await appendAuditEntry(client, {
       workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'sales.invoice.revised', resourceType: 'sales_invoice', resourceId: invoiceId,
       result: 'success', reason,
-      previousState: { revision: invoice.revision, finalAmount: Number(invoice.final_amount), status: invoice.status },
-      newState: { revision: nextRevision, finalAmount: calculation.finalAmount, status: 'awaiting_supervisor_approval' },
+      previousState: { revision: invoice.revision, finalAmount: invoice.final_amount, status: invoice.status },
+      newState: { revision: nextRevision, finalAmount: calculation.finalAmount, status: nextStatus },
       correlationId,
     });
     return loadInvoice(client, invoiceId);
@@ -529,7 +591,10 @@ export async function approveSalesInvoice(
   requirePermission(context, 'sales.invoice.supervisor_approve');
   const company = companyFrom(context);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-    const invoice = await assertInvoiceReadable(client, context, invoiceId);
+    const invoice = await assertInvoiceReadable(client, context, invoiceId, true);
+    if (!invoice.sales_approval_required) {
+      throw new AppError(409, 'sales_approval_not_required', 'Supervisor approval is disabled for this Invoice.');
+    }
     if (invoice.status !== 'awaiting_supervisor_approval') {
       throw new AppError(409, 'invoice_not_awaiting_supervisor', 'Invoice is not awaiting supervisor approval.');
     }
@@ -553,30 +618,33 @@ export async function approveSalesInvoice(
 }
 
 async function deriveInvoicePaymentState(client: PoolClient, invoiceId: string): Promise<{
-  status: string; paymentStatus: string; approvedAmount: number; exactPaid: boolean;
+  status: string; paymentStatus: string; approvedAmount: string; exactPaid: boolean;
 }> {
-  const invoice = await client.query<{ final_amount: string; supervisor_approved_at: Date | null; status: string }>(`
-    SELECT final_amount, supervisor_approved_at, status FROM sales_invoices WHERE id = $1 FOR UPDATE
+  const invoice = await client.query<{
+    final_amount: string; supervisor_approved_at: Date | null; status: string; sales_approval_required: boolean;
+  }>(`
+    SELECT final_amount, supervisor_approved_at, status, sales_approval_required
+    FROM sales_invoices WHERE id = $1 FOR UPDATE
   `, [invoiceId]);
   const row = invoice.rows[0];
   if (!row) throw new AppError(404, 'sales_invoice_not_found', 'Sales Invoice was not found.');
   const totals = await client.query<{
-    approved: string; declared_count: string; correction_count: string;
+    approved: string; submitted_count: string; correction_count: string;
   }>(`
     SELECT COALESCE(sum(amount) FILTER (WHERE status = 'approved'), 0)::text AS approved,
-      count(*) FILTER (WHERE status = 'declared')::text AS declared_count,
+      count(*) FILTER (WHERE status = 'submitted')::text AS submitted_count,
       count(*) FILTER (WHERE status = 'needs_correction')::text AS correction_count
     FROM sales_payments WHERE invoice_id = $1
   `, [invoiceId]);
-  const approvedAmount = Number(totals.rows[0]?.approved ?? 0);
-  const finalAmount = Number(row.final_amount);
-  const hasDeclared = Number(totals.rows[0]?.declared_count ?? 0) > 0;
+  const approvedAmount = BigInt(totals.rows[0]?.approved ?? '0');
+  const finalAmount = BigInt(row.final_amount);
+  const hasSubmitted = Number(totals.rows[0]?.submitted_count ?? 0) > 0;
   const hasCorrection = Number(totals.rows[0]?.correction_count ?? 0) > 0;
   let status = 'awaiting_payment';
   let paymentStatus = 'unpaid';
-  if (!row.supervisor_approved_at) status = 'awaiting_supervisor_approval';
+  if (row.sales_approval_required && !row.supervisor_approved_at) status = 'awaiting_supervisor_approval';
   else if (hasCorrection) { status = 'payment_correction_required'; paymentStatus = 'correction_required'; }
-  else if (hasDeclared) { status = 'awaiting_financial_review'; paymentStatus = 'declared'; }
+  else if (hasSubmitted) { status = 'awaiting_financial_review'; paymentStatus = 'submitted'; }
   else if (approvedAmount > finalAmount) { status = 'overpayment_hold'; paymentStatus = 'overpaid'; }
   else if (approvedAmount === finalAmount) { status = 'financially_approved'; paymentStatus = 'paid'; }
   else if (approvedAmount > 0) { status = 'partially_paid'; paymentStatus = 'partial'; }
@@ -588,7 +656,7 @@ async function deriveInvoicePaymentState(client: PoolClient, invoiceId: string):
     UPDATE sales_invoice_lines SET fulfillment_status = CASE WHEN $3 THEN 'eligible' ELSE 'blocked_by_payment' END
     WHERE invoice_id = $1 AND invoice_revision = $2 AND fulfillment_status IN ('blocked_by_payment', 'eligible')
   `, [invoiceId, (await client.query<{ revision: number }>('SELECT revision FROM sales_invoices WHERE id = $1', [invoiceId])).rows[0]?.revision, exactPaid]);
-  return { status, paymentStatus, approvedAmount, exactPaid };
+  return { status, paymentStatus, approvedAmount: approvedAmount.toString(), exactPaid };
 }
 
 export async function recordSalesPayment(
@@ -601,14 +669,17 @@ export async function recordSalesPayment(
 ): Promise<SalesInvoiceView> {
   requirePermission(context, 'sales.payment.record');
   const company = companyFrom(context);
+  const amount = parseRial(input.amount, { positive: true, field: 'Payment amount' }).toString();
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-    const invoice = await assertInvoiceReadable(client, context, invoiceId);
+    await lockIdempotencyKey(client, 'sales.payment', idempotencyKey);
+    const invoice = await assertInvoiceReadable(client, context, invoiceId, true);
     const repeated = await client.query<{ invoice_id: string }>('SELECT invoice_id FROM sales_payments WHERE idempotency_key = $1', [idempotencyKey]);
     if (repeated.rows[0]) {
       if (repeated.rows[0].invoice_id !== invoiceId) throw new AppError(409, 'idempotency_key_reused', 'Idempotency key belongs to another Payment.');
       return loadInvoice(client, invoice);
     }
-    if (!invoice.supervisor_approved_at || ['cancelled', 'cancellation_requested', 'financially_approved'].includes(invoice.status)) {
+    if ((invoice.sales_approval_required && !invoice.supervisor_approved_at)
+      || ['cancelled', 'cancellation_requested', 'financially_approved'].includes(invoice.status)) {
       throw new AppError(409, 'payment_recording_blocked', 'Payment cannot be recorded in the current Invoice state.');
     }
     const policy = await client.query<{ is_enabled: boolean; manual_review_required: boolean }>(`
@@ -637,12 +708,14 @@ export async function recordSalesPayment(
       INSERT INTO sales_payments(
         id, workspace_id, company_id, invoice_id, amount, payment_method, occurred_at,
         last_four_digits, destination_account_id, tracking_number, receipt_reference,
-        recorded_by_user_account_id, corrects_payment_id, idempotency_key
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        recorded_by_user_account_id, creator_actor_user_account_id,
+        creator_effective_user_account_id, corrects_payment_id, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     `, [
-      paymentId, context.workspace.id, company.id, invoiceId, input.amount, input.paymentMethod,
+      paymentId, context.workspace.id, company.id, invoiceId, amount, input.paymentMethod,
       input.occurredAt, input.lastFourDigits ?? null, input.destinationAccountId, input.trackingNumber,
-      input.receiptReference ?? null, session.userAccountId, input.correctsPaymentId ?? null, idempotencyKey,
+      input.receiptReference ?? null, session.userAccountId, session.actorUserAccountId,
+      session.userAccountId, input.correctsPaymentId ?? null, idempotencyKey,
     ]);
     if (input.correctsPaymentId) {
       await client.query(`
@@ -652,17 +725,19 @@ export async function recordSalesPayment(
     }
     const derived = await deriveInvoicePaymentState(client, invoiceId);
     await appendInvoiceEvent(client, context, session, invoiceId, 'payment_recorded', correlationId, {
-      newState: { paymentId, amount: input.amount, method: input.paymentMethod, invoiceStatus: derived.status },
+      newState: { paymentId, amount, method: input.paymentMethod, invoiceStatus: derived.status },
     });
     await client.query(`
       INSERT INTO customer_timeline_events(
         workspace_id, company_id, customer_id, actor_user_account_id, event_type, summary, metadata
       ) VALUES ($1, $2, $3, $4, 'sales_payment_recorded', 'Payment declared for Sales Invoice.', $5)
-    `, [context.workspace.id, company.id, invoice.customer_id, session.userAccountId, JSON.stringify({ invoiceId, paymentId, amount: input.amount })]);
+    `, [context.workspace.id, company.id, invoice.customer_id, session.userAccountId, JSON.stringify({ invoiceId, paymentId, amount })]);
     await appendAuditEntry(client, {
       workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'sales.payment.recorded', resourceType: 'sales_payment', resourceId: paymentId,
-      result: 'success', newState: { invoiceId, amount: input.amount, method: input.paymentMethod,
+      result: 'success', newState: { invoiceId, amount, method: input.paymentMethod,
+        creatorActorUserAccountId: session.actorUserAccountId,
+        creatorEffectiveUserAccountId: session.userAccountId,
         correctsPaymentId: input.correctsPaymentId ?? null }, correlationId,
     });
     return loadInvoice(client, invoiceId);
@@ -678,21 +753,43 @@ export async function reviewSalesPayment(
   correlationId: string,
 ): Promise<SalesInvoiceView> {
   requirePermission(context, 'sales.payment.review');
+  if (session.impersonationId) {
+    throw new AppError(403, 'financial_review_impersonation_forbidden', 'Financial Review is forbidden during impersonation.');
+  }
   const company = companyFrom(context);
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-    const invoice = await assertInvoiceReadable(client, context, invoiceId);
-    const payment = await client.query<{ id: string; status: string; recorded_by_user_account_id: string; amount: string }>(`
-      SELECT id, status, recorded_by_user_account_id, amount FROM sales_payments
+    const invoice = await assertInvoiceReadable(client, context, invoiceId, true);
+    const payment = await client.query<{
+      id: string; status: string; recorded_by_user_account_id: string; amount: string;
+      creator_actor_user_account_id: string; creator_effective_user_account_id: string;
+    }>(`
+      SELECT id, status, recorded_by_user_account_id, amount,
+        creator_actor_user_account_id, creator_effective_user_account_id
+      FROM sales_payments
       WHERE id = $1 AND invoice_id = $2 FOR UPDATE
     `, [paymentId, invoiceId]);
     const previous = payment.rows[0];
     if (!previous) throw new AppError(404, 'sales_payment_not_found', 'Payment was not found on this Invoice.');
-    if (previous.status !== 'declared') throw new AppError(409, 'payment_already_reviewed', 'Only a declared Payment can be reviewed.');
-    if (previous.recorded_by_user_account_id === session.userAccountId) {
-      throw new AppError(409, 'payment_self_review_denied', 'Payment recorder cannot review the same Payment.');
+    if (previous.status !== 'submitted') throw new AppError(409, 'payment_already_reviewed', 'Only a submitted Payment can be reviewed.');
+    const creatorIdentities = new Set([
+      previous.recorded_by_user_account_id,
+      previous.creator_actor_user_account_id,
+      previous.creator_effective_user_account_id,
+    ]);
+    if (creatorIdentities.has(session.actorUserAccountId) || creatorIdentities.has(session.userAccountId)) {
+      throw new AppError(409, 'payment_self_review_denied', 'A Payment creator identity cannot review the same Payment.');
     }
     if (input.decision !== 'approved' && (!input.reason || input.reason.trim().length < 3)) {
       throw new AppError(400, 'payment_review_reason_required', 'A reason is required when Payment is not approved.');
+    }
+    if (input.decision === 'approved') {
+      const totals = await client.query<{ approved: string }>(`
+        SELECT COALESCE(sum(amount) FILTER (WHERE status = 'approved'), 0)::text AS approved
+        FROM sales_payments WHERE invoice_id = $1
+      `, [invoiceId]);
+      if (BigInt(totals.rows[0]?.approved ?? '0') + BigInt(previous.amount) > BigInt(invoice.final_amount)) {
+        throw new AppError(409, 'payment_overpayment_denied', 'Approving this Payment would exceed the Invoice total.');
+      }
     }
     await client.query(`
       UPDATE sales_payments SET status = $2, reviewed_by_user_account_id = $3, reviewed_at = now(),
@@ -733,25 +830,147 @@ export async function reviewSalesPayment(
 
 export async function getPaymentInfrastructure(context: MembershipContext) {
   const company = companyFrom(context);
-  if (!hasPermission(context, 'sales.payment.record') && !hasPermission(context, 'sales.payment.infrastructure.manage')) {
+  const canManage = hasPermission(context, 'sales.payment.infrastructure.manage');
+  if (!hasPermission(context, 'sales.payment.record') && !canManage) {
     throw new AppError(403, 'permission_denied', 'Payment infrastructure permission is required.');
   }
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
-    const accounts = await client.query<{ id: string; display_name: string; bank_name: string; card_number: string | null }>(`
+    const accounts = await client.query<{
+      id: string; display_name: string; bank_name: string; masked_reference: string | null; is_active: boolean;
+    }>(`
         SELECT id, display_name, bank_name,
-          CASE WHEN card_number IS NULL THEN NULL ELSE right(card_number, 4) END AS card_number
-        FROM financial_accounts WHERE is_active = true ORDER BY display_name
-      `);
+          COALESCE(masked_reference,
+            CASE WHEN card_number IS NULL THEN NULL ELSE '•••• ' || right(card_number, 4) END,
+            CASE WHEN iban IS NULL THEN NULL ELSE '•••• ' || right(iban, 4) END,
+            CASE WHEN account_number IS NULL THEN NULL ELSE '•••• ' || right(account_number, 4) END
+          ) AS masked_reference,
+          is_active
+        FROM financial_accounts WHERE ($1::boolean OR is_active = true) ORDER BY is_active DESC, display_name
+      `, [canManage]);
     const gateways = await client.query<{ id: string; name: string; provider_code: string; settlement_account_id: string }>(`
         SELECT id, name, provider_code, settlement_account_id FROM payment_gateways WHERE is_active = true ORDER BY name
       `);
     const policies = await client.query<{ payment_method: PaymentMethod; is_enabled: boolean; manual_review_required: boolean }>(`
         SELECT payment_method, is_enabled, manual_review_required FROM sales_payment_method_policies ORDER BY payment_method
       `);
+    const approvalPolicy = await client.query<{ supervisor_approval_required: boolean }>(`
+      SELECT supervisor_approval_required FROM sales_invoice_policies
+      WHERE workspace_id = $1 AND company_id = $2
+    `, [context.workspace.id, company.id]);
     return {
-      accounts: accounts.rows.map((row) => ({ id: row.id, name: row.display_name, bankName: row.bank_name, cardLastFour: row.card_number })),
+      accounts: accounts.rows.map((row) => ({
+        id: row.id, name: row.display_name, bankName: row.bank_name,
+        maskedReference: row.masked_reference, active: row.is_active,
+      })),
       gateways: gateways.rows.map((row) => ({ id: row.id, name: row.name, providerCode: row.provider_code, settlementAccountId: row.settlement_account_id })),
       policies: policies.rows.map((row) => ({ method: row.payment_method, enabled: row.is_enabled, manualReviewRequired: row.manual_review_required })),
+      salesApprovalPolicy: { supervisorApprovalRequired: approvalPolicy.rows[0]?.supervisor_approval_required ?? true },
     };
+  });
+}
+
+export async function createCollectionAccount(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  input: CollectionAccountInput,
+  correlationId: string,
+) {
+  requirePermission(context, 'sales.payment.infrastructure.manage');
+  const company = companyFrom(context);
+  return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    const result = await client.query<{
+      id: string; display_name: string; bank_name: string; masked_reference: string; is_active: boolean;
+    }>(`
+      INSERT INTO financial_accounts(workspace_id, company_id, display_name, bank_name, masked_reference, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, display_name, bank_name, masked_reference, is_active
+    `, [context.workspace.id, company.id, input.displayName, input.bankName, input.maskedReference, input.isActive ?? true]);
+    const account = result.rows[0]!;
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
+      action: 'sales.collection_account.created', resourceType: 'financial_account', resourceId: account.id,
+      result: 'success', newState: {
+        displayName: account.display_name, bankName: account.bank_name,
+        maskedReference: account.masked_reference, active: account.is_active,
+      }, correlationId,
+    });
+    return {
+      id: account.id, name: account.display_name, bankName: account.bank_name,
+      maskedReference: account.masked_reference, active: account.is_active,
+    };
+  });
+}
+
+export async function updateCollectionAccount(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  accountId: string,
+  input: CollectionAccountInput,
+  correlationId: string,
+) {
+  requirePermission(context, 'sales.payment.infrastructure.manage');
+  const company = companyFrom(context);
+  return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    const previous = await client.query<{
+      display_name: string; bank_name: string; masked_reference: string | null; is_active: boolean;
+    }>('SELECT display_name, bank_name, masked_reference, is_active FROM financial_accounts WHERE id = $1', [accountId]);
+    if (!previous.rows[0]) throw new AppError(404, 'collection_account_not_found', 'Collection Account was not found.');
+    const result = await client.query<{
+      id: string; display_name: string; bank_name: string; masked_reference: string; is_active: boolean;
+    }>(`
+      UPDATE financial_accounts SET display_name = $2, bank_name = $3, masked_reference = $4,
+        is_active = $5, updated_at = now()
+      WHERE id = $1
+      RETURNING id, display_name, bank_name, masked_reference, is_active
+    `, [accountId, input.displayName, input.bankName, input.maskedReference, input.isActive ?? true]);
+    const account = result.rows[0]!;
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
+      action: 'sales.collection_account.updated', resourceType: 'financial_account', resourceId: account.id,
+      result: 'success', previousState: {
+        displayName: previous.rows[0].display_name, bankName: previous.rows[0].bank_name,
+        maskedReference: previous.rows[0].masked_reference, active: previous.rows[0].is_active,
+      }, newState: {
+        displayName: account.display_name, bankName: account.bank_name,
+        maskedReference: account.masked_reference, active: account.is_active,
+      }, correlationId,
+    });
+    return {
+      id: account.id, name: account.display_name, bankName: account.bank_name,
+      maskedReference: account.masked_reference, active: account.is_active,
+    };
+  });
+}
+
+export async function updateSalesApprovalPolicy(
+  context: MembershipContext,
+  session: AuthenticatedSession,
+  supervisorApprovalRequired: boolean,
+  correlationId: string,
+) {
+  requirePermission(context, 'sales.payment.infrastructure.manage');
+  const company = companyFrom(context);
+  return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    const previous = await client.query<{ supervisor_approval_required: boolean }>(`
+      SELECT supervisor_approval_required FROM sales_invoice_policies
+      WHERE workspace_id = $1 AND company_id = $2 FOR UPDATE
+    `, [context.workspace.id, company.id]);
+    const previousRequired = previous.rows[0]?.supervisor_approval_required ?? true;
+    await client.query(`
+      INSERT INTO sales_invoice_policies(
+        workspace_id, company_id, supervisor_approval_required, updated_by_user_account_id, updated_at
+      ) VALUES ($1, $2, $3, $4, now())
+      ON CONFLICT (workspace_id, company_id) DO UPDATE SET
+        supervisor_approval_required = EXCLUDED.supervisor_approval_required,
+        updated_by_user_account_id = EXCLUDED.updated_by_user_account_id,
+        updated_at = now()
+    `, [context.workspace.id, company.id, supervisorApprovalRequired, session.userAccountId]);
+    await appendAuditEntry(client, {
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
+      action: 'sales.invoice_approval_policy.updated', resourceType: 'sales_invoice_policy', resourceId: company.id,
+      result: 'success', previousState: { supervisorApprovalRequired: previousRequired },
+      newState: { supervisorApprovalRequired }, correlationId,
+    });
+    return { supervisorApprovalRequired };
   });
 }

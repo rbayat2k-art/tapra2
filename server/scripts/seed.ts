@@ -166,11 +166,11 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('sales.invoice.read_all', 'Read all Sales Invoices in the active Company'),
         ('sales.invoice.supervisor_approve', 'Approve a Sales Invoice before financial review'),
         ('sales.payment.record', 'Record a Customer Payment declaration for a Sales Invoice'),
-        ('sales.payment.review', 'Approve, reject or return an individual Sales Payment'),
+        ('sales.payment.review', 'Approve or return an individual Sales Payment'),
         ('sales.invoice.edit_draft', 'Edit a draft Sales Invoice before approval'),
         ('sales.invoice.correct_returned', 'Correct a returned Sales Invoice with a new revision'),
         ('sales.invoice.amend', 'Amend an approved Sales Invoice with a new audited revision'),
-        ('sales.payment.infrastructure.manage', 'Manage Company Financial Accounts and Payment Gateways'),
+        ('sales.payment.infrastructure.manage', 'Manage Company collection accounts and Sales approval policy'),
         ('organization.read', 'Read the permitted Organization structure and access assignments'),
         ('organization.company.manage', 'Create and update Companies in the permitted scope'),
         ('organization.unit.manage', 'Create and update Organization units'),
@@ -304,8 +304,8 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
             bank_name = EXCLUDED.bank_name, card_number = EXCLUDED.card_number, is_active = true
         `, [
           context.companyId === ids.companyAlpha ? ids.financialAccountAlpha : ids.financialAccountBeta,
-          context.workspaceId, context.companyId, 'Development settlement account',
-          'Development Bank', context.companyId === ids.companyAlpha ? '0000000000001111' : '0000000000002222',
+          context.workspaceId, context.companyId, 'حساب تسویه توسعه',
+          'بانک توسعه', context.companyId === ids.companyAlpha ? '0000000000001111' : '0000000000002222',
         ]);
         await runtime.query(`
           INSERT INTO sales_payment_method_policies(

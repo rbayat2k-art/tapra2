@@ -175,6 +175,34 @@ export async function createCompany(mutation: MutationContext, input: CompanyInp
         VALUES ($1, upper($2), $3, $4, $5) RETURNING id, code, name, description, is_active AS "isActive"
       `, [mutation.context.workspace.id, input.code, input.name, input.description ?? null, input.isActive ?? true]);
       const company = result.rows[0];
+      // Company-scoped Sales configuration is provisioned atomically with the Company.
+      // The transaction starts at Workspace scope, so use the new Company context only
+      // for the RLS-protected defaults and restore Workspace scope before auditing.
+      await client.query("SELECT set_config('app.company_id', $1, true)", [company.id]);
+      await client.query(`
+        INSERT INTO sales_policies(workspace_id, company_id) VALUES ($1, $2)
+        ON CONFLICT (workspace_id, company_id) DO NOTHING
+      `, [mutation.context.workspace.id, company.id]);
+      await client.query(`
+        INSERT INTO sales_payment_method_policies(
+          workspace_id, company_id, payment_method, is_enabled, manual_review_required
+        )
+        SELECT $1, $2, defaults.payment_method, defaults.is_enabled, defaults.manual_review_required
+        FROM (VALUES
+          ('card_to_card', true, true),
+          ('bank_transfer', true, true),
+          ('payment_gateway', true, false),
+          ('cash', false, true),
+          ('cheque', false, true),
+          ('cod', false, true)
+        ) AS defaults(payment_method, is_enabled, manual_review_required)
+        ON CONFLICT (workspace_id, company_id, payment_method) DO NOTHING
+      `, [mutation.context.workspace.id, company.id]);
+      await client.query(`
+        INSERT INTO sales_invoice_policies(workspace_id, company_id)
+        VALUES ($1, $2) ON CONFLICT (workspace_id, company_id) DO NOTHING
+      `, [mutation.context.workspace.id, company.id]);
+      await client.query("SELECT set_config('app.company_id', '', true)");
       await audit(client, mutation, { action: 'organization.company.created', resourceType: 'company', resourceId: company.id, newState: company });
       return company;
     });

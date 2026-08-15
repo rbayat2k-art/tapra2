@@ -1,4 +1,4 @@
-import { query } from '../../infrastructure/database/pool.js';
+import { query, withWorkspaceTransaction } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
 import type { MembershipContext, OrganizationScopeType, SessionView } from '../identity/types.js';
 
@@ -21,6 +21,7 @@ interface CompanyRow {
 }
 
 interface AssignmentRow {
+  workspace_id: string;
   membership_id: string;
   role_id: string;
   role_code: string;
@@ -78,9 +79,9 @@ export async function getMembershipContexts(userAccountId: string): Promise<Memb
   `, [userAccountId]);
 
   const assignmentsResult = await query<AssignmentRow>(`
-    SELECT assignment.membership_id, role.id AS role_id, role.code AS role_code, role.name AS role_name,
+    SELECT assignment.workspace_id, assignment.membership_id, role.id AS role_id, role.code AS role_code, role.name AS role_name,
       assignment.scope_type, assignment.company_id, assignment.organization_unit_id,
-      unit.unit_type, unit.name AS unit_name, unit.code AS unit_code,
+      NULL::text AS unit_type, NULL::text AS unit_name, NULL::text AS unit_code,
       COALESCE(array_agg(DISTINCT permission.code) FILTER (WHERE permission.code IS NOT NULL), '{}') AS permissions
     FROM user_accounts account
     JOIN memberships membership ON membership.person_id = account.person_id
@@ -89,20 +90,33 @@ export async function getMembershipContexts(userAccountId: string): Promise<Memb
     JOIN roles role ON role.id = assignment.role_id AND role.workspace_id = assignment.workspace_id
     LEFT JOIN role_permissions role_permission ON role_permission.role_id = role.id
     LEFT JOIN permissions permission ON permission.code = role_permission.permission_code
-    LEFT JOIN organization_units unit ON unit.id = assignment.organization_unit_id
-      AND unit.workspace_id = assignment.workspace_id AND unit.is_active = true
     WHERE account.id = $1 AND membership.status = 'active' AND role.is_active = true
       AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
-    GROUP BY assignment.membership_id, role.id, role.code, role.name, assignment.scope_type,
-      assignment.company_id, assignment.organization_unit_id, unit.unit_type, unit.name, unit.code
+    GROUP BY assignment.workspace_id, assignment.membership_id, role.id, role.code, role.name,
+      assignment.scope_type, assignment.company_id, assignment.organization_unit_id
   `, [userAccountId]);
+
+  const unitsById = new Map<string, { type: 'BRANCH' | 'DEPARTMENT' | 'TEAM'; name: string; code: string }>();
+  for (const workspaceId of new Set(membershipsResult.rows.map((membership) => membership.workspace_id))) {
+    const units = await withWorkspaceTransaction({ workspaceId, companyId: null }, async (client) => client.query<{
+      id: string; unit_type: 'BRANCH' | 'DEPARTMENT' | 'TEAM'; name: string; code: string;
+    }>(`
+      SELECT id, unit_type, name, code FROM organization_units
+      WHERE workspace_id = $1 AND is_active = true AND unit_type IN ('BRANCH', 'DEPARTMENT', 'TEAM')
+    `, [workspaceId]));
+    for (const unit of units.rows) unitsById.set(unit.id, { type: unit.unit_type, name: unit.name, code: unit.code });
+  }
 
   const companiesByWorkspace = new Map<string, CompanyRow[]>();
   for (const company of companiesResult.rows) {
     companiesByWorkspace.set(company.workspace_id, [...(companiesByWorkspace.get(company.workspace_id) ?? []), company]);
   }
   const assignmentsByMembership = new Map<string, AssignmentRow[]>();
-  for (const assignment of assignmentsResult.rows) {
+  for (const rawAssignment of assignmentsResult.rows) {
+    const unit = rawAssignment.organization_unit_id ? unitsById.get(rawAssignment.organization_unit_id) : undefined;
+    const assignment: AssignmentRow = unit ? {
+      ...rawAssignment, unit_type: unit.type, unit_name: unit.name, unit_code: unit.code,
+    } : rawAssignment;
     assignmentsByMembership.set(assignment.membership_id, [
       ...(assignmentsByMembership.get(assignment.membership_id) ?? []), assignment,
     ]);
