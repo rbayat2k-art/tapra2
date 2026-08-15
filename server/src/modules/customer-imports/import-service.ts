@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { withTenantTransaction } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
-import { appendAuditEntry } from '../audit/audit-service.js';
+import { appendAuditEntry, auditIdentity } from '../audit/audit-service.js';
 import {
   createImportedCustomerWithinTransaction,
   linkImportedSourceWithinTransaction,
@@ -371,7 +371,7 @@ export async function stageCustomerImport(
       recordIds.push(inserted.rows[0]!.id);
     }
     await appendAuditEntry(client, {
-      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'customer_import.staged', resourceType: 'CustomerImportJob', resourceId: job.rows[0]!.id,
       result: 'success', newState: { fileName: input.fileName, fileSha256, totalRows: prepared.length, counts },
       correlationId: input.correlationId,
@@ -415,7 +415,7 @@ export async function applySafeImportDecisions(
     `, [session.userAccountId, jobId]);
     await client.query(`UPDATE customer_import_jobs SET status = 'in_review' WHERE id = $1`, [jobId]);
     await appendAuditEntry(client, {
-      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'customer_import.safe_decisions_applied', resourceType: 'CustomerImportJob', resourceId: jobId,
       result: 'success', correlationId,
     });
@@ -456,7 +456,7 @@ export async function decideImportRecord(
     `, [input.action, input.targetCustomerId ?? null, input.targetRecordId ?? null, session.userAccountId, input.recordId]);
     await client.query(`UPDATE customer_import_jobs SET status = 'in_review' WHERE id = $1`, [input.jobId]);
     await appendAuditEntry(client, {
-      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'customer_import.record_decided', resourceType: 'CustomerImportRecord', resourceId: input.recordId,
       result: 'success', previousState: { action: record.decided_action },
       newState: { action: input.action, targetCustomerId: input.targetCustomerId, targetRecordId: input.targetRecordId },
@@ -522,7 +522,7 @@ export async function approveCustomerImport(
         UPDATE customer_import_records SET applied_customer_id = $1, applied_at = now() WHERE id = $2
       `, [customerId, record.id]);
       await appendAuditEntry(client, {
-        workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+        workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
         action: `customer_import.${action.toLowerCase()}`, resourceType: 'CustomerImportRecord', resourceId: record.id,
         result: 'success', newState: { action, customerId }, correlationId,
       });
@@ -535,7 +535,7 @@ export async function approveCustomerImport(
       WHERE id = $2
     `, [session.userAccountId, jobId, approvedRows, rejectedRows]);
     await appendAuditEntry(client, {
-      workspaceId: context.workspace.id, companyId: company.id, actorUserAccountId: session.userAccountId,
+      workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
       action: 'customer_import.approved', resourceType: 'CustomerImportJob', resourceId: jobId,
       result: 'success', newState: { status: 'approved', totalRows: records.length }, correlationId,
     });

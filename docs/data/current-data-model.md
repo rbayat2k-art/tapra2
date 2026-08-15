@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-15 against `agent/organization-access-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -15,17 +15,22 @@
 
 | مرز | موجودیت‌ها |
 |---|---|
-| Organization | `workspaces`, `companies` |
+| Organization | `workspaces`, `companies`, `organization_units` برای `BRANCH`، `DEPARTMENT`، `TEAM` و `SHARED_SERVICE` |
 | Identity | `persons`, `user_accounts`, `sessions` |
-| Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` |
+| Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` و `legacy_role_mappings` |
 | Workspace identity | `customer_identities` و `customer_identity_phones` برای هویت/شماره مرکزی و یکتا در Workspace |
 | Company relationship | `customers` رابطه Company با identity؛ `customer_phones` و `customer_addresses` observation و داده عملیاتی Company |
 | Provenance | `customer_sources` برای منبع، reference، زمان مشاهده/ورود، confidence و verification foundation |
 | Customer history | `customer_timeline_events` برای eventهای server-generated اجراشده |
 | Identity reconciliation | `customer_merge_operations` برای merge دارای lineage و unmerge واقعی بدون حذف profile بازنده |
-| Audit | `audit_entries` با actor، context، action، resource و correlation |
+| Impersonation | `session_impersonations` برای نمای زمان‌دار، دلیل، actor/target context و پایان نشست |
+| Audit | `audit_entries` با actor واقعی، user مؤثر، impersonation، context، action، resource و correlation |
 
 شناسه‌ها UUID، زمان‌ها `timestamptz` و ارتباط‌های اصلی با foreign key محافظت می‌شوند. همه جدول‌های Customer 360 و AuditEntry دارای PostgreSQL RLS اجباری هستند.
+
+`Company` واحد تجاری/حقوقی است. `Shared Service` شرکت مصنوعی نیست و به‌صورت `organization_units.unit_type = 'SHARED_SERVICE'` با `company_id = NULL` در سطح Workspace ثبت می‌شود. واحدهای `BRANCH`، `DEPARTMENT` و `TEAM` به Company تعلق دارند و می‌توانند parent داشته باشند.
+
+یک `UserAccount` می‌تواند از طریق چند `Membership` و چند `role_assignment` در Scopeهای `WORKSPACE`، `COMPANY`، `BRANCH`، `DEPARTMENT`، `TEAM` و `SELF` نقش متفاوت داشته باشد. assignment قدیمی بدون Scope هنگام migration بر اساس Company عضویت به Scope سازگار تبدیل می‌شود؛ assignment جدید Scope صریح دارد. Session، context فعال را با `membership + scope type + scope id` نگه می‌دارد، نه فقط Company.
 
 شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و `customer_identity_phones` مانع تعلق بی‌صدای یک phone به دو identity در همان Workspace است. یک identity می‌تواند برای چند Company رابطه جدا داشته باشد، اما هر Company فقط relationship و داده عملیاتی context خود را از طریق RLS می‌بیند. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
 

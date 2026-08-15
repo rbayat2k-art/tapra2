@@ -10,11 +10,17 @@ const users: User[] = [{
 
 function session(email: string, permissions: string[]): FoundationSession {
   return {
-    user: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
+    user: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email, requiresPasswordChange: false },
+    actor: { id: 'server-user', personId: 'person', fullName: 'کاربر سرور', email },
+    impersonation: null,
     memberships: [], csrfToken: 'csrf',
     activeContext: {
       membershipId: 'membership', workspace: { id: 'workspace', name: 'فضای کاری', slug: 'workspace' },
       company: { id: 'company', name: 'شرکت', code: 'COMPANY' }, permissions,
+      organizationUnit: null,
+      scope: { type: 'COMPANY', id: 'company' },
+      contextKey: 'membership:COMPANY:company',
+      roles: [],
     },
   };
 }
@@ -35,5 +41,13 @@ describe('legacy shell identity adapter', () => {
     const user = resolveLegacyShellUser(session('legacy@example.test', []), users);
     expect(user.id).toBe('legacy-admin');
     expect(user.fullName).toBe('کاربر سرور');
+  });
+
+  it('routes server Organization managers to the matching shell navigation only', () => {
+    const user = resolveLegacyShellUser(session('organization@tapra.local', [
+      'organization.company.manage', 'organization.user.manage', 'organization.role.manage',
+    ]), users);
+    expect(user.customPermissions).toEqual(expect.arrayContaining(['manage_companies', 'manage_users', 'manage_roles']));
+    expect(user.customPermissions).not.toContain('view_all_requests');
   });
 });

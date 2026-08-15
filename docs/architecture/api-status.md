@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-15 against `agent/organization-access-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -15,7 +15,17 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/auth/login` | احراز هویت و ایجاد session |
 | `GET` | `/api/v1/auth/session` | دریافت user، membershipها، context و permissionها |
 | `POST` | `/api/v1/auth/logout` | پایان session؛ نیازمند CSRF |
-| `POST` | `/api/v1/session/context` | انتخاب membership مجاز؛ نیازمند CSRF |
+| `POST` | `/api/v1/auth/password` | جایگزینی اجباری credential موقت و باطل‌کردن sessionهای دیگر همان UserAccount؛ نیازمند CSRF |
+| `POST` | `/api/v1/session/context` | انتخاب membership و Scope مجاز؛ نیازمند CSRF |
+| `GET` | `/api/v1/organization` | نمای Organization مجاز شامل Company، unit، User، Membership، Role/Scope و mapping legacy |
+| `POST`, `PUT` | `/api/v1/organization/companies[/:companyId]` | ایجاد/ویرایش/فعال‌غیرفعال‌سازی Company با Scope و Audit |
+| `POST`, `PUT` | `/api/v1/organization/units[/:unitId]` | مدیریت Branch/Department/Team/Shared Service |
+| `POST`, `PATCH` | `/api/v1/organization/users[/:userAccountId/status]` | ایجاد UserAccount با credential موقت یک‌بارمصرف نمایشی و تغییر وضعیت |
+| `POST`, `PATCH` | `/api/v1/organization/memberships[/:membershipId/status]` | ایجاد Workspace/Company Membership و تغییر وضعیت |
+| `POST` | `/api/v1/organization/roles` | ایجاد Role با Permissionهای server |
+| `POST`, `DELETE` | `/api/v1/organization/role-assignments[/:assignmentId]` | تخصیص یا لغو Role در Scope صریح |
+| `POST` | `/api/v1/impersonation/start` | شروع ورود زمان‌دار به نمای User با reason اجباری و Permission intersection |
+| `POST` | `/api/v1/impersonation/stop` | پایان Impersonation و بازگشت به Actor اصلی |
 | `GET` | `/api/v1/customers` | فهرست Customerهای context فعال |
 | `GET` | `/api/v1/customers/:customerId` | خواندن profile شامل phone، address، source، timeline و merge history |
 | `GET` | `/api/v1/customers/:customerId/timeline` | خواندن timeline مجاز Customer |
@@ -40,6 +50,8 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
 - Customer routeها به active Workspace/Company و permission متناسب نیاز دارند. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
+- mutationهای Organization فقط در Workspace/Company/Unit مجاز اجرا می‌شوند؛ Shared Service فقط Workspace-scoped است.
+- Impersonation حداکثر ۳۰ دقیقه است، Password هدف را دریافت نمی‌کند و Permission مؤثر را به اشتراک Actor و target محدود می‌کند.
 - خطاها JSON با `error.code`, `error.message` و `correlationId` برمی‌گردند.
 - endpointهای فهرست‌شده contract کامل platform نیستند و pagination عمومی هنوز اجرا نشده است.
 - merge winner از profile قدیمی‌تر و سپس UUID به‌صورت deterministic انتخاب می‌شود؛ client نمی‌تواند canonical را تحمیل کند.

@@ -1,14 +1,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { FoundationApiError, foundationApi } from '../api/client';
-import type { FoundationSession } from '../api/contracts';
+import type { FoundationMembership, FoundationSession } from '../api/contracts';
 
 interface FoundationSessionValue {
   session: FoundationSession | null;
   loading: boolean;
   error: string | null;
   login(email: string, password: string): Promise<void>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   logout(): Promise<void>;
-  selectContext(membershipId: string): Promise<void>;
+  selectContext(context: Pick<FoundationMembership, 'membershipId' | 'scope'>): Promise<void>;
+  refresh(): Promise<void>;
+  startImpersonation(input: Parameters<typeof foundationApi.startImpersonation>[0]): Promise<void>;
+  stopImpersonation(reason?: string): Promise<void>;
 }
 
 const SessionContext = createContext<FoundationSessionValue | null>(null);
@@ -55,11 +59,30 @@ export function FoundationSessionProvider({ children }: { children: React.ReactN
       setSession(null);
       setError(null);
     },
-    async selectContext(membershipId) {
+    async selectContext(context) {
       if (!session) return;
-      setSession(await foundationApi.selectContext(membershipId, session.csrfToken));
+      setSession(await foundationApi.selectContext(context, session.csrfToken));
     },
-  }), [error, loading, session]);
+    async changePassword(currentPassword, newPassword) {
+      if (!session) return;
+      setError(null);
+      try { setSession(await foundationApi.changePassword({ currentPassword, newPassword }, session.csrfToken)); }
+      catch (caught) {
+        const message = caught instanceof Error ? caught.message : 'تغییر رمز عبور انجام نشد.';
+        setError(message);
+        throw caught;
+      }
+    },
+    refresh,
+    async startImpersonation(input) {
+      if (!session) return;
+      setSession(await foundationApi.startImpersonation(input, session.csrfToken));
+    },
+    async stopImpersonation(reason = 'بازگشت به حساب مدیر') {
+      if (!session) return;
+      setSession(await foundationApi.stopImpersonation(reason, session.csrfToken));
+    },
+  }), [error, loading, refresh, session]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

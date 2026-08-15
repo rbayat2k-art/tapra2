@@ -12,13 +12,17 @@ import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '.
 
 interface SessionResponse {
   csrfToken: string;
+  user: { id: string; email: string; requiresPasswordChange: boolean };
+  actor: { id: string; email: string };
+  impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: Array<{
     membershipId: string;
     workspace: { id: string; slug: string };
     company: { id: string } | null;
+    scope: { type: 'WORKSPACE' | 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SELF'; id: string };
     permissions: string[];
   }>;
-  activeContext: null | { membershipId: string };
+  activeContext: null | { membershipId: string; permissions: string[] };
 }
 
 loadDotEnv({ path: '.env.local', quiet: true });
@@ -112,6 +116,34 @@ async function login(agent: ReturnType<typeof request.agent>, email: string, pas
   return response.body as SessionResponse;
 }
 
+async function activateTemporaryCredential(
+  agent: ReturnType<typeof request.agent>,
+  email: string,
+  temporaryPassword: string,
+): Promise<SessionResponse> {
+  const session = await login(agent, email, temporaryPassword);
+  expect(session.user.requiresPasswordChange).toBe(true);
+  const firstContext = session.memberships[0];
+  if (firstContext) {
+    await agent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', session.csrfToken)
+      .send({ membershipId: firstContext.membershipId, scopeType: firstContext.scope.type, scopeId: firstContext.scope.id })
+      .expect(403)
+      .expect(({ body }) => expect(body.error.code).toBe('password_change_required'));
+  }
+  const newPassword = `Activated!Aa9-${randomUUID()}`;
+  const changed = await agent
+    .post('/api/v1/auth/password')
+    .set('x-csrf-token', session.csrfToken)
+    .send({ currentPassword: temporaryPassword, newPassword })
+    .expect(200);
+  expect(changed.body.user.requiresPasswordChange).toBe(false);
+  await request(createApp()).post('/api/v1/auth/login').send({ email, password: temporaryPassword }).expect(401);
+  await request(createApp()).post('/api/v1/auth/login').send({ email, password: newPassword }).expect(200);
+  return changed.body as SessionResponse;
+}
+
 async function selectContext(
   agent: ReturnType<typeof request.agent>,
   session: SessionResponse,
@@ -122,7 +154,7 @@ async function selectContext(
   const response = await agent
     .post('/api/v1/session/context')
     .set('x-csrf-token', session.csrfToken)
-    .send({ membershipId: membership.membershipId })
+    .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
     .expect(200);
   return response.body as SessionResponse;
 }
@@ -175,7 +207,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
   it('authenticates, verifies membership, and requires an active context', async () => {
     const agent = request.agent(createApp());
     const session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
-    expect(session.memberships).toHaveLength(2);
+    expect(session.memberships.some((item) => item.company?.id)).toBe(true);
+    expect(session.memberships.some((item) => item.company === null)).toBe(true);
     expect(session.activeContext).toBeNull();
     await agent.get('/api/v1/customers').expect(409);
 
@@ -715,7 +748,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
       const response = await agent
         .post('/api/v1/session/context')
         .set('x-csrf-token', session.csrfToken)
-        .send({ membershipId: membership.membershipId })
+        .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
         .expect(200);
       session = response.body as SessionResponse;
     };
@@ -784,5 +817,244 @@ describe('Foundation Sprint 1 vertical slice', () => {
       await verifier.query('ROLLBACK').catch(() => undefined);
       await verifier.end();
     }
+  });
+
+  it('manages multi-Company Organization access with scoped Roles, Shared Services, RLS, and Audit', async () => {
+    const admin = request.agent(createApp());
+    let adminSession = await login(admin, 'demo@tapra.local', 'TapraDemo!2026');
+    const workspaceContext = adminSession.memberships.find((item) =>
+      item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
+    if (!workspaceContext) throw new Error('Workspace administrator context was not found.');
+    adminSession = (await admin
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: workspaceContext.membershipId, scopeType: workspaceContext.scope.type, scopeId: workspaceContext.scope.id })
+      .expect(200)).body as SessionResponse;
+
+    const company = await admin
+      .post('/api/v1/organization/companies')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ code: `MC${Date.now()}`, name: 'شرکت آزمون چندشرکتی', description: 'محدوده تست' })
+      .expect(201);
+    const sharedService = await admin
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ type: 'SHARED_SERVICE', code: `MIS${Date.now()}`, name: 'خدمات مشترک داده و MIS', serviceKind: 'MIS' })
+      .expect(201);
+    expect(sharedService.body.unit.companyId).toBeNull();
+    const branch = await admin
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ type: 'BRANCH', companyId: '20000000-0000-4000-8000-000000000001', code: `BR${Date.now()}`, name: 'شعبه آزمون Alpha' })
+      .expect(201);
+    expect(branch.body.unit.companyId).toBe('20000000-0000-4000-8000-000000000001');
+
+    const workspaceUser = await admin
+      .post('/api/v1/organization/users')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ fullName: 'مدیر داده مشترک', email: `shared-data-${Date.now()}@tapra.local` })
+      .expect(201);
+    expect(workspaceUser.body.temporaryPassword).toMatch(/^.{20,}$/);
+    const workspaceMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: workspaceUser.body.account.personId })
+      .expect(201);
+    expect(workspaceMembership.body.membership.companyId).toBeNull();
+    const sharedRole = await admin
+      .post('/api/v1/organization/roles')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({
+        code: `shared_data_${Date.now()}`, name: 'مدیر داده مشترک',
+        permissionCodes: ['organization.read', 'organization.unit.manage'],
+      })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: workspaceMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'WORKSPACE' })
+      .expect(201);
+
+    const sharedAgent = request.agent(createApp());
+    let sharedSession = await activateTemporaryCredential(sharedAgent, workspaceUser.body.account.email, workspaceUser.body.temporaryPassword);
+    const sharedWorkspaceContext = sharedSession.memberships.find((item) => item.scope.type === 'WORKSPACE');
+    if (!sharedWorkspaceContext) throw new Error('Workspace-level Membership did not produce a usable context.');
+    sharedSession = (await sharedAgent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', sharedSession.csrfToken)
+      .send({ membershipId: sharedWorkspaceContext.membershipId, scopeType: sharedWorkspaceContext.scope.type, scopeId: sharedWorkspaceContext.scope.id })
+      .expect(200)).body as SessionResponse;
+    const sharedView = await sharedAgent.get('/api/v1/organization').expect(200);
+    expect(sharedView.body.organization.companies.some((item: { id: string }) => item.id === company.body.company.id)).toBe(true);
+    expect(sharedView.body.organization.units.some((item: { id: string }) => item.id === sharedService.body.unit.id)).toBe(true);
+
+    const scopedUser = await admin
+      .post('/api/v1/organization/users')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ fullName: 'مدیر محدود شرکت', email: `company-manager-${Date.now()}@tapra.local` })
+      .expect(201);
+    const alphaMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: scopedUser.body.account.personId, companyId: '20000000-0000-4000-8000-000000000001' })
+      .expect(201);
+    const otherMembership = await admin
+      .post('/api/v1/organization/memberships')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ personId: scopedUser.body.account.personId, companyId: company.body.company.id })
+      .expect(201);
+    const viewerRole = await admin
+      .post('/api/v1/organization/roles')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ code: `viewer_${Date.now()}`, name: 'مشاهده‌گر', permissionCodes: ['organization.read'] })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: alphaMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'COMPANY', scopeId: '20000000-0000-4000-8000-000000000001' })
+      .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: otherMembership.body.membership.id, roleId: viewerRole.body.role.id, scopeType: 'COMPANY', scopeId: company.body.company.id })
+      .expect(201);
+
+    const scopedAgent = request.agent(createApp());
+    let scopedSession = await activateTemporaryCredential(scopedAgent, scopedUser.body.account.email, scopedUser.body.temporaryPassword);
+    const alphaContext = scopedSession.memberships.find((item) => item.company?.id === '20000000-0000-4000-8000-000000000001');
+    const otherContext = scopedSession.memberships.find((item) => item.company?.id === company.body.company.id);
+    if (!alphaContext || !otherContext) throw new Error('Multi-Company scoped contexts were not found.');
+    expect(alphaContext.permissions).toContain('organization.unit.manage');
+    expect(otherContext.permissions).not.toContain('organization.unit.manage');
+    scopedSession = (await scopedAgent
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ membershipId: alphaContext.membershipId, scopeType: alphaContext.scope.type, scopeId: alphaContext.scope.id })
+      .expect(200)).body as SessionResponse;
+    const companyView = await scopedAgent.get('/api/v1/organization').expect(200);
+    expect(companyView.body.organization.companies.map((item: { id: string }) => item.id)).toEqual(['20000000-0000-4000-8000-000000000001']);
+    expect(companyView.body.organization.units.some((item: { type: string }) => item.type === 'SHARED_SERVICE')).toBe(false);
+    await scopedAgent
+      .post('/api/v1/organization/companies')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ code: 'FORBIDDEN', name: 'شرکت غیرمجاز' })
+      .expect(403);
+    await scopedAgent
+      .post('/api/v1/organization/units')
+      .set('x-csrf-token', scopedSession.csrfToken)
+      .send({ type: 'SHARED_SERVICE', code: 'FORBIDDEN-MIS', name: 'خدمت غیرمجاز', serviceKind: 'MIS' })
+      .expect(403)
+      .expect(({ body }) => expect(body.error.code).toBe('workspace_scope_required'));
+
+    const runtime = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_organization_rls_negative' });
+    await runtime.connect();
+    try {
+      await runtime.query('BEGIN');
+      await runtime.query("SELECT set_config('app.workspace_id', $1, true), set_config('app.company_id', '', true)", ['10000000-0000-4000-8000-000000000001']);
+      await expect(runtime.query(`
+        INSERT INTO organization_units(workspace_id, unit_type, code, name, service_kind)
+        VALUES ('10000000-0000-4000-8000-000000000002', 'SHARED_SERVICE', 'CROSS-TENANT', 'Cross tenant', 'DATA')
+      `)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await runtime.query('ROLLBACK').catch(() => undefined);
+      await runtime.end();
+    }
+
+    await withTenantTransaction({
+      workspaceId: '10000000-0000-4000-8000-000000000001',
+      companyId: '20000000-0000-4000-8000-000000000001',
+    }, async (client) => {
+      const audits = await client.query<{ action: string }>(`
+        SELECT action FROM audit_entries WHERE workspace_id = '10000000-0000-4000-8000-000000000001'
+          AND action LIKE 'organization.%'
+      `);
+      expect(audits.rows.map((row) => row.action)).toEqual(expect.arrayContaining([
+        'organization.company.created', 'organization.unit.created', 'organization.user.created',
+        'organization.membership.upserted', 'organization.role.created', 'organization.role.assigned',
+      ]));
+    });
+  });
+
+  it('impersonates without passwords, caps permissions, records the real actor, and returns safely', async () => {
+    const targetAgent = request.agent(createApp());
+    const targetSession = await login(targetAgent, 'alpha-only@tapra.local', 'TapraAlpha!2026');
+    const targetContext = targetSession.memberships.find((item) => item.company?.id === '20000000-0000-4000-8000-000000000001');
+    if (!targetContext) throw new Error('Impersonation target context was not found.');
+
+    const admin = request.agent(createApp());
+    let adminSession = await login(admin, 'demo@tapra.local', 'TapraDemo!2026');
+    const actorContext = adminSession.memberships.find((item) => item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
+    if (!actorContext) throw new Error('Impersonation actor Workspace context was not found.');
+    adminSession = (await admin
+      .post('/api/v1/session/context')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: actorContext.membershipId, scopeType: actorContext.scope.type, scopeId: actorContext.scope.id })
+      .expect(200)).body as SessionResponse;
+
+    await admin
+      .post('/api/v1/impersonation/start')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ targetUserAccountId: targetSession.user.id, targetMembershipId: targetContext.membershipId,
+        targetScopeType: targetContext.scope.type, targetScopeId: targetContext.scope.id, reason: '', durationMinutes: 15 })
+      .expect(400);
+    await admin
+      .post('/api/v1/impersonation/start')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ targetUserAccountId: targetSession.user.id, targetMembershipId: targetContext.membershipId,
+        targetScopeType: targetContext.scope.type, targetScopeId: targetContext.scope.id,
+        reason: 'بررسی دسترسی پشتیبانی', durationMinutes: 60 })
+      .expect(400);
+
+    const started = await admin
+      .post('/api/v1/impersonation/start')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ targetUserAccountId: targetSession.user.id, targetMembershipId: targetContext.membershipId,
+        targetScopeType: targetContext.scope.type, targetScopeId: targetContext.scope.id,
+        reason: 'بررسی دسترسی پشتیبانی', durationMinutes: 15 })
+      .expect(200);
+    const impersonated = started.body as SessionResponse;
+    expect(impersonated.user.email).toBe('alpha-only@tapra.local');
+    expect(impersonated.actor.email).toBe('demo@tapra.local');
+    expect(impersonated.impersonation?.reason).toBe('بررسی دسترسی پشتیبانی');
+    expect(impersonated.activeContext?.permissions).toContain('customer.read');
+    expect(impersonated.activeContext?.permissions).not.toContain('customer.create');
+    expect(impersonated.activeContext?.permissions).not.toContain('organization.impersonate');
+    await admin.get('/api/v1/customers').expect(200);
+    await admin
+      .post('/api/v1/customers')
+      .set('x-csrf-token', impersonated.csrfToken)
+      .set('idempotency-key', randomUUID())
+      .send({ fullName: 'نباید ایجاد شود', phonePrimary: '09123334455' })
+      .expect(403);
+    await admin.get('/api/v1/organization').expect(403);
+    await admin
+      .post('/api/v1/impersonation/start')
+      .set('x-csrf-token', impersonated.csrfToken)
+      .send({ targetUserAccountId: targetSession.user.id, targetMembershipId: targetContext.membershipId,
+        targetScopeType: targetContext.scope.type, targetScopeId: targetContext.scope.id,
+        reason: 'نشست تو در تو', durationMinutes: 15 })
+      .expect(403);
+
+    const stopped = await admin
+      .post('/api/v1/impersonation/stop')
+      .set('x-csrf-token', impersonated.csrfToken)
+      .send({ reason: 'پایان بررسی دسترسی' })
+      .expect(200);
+    expect(stopped.body.user.email).toBe('demo@tapra.local');
+    expect(stopped.body.impersonation).toBeNull();
+
+    await withTenantTransaction({
+      workspaceId: '10000000-0000-4000-8000-000000000001',
+      companyId: '20000000-0000-4000-8000-000000000001',
+    }, async (client) => {
+      const audits = await client.query<{ action: string; actor_user_account_id: string; effective_user_account_id: string; impersonation_id: string }>(`
+        SELECT action, actor_user_account_id, effective_user_account_id, impersonation_id
+        FROM audit_entries WHERE action LIKE 'security.impersonation.%' ORDER BY occurred_at
+      `);
+      expect(audits.rows.map((row) => row.action)).toEqual(['security.impersonation.started', 'security.impersonation.ended']);
+      expect(audits.rows.every((row) => row.actor_user_account_id === adminSession.actor.id)).toBe(true);
+      expect(audits.rows.every((row) => row.effective_user_account_id === targetSession.user.id)).toBe(true);
+      expect(audits.rows.every((row) => Boolean(row.impersonation_id))).toBe(true);
+    });
   });
 });

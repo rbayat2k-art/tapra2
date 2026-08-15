@@ -2,14 +2,35 @@ export interface FoundationMembership {
   membershipId: string;
   workspace: { id: string; name: string; slug: string };
   company: { id: string; name: string; code: string } | null;
+  organizationUnit: { id: string; type: 'BRANCH' | 'DEPARTMENT' | 'TEAM'; name: string; code: string } | null;
+  scope: { type: OrganizationScopeType; id: string };
+  contextKey: string;
+  roles: Array<{ id: string; code: string; name: string }>;
   permissions: string[];
 }
 
+export type OrganizationScopeType = 'WORKSPACE' | 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SELF';
+
 export interface FoundationSession {
-  user: { id: string; personId: string; fullName: string; email: string };
+  user: { id: string; personId: string; fullName: string; email: string; requiresPasswordChange: boolean };
+  actor: { id: string; personId: string; fullName: string; email: string };
+  impersonation: null | { id: string; reason: string; expiresAt: string };
   memberships: FoundationMembership[];
   activeContext: FoundationMembership | null;
   csrfToken: string;
+}
+
+export interface OrganizationSnapshot {
+  workspace: { id: string; name: string; slug: string };
+  activeScope: { type: OrganizationScopeType; id: string };
+  companies: Array<{ id: string; code: string; name: string; description: string | null; isActive: boolean }>;
+  units: Array<{ id: string; companyId: string | null; parentId: string | null; type: 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SHARED_SERVICE'; code: string; name: string; description: string | null; serviceKind: 'HR' | 'DATA' | 'MIS' | 'OTHER' | null; isActive: boolean }>;
+  users: Array<{ id: string; personId: string; fullName: string; email: string; isActive: boolean; requiresPasswordChange: boolean }>;
+  memberships: Array<{ id: string; companyId: string | null; personId: string; status: 'active' | 'suspended' | 'ended'; validFrom: string; validUntil: string | null }>;
+  roles: Array<{ id: string; code: string; name: string; description: string | null; isSystem: boolean; isActive: boolean; permissions: string[] }>;
+  assignments: Array<{ id: string; membershipId: string; roleId: string; scopeType: OrganizationScopeType; companyId: string | null; organizationUnitId: string | null; validUntil: string | null; assignedAt: string }>;
+  permissions: Array<{ code: string; description: string }>;
+  legacyRoleMappings: Array<{ legacyRoleCode: string; roleId: string | null; migrationStatus: 'UNMAPPED' | 'PARTIAL' | 'MAPPED' | 'REVIEW_REQUIRED'; notes: string | null }>;
 }
 
 export interface FoundationCustomer {
