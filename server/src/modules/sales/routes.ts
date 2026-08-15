@@ -20,6 +20,21 @@ import {
   salesCallOutcomes,
   salesMarketingLinkTypes,
 } from './sales-service.js';
+import {
+  approveSalesInvoice,
+  createSaleAndInvoice,
+  getPaymentInfrastructure,
+  invoiceItemTypes,
+  invoiceLineSourceTypes,
+  listSalesInvoices,
+  paymentMethods,
+  paymentReviewDecisions,
+  readSalesInvoice,
+  recordSalesPayment,
+  reviseSalesInvoice,
+  reviewSalesPayment,
+  saleEntryModes,
+} from './invoice-service.js';
 
 const uuid = z.string().uuid();
 const idempotencyKey = z.string().uuid();
@@ -56,6 +71,44 @@ const callInput = z.object({
   if (value.outcome === 'callback_requested' && !value.callbackAt) {
     issueContext.addIssue({ code: 'custom', path: ['callbackAt'], message: 'callbackAt is required for callback_requested.' });
   }
+});
+const money = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const invoiceLineInput = z.object({
+  itemType: z.enum(invoiceItemTypes),
+  catalogReference: z.string().trim().min(1).max(200).optional(),
+  itemName: z.string().trim().min(2).max(300),
+  quantity: z.number().int().positive().max(1_000_000),
+  unitPrice: money,
+  discountAmount: money.default(0),
+  sourceType: z.enum(invoiceLineSourceTypes).default('manual_addition'),
+  snapshot: contextSnapshot.optional(),
+});
+const createSaleInput = z.object({
+  customerId: uuid,
+  leadId: uuid.optional(),
+  entryMode: z.enum(saleEntryModes).default('direct'),
+  sellerMembershipId: uuid.optional(),
+  source: contextSnapshot.optional(),
+  lines: z.array(invoiceLineInput).min(1).max(100),
+});
+const reviseInvoiceInput = z.object({
+  lines: z.array(invoiceLineInput).min(1).max(100),
+  reason: z.string().trim().min(3).max(1_000).optional(),
+});
+const manualPaymentMethods = paymentMethods.filter((method) => method !== 'payment_gateway');
+const recordPaymentInput = z.object({
+  amount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  paymentMethod: z.enum(manualPaymentMethods),
+  occurredAt: z.iso.datetime({ offset: true }),
+  lastFourDigits: z.string().regex(/^[0-9]{4}$/).optional(),
+  destinationAccountId: uuid,
+  trackingNumber: z.string().trim().min(2).max(200),
+  receiptReference: z.string().trim().min(1).max(500).optional(),
+  correctsPaymentId: uuid.optional(),
+});
+const reviewPaymentInput = z.object({
+  decision: z.enum(paymentReviewDecisions),
+  reason: z.string().trim().min(3).max(1_000).optional(),
 });
 
 function requireIdempotencyKey(request: Request): string {
@@ -105,6 +158,54 @@ export function salesRoutes(): Router {
     response.status(201).json({ lead: await recordSalesCall(
       getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.leadId),
       callInput.parse(request.body), requireIdempotencyKey(request), response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.get('/sales/invoices', asyncHandler(async (_request, response) => {
+    response.json({ invoices: await listSalesInvoices(getActiveContext(response.locals)) });
+  }));
+
+  router.get('/sales/invoices/:invoiceId', asyncHandler(async (request, response) => {
+    response.json({ invoice: await readSalesInvoice(getActiveContext(response.locals), uuid.parse(request.params.invoiceId)) });
+  }));
+
+  router.get('/sales/payment-infrastructure', asyncHandler(async (_request, response) => {
+    response.json(await getPaymentInfrastructure(getActiveContext(response.locals)));
+  }));
+
+  router.post('/sales/sales', requireCsrf, asyncHandler(async (request, response) => {
+    response.status(201).json({ invoice: await createSaleAndInvoice(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), createSaleInput.parse(request.body),
+      requireIdempotencyKey(request), response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.put('/sales/invoices/:invoiceId', requireCsrf, asyncHandler(async (request, response) => {
+    const input = reviseInvoiceInput.parse(request.body);
+    response.json({ invoice: await reviseSalesInvoice(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.invoiceId),
+      input.lines, input.reason, response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.post('/sales/invoices/:invoiceId/supervisor-approval', requireCsrf, asyncHandler(async (request, response) => {
+    response.json({ invoice: await approveSalesInvoice(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.invoiceId),
+      response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.post('/sales/invoices/:invoiceId/payments', requireCsrf, asyncHandler(async (request, response) => {
+    response.status(201).json({ invoice: await recordSalesPayment(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.invoiceId),
+      recordPaymentInput.parse(request.body), requireIdempotencyKey(request), response.locals.correlationId as string,
+    ) });
+  }));
+
+  router.post('/sales/invoices/:invoiceId/payments/:paymentId/review', requireCsrf, asyncHandler(async (request, response) => {
+    response.json({ invoice: await reviewSalesPayment(
+      getActiveContext(response.locals), getAuthenticatedSession(response.locals), uuid.parse(request.params.invoiceId),
+      uuid.parse(request.params.paymentId), reviewPaymentInput.parse(request.body), response.locals.correlationId as string,
     ) });
   }));
 

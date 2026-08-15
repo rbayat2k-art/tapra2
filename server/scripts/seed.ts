@@ -34,6 +34,8 @@ const ids = {
   customerIdentityBeta: '65000000-0000-4000-8000-000000000002',
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   customerBeta: '70000000-0000-4000-8000-000000000002',
+  financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
+  financialAccountBeta: '80000000-0000-4000-8000-000000000002',
 } as const;
 
 type SeedEnvironment = 'development' | 'test' | 'production';
@@ -158,6 +160,17 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('sales.lead.reassign', 'Reassign an owned Sales Lead with a reason in the current Company'),
         ('sales.call.create', 'Record a Call Log for an assigned Sales Lead'),
         ('sales.marketing.link', 'Link Campaign or Promotion context to a Sales Lead and Company relationship'),
+        ('sales.sale.create', 'Create a direct Sale and its Invoice in the active Company'),
+        ('sales.sale.create_on_behalf', 'Create a paper-entry Sale for another seller in the active Company'),
+        ('sales.invoice.read_own', 'Read Invoices attributed to the active Sales membership'),
+        ('sales.invoice.read_all', 'Read all Sales Invoices in the active Company'),
+        ('sales.invoice.supervisor_approve', 'Approve a Sales Invoice before financial review'),
+        ('sales.payment.record', 'Record a Customer Payment declaration for a Sales Invoice'),
+        ('sales.payment.review', 'Approve, reject or return an individual Sales Payment'),
+        ('sales.invoice.edit_draft', 'Edit a draft Sales Invoice before approval'),
+        ('sales.invoice.correct_returned', 'Correct a returned Sales Invoice with a new revision'),
+        ('sales.invoice.amend', 'Amend an approved Sales Invoice with a new audited revision'),
+        ('sales.payment.infrastructure.manage', 'Manage Company Financial Accounts and Payment Gateways'),
         ('organization.read', 'Read the permitted Organization structure and access assignments'),
         ('organization.company.manage', 'Create and update Companies in the permitted scope'),
         ('organization.unit.manage', 'Create and update Organization units'),
@@ -186,18 +199,32 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($1, 'customer.import.read'), ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
         ($1, 'sales.queue.read'), ($1, 'sales.lead.create'), ($1, 'sales.lead.read_all'),
         ($1, 'sales.lead.assign'), ($1, 'sales.lead.reassign'), ($1, 'sales.call.create'), ($1, 'sales.marketing.link'),
+        ($1, 'sales.sale.create'), ($1, 'sales.sale.create_on_behalf'), ($1, 'sales.invoice.read_all'),
+        ($1, 'sales.invoice.supervisor_approve'), ($1, 'sales.payment.record'), ($1, 'sales.payment.review'),
+        ($1, 'sales.invoice.edit_draft'), ($1, 'sales.invoice.correct_returned'), ($1, 'sales.invoice.amend'),
+        ($1, 'sales.payment.infrastructure.manage'),
         ($2, 'customer.read'), ($2, 'customer.create'),
         ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
         ($2, 'customer.import.read'), ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
         ($2, 'sales.queue.read'), ($2, 'sales.lead.create'), ($2, 'sales.lead.read_all'),
         ($2, 'sales.lead.assign'), ($2, 'sales.lead.reassign'), ($2, 'sales.call.create'), ($2, 'sales.marketing.link'),
+        ($2, 'sales.sale.create'), ($2, 'sales.sale.create_on_behalf'), ($2, 'sales.invoice.read_all'),
+        ($2, 'sales.invoice.supervisor_approve'), ($2, 'sales.payment.record'), ($2, 'sales.payment.review'),
+        ($2, 'sales.invoice.edit_draft'), ($2, 'sales.invoice.correct_returned'), ($2, 'sales.invoice.amend'),
+        ($2, 'sales.payment.infrastructure.manage'),
         ($3, 'customer.read'),
         ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'), ($4, 'customer.merge'), ($4, 'customer.identity.reconcile'),
         ($4, 'customer.import.read'), ($4, 'customer.import.create'), ($4, 'customer.import.review'), ($4, 'customer.import.approve'),
         ($4, 'organization.read'), ($4, 'organization.company.manage'), ($4, 'organization.unit.manage'),
         ($4, 'organization.user.manage'), ($4, 'organization.membership.manage'),
         ($4, 'organization.role.manage'), ($4, 'organization.impersonate'),
-        ($5, 'customer.read'), ($5, 'sales.queue.read'), ($5, 'sales.call.create')
+        ($4, 'sales.sale.create'), ($4, 'sales.sale.create_on_behalf'), ($4, 'sales.invoice.read_all'),
+        ($4, 'sales.invoice.supervisor_approve'), ($4, 'sales.payment.record'), ($4, 'sales.payment.review'),
+        ($4, 'sales.invoice.edit_draft'), ($4, 'sales.invoice.correct_returned'), ($4, 'sales.invoice.amend'),
+        ($4, 'sales.payment.infrastructure.manage'),
+        ($5, 'customer.read'), ($5, 'sales.queue.read'), ($5, 'sales.call.create'),
+        ($5, 'sales.sale.create'), ($5, 'sales.invoice.read_own'), ($5, 'sales.payment.record'),
+        ($5, 'sales.invoice.edit_draft')
       ON CONFLICT DO NOTHING
     `, [ids.roleAlphaManager, ids.roleBetaManager, ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller]);
     await client.query(`
@@ -253,6 +280,31 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
           INSERT INTO sales_policies(workspace_id, company_id)
           VALUES ($1, $2)
           ON CONFLICT (workspace_id, company_id) DO NOTHING
+        `, [context.workspaceId, context.companyId]);
+        await runtime.query(`
+          INSERT INTO financial_accounts(
+            id, workspace_id, company_id, display_name, bank_name, card_number
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name,
+            bank_name = EXCLUDED.bank_name, card_number = EXCLUDED.card_number, is_active = true
+        `, [
+          context.companyId === ids.companyAlpha ? ids.financialAccountAlpha : ids.financialAccountBeta,
+          context.workspaceId, context.companyId, 'Development settlement account',
+          'Development Bank', context.companyId === ids.companyAlpha ? '0000000000001111' : '0000000000002222',
+        ]);
+        await runtime.query(`
+          INSERT INTO sales_payment_method_policies(
+            workspace_id, company_id, payment_method, is_enabled, manual_review_required
+          ) VALUES
+            ($1, $2, 'card_to_card', true, true),
+            ($1, $2, 'bank_transfer', true, true),
+            ($1, $2, 'payment_gateway', true, false),
+            ($1, $2, 'cash', false, true),
+            ($1, $2, 'cheque', false, true),
+            ($1, $2, 'cod', false, true)
+          ON CONFLICT (workspace_id, company_id, payment_method) DO UPDATE SET
+            is_enabled = EXCLUDED.is_enabled, manual_review_required = EXCLUDED.manual_review_required,
+            updated_at = now()
         `, [context.workspaceId, context.companyId]);
         await runtime.query(`
           INSERT INTO customer_identities(id, workspace_id, normalized_primary_phone)

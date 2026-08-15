@@ -34,6 +34,7 @@ const ids = {
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   membershipSalesOne: '50000000-0000-4000-8000-000000000004',
   membershipSalesTwo: '50000000-0000-4000-8000-000000000005',
+  financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
 } as const;
 
 function assertDedicatedTestDatabase(connectionString: string): void {
@@ -346,6 +347,222 @@ describe('Sales Backend Vertical Slice 1', () => {
       const calls = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM sales_call_logs WHERE lead_id = $1', [leadId]);
       expect(leads.rows[0]?.count).toBe('0');
       expect(calls.rows[0]?.count).toBe('0');
+    });
+  });
+
+  it('creates one PostgreSQL Invoice from a direct Sale with stable Customer identity and seller/actor attribution', async () => {
+    const created = await sellerTwo.post('/api/v1/sales/sales')
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha,
+        leadId,
+        entryMode: 'direct',
+        source: { channel: 'sales-queue' },
+        lines: [
+          { itemType: 'goods', itemName: 'کالای نمونه سازمانی', quantity: 2, unitPrice: 500_000, discountAmount: 100_000 },
+          { itemType: 'service', itemName: 'خدمت راه‌اندازی', quantity: 1, unitPrice: 300_000, discountAmount: 0 },
+        ],
+      }).expect(201);
+    const invoice = created.body.invoice;
+    expect(invoice).toMatchObject({
+      status: 'awaiting_supervisor_approval', paymentStatus: 'unpaid', revision: 1,
+      subtotalAmount: 1_300_000, discountAmount: 100_000, finalAmount: 1_200_000,
+      sale: {
+        entryMode: 'direct', seller: { membershipId: ids.membershipSalesTwo },
+        customer: { id: ids.customerAlpha }, leadId,
+      },
+    });
+    expect(invoice.sale.actor.name).toBe(invoice.sale.seller.name);
+    expect(invoice.lines.every((line: { fulfillmentStatus: string }) => line.fulfillmentStatus === 'blocked_by_payment')).toBe(true);
+
+    await sellerOne.get('/api/v1/sales/invoices').expect(200)
+      .expect(({ body }) => expect(body.invoices).toHaveLength(0));
+    await sellerOne.get(`/api/v1/sales/invoices/${invoice.id}`).expect(404);
+    await sellerTwo.get('/api/v1/sales/invoices').expect(200)
+      .expect(({ body }) => expect(body.invoices.map((item: { id: string }) => item.id)).toContain(invoice.id));
+
+    const database = await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const row = await client.query<{ canonical_identity_id: string; relation_identity_id: string; invoices: string }>(`
+        SELECT sale.canonical_identity_id, customer.canonical_identity_id AS relation_identity_id,
+          count(invoice.id)::text AS invoices
+        FROM sales_transactions sale
+        JOIN customers customer ON customer.id = sale.customer_id
+        JOIN sales_invoices invoice ON invoice.sale_id = sale.id
+        WHERE sale.id = $1 GROUP BY sale.canonical_identity_id, customer.canonical_identity_id
+      `, [invoice.sale.id]);
+      return row.rows[0];
+    });
+    expect(database?.canonical_identity_id).toBe(database?.relation_identity_id);
+    expect(database?.invoices).toBe('1');
+  });
+
+  it('supports audited paper entry while keeping seller and actor separate and preventing self-approval', async () => {
+    const created = await manager.post('/api/v1/sales/sales')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'paper_entry', sellerMembershipId: ids.membershipSalesOne,
+        source: { paperReference: 'PAPER-001' },
+        lines: [{ itemType: 'service', itemName: 'خدمت ثبت کاغذی', quantity: 1, unitPrice: 250_000 }],
+      }).expect(201);
+    expect(created.body.invoice.sale).toMatchObject({
+      entryMode: 'paper_entry', seller: { membershipId: ids.membershipSalesOne },
+    });
+    expect(created.body.invoice.sale.actor.name).not.toBe(created.body.invoice.sale.seller.name);
+
+    const ownSale = await manager.post('/api/v1/sales/sales')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'paper_entry', sellerMembershipId: managerSession.activeContext?.membershipId,
+        lines: [{ itemType: 'service', itemName: 'فاکتور تست تفکیک وظایف', quantity: 1, unitPrice: 100_000 }],
+      }).expect(201);
+    await manager.post(`/api/v1/sales/invoices/${ownSale.body.invoice.id}/supervisor-approval`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('invoice_self_approval_denied'));
+  });
+
+  it('keeps partial approved Payments blocked and releases all current Lines only at the exact approved total', async () => {
+    const invoices = await manager.get('/api/v1/sales/invoices').expect(200);
+    const invoice = invoices.body.invoices.find((item: { sale: { leadId: string | null } }) => item.sale.leadId === leadId);
+    await manager.post(`/api/v1/sales/invoices/${invoice.id}/supervisor-approval`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200)
+      .expect(({ body }) => expect(body.invoice.status).toBe('awaiting_payment'));
+
+    const partial = await sellerTwo.post(`/api/v1/sales/invoices/${invoice.id}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 400_000, paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 30_000).toISOString(),
+        lastFourDigits: '1234', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'PAY-PARTIAL-001',
+      }).expect(201);
+    const firstPayment = partial.body.invoice.payments.at(-1);
+    expect(partial.body.invoice.status).toBe('awaiting_financial_review');
+
+    const partialApproved = await manager.post(`/api/v1/sales/invoices/${invoice.id}/payments/${firstPayment.id}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
+    expect(partialApproved.body.invoice).toMatchObject({
+      status: 'partially_paid', paymentStatus: 'partial', approvedPaymentAmount: 400_000,
+    });
+    expect(partialApproved.body.invoice.lines.every((line: { fulfillmentStatus: string }) => line.fulfillmentStatus === 'blocked_by_payment')).toBe(true);
+
+    const remainder = await sellerTwo.post(`/api/v1/sales/invoices/${invoice.id}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 800_000, paymentMethod: 'bank_transfer', occurredAt: new Date(Date.now() - 20_000).toISOString(),
+        lastFourDigits: '5678', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'PAY-REMAINDER-001',
+      }).expect(201);
+    const secondPayment = remainder.body.invoice.payments.at(-1);
+    const fullyApproved = await manager.post(`/api/v1/sales/invoices/${invoice.id}/payments/${secondPayment.id}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
+    expect(fullyApproved.body.invoice).toMatchObject({
+      status: 'financially_approved', paymentStatus: 'paid', approvedPaymentAmount: 1_200_000,
+    });
+    expect(fullyApproved.body.invoice.lines.every((line: { fulfillmentStatus: string }) => line.fulfillmentStatus === 'eligible')).toBe(true);
+  });
+
+  it('returns only the incorrect Payment, preserves other history, and accepts a traceable correction', async () => {
+    const created = await manager.post('/api/v1/sales/sales')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'paper_entry', sellerMembershipId: ids.membershipSalesTwo,
+        lines: [{ itemType: 'service', itemName: 'خدمت قابل اصلاح', quantity: 1, unitPrice: 500_000 }],
+      }).expect(201);
+    const invoiceId = created.body.invoice.id as string;
+    await manager.post(`/api/v1/sales/invoices/${invoiceId}/supervisor-approval`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    const recorded = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 500_000, paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 20_000).toISOString(),
+        lastFourDigits: '1111', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'PAY-WRONG-001',
+      }).expect(201);
+    const returnedId = recorded.body.invoice.payments[0].id as string;
+    const returned = await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${returnedId}/review`)
+      .set('x-csrf-token', managerSession.csrfToken)
+      .send({ decision: 'needs_correction', reason: 'شماره پیگیری با رسید بانکی تطبیق ندارد' }).expect(200);
+    expect(returned.body.invoice).toMatchObject({ status: 'payment_correction_required', paymentStatus: 'correction_required' });
+    expect(returned.body.invoice.payments[0]).toMatchObject({ status: 'needs_correction' });
+
+    const corrected = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 500_000, paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 10_000).toISOString(),
+        lastFourDigits: '1111', destinationAccountId: ids.financialAccountAlpha,
+        trackingNumber: 'PAY-CORRECT-001', correctsPaymentId: returnedId,
+      }).expect(201);
+    expect(corrected.body.invoice.payments[0]).toMatchObject({ status: 'superseded', supersededByPaymentId: corrected.body.invoice.payments[1].id });
+    expect(corrected.body.invoice.payments[1]).toMatchObject({ status: 'declared', correctsPaymentId: returnedId });
+    const approved = await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${corrected.body.invoice.payments[1].id}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
+    expect(approved.body.invoice.status).toBe('financially_approved');
+  });
+
+  it('holds overpayment, rejects disabled COD, and isolates Invoice data across Companies with RLS', async () => {
+    const created = await manager.post('/api/v1/sales/sales')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'paper_entry', sellerMembershipId: ids.membershipSalesTwo,
+        lines: [{ itemType: 'goods', itemName: 'کالای تست اضافه پرداخت', quantity: 1, unitPrice: 200_000 }],
+      }).expect(201);
+    const invoiceId = created.body.invoice.id as string;
+    await manager.post(`/api/v1/sales/invoices/${invoiceId}/supervisor-approval`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 200_000, paymentMethod: 'cod', occurredAt: new Date(Date.now() - 10_000).toISOString(),
+        destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'COD-DISABLED-001',
+      }).expect(409).expect(({ body }) => expect(body.error.code).toBe('payment_method_disabled'));
+    const recorded = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: 200_001, paymentMethod: 'bank_transfer', occurredAt: new Date(Date.now() - 10_000).toISOString(),
+        lastFourDigits: '2222', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'OVERPAY-001',
+      }).expect(201);
+    const reviewed = await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${recorded.body.invoice.payments[0].id}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
+    expect(reviewed.body.invoice).toMatchObject({ status: 'overpayment_hold', paymentStatus: 'overpaid', approvedPaymentAmount: 200_001 });
+    expect(reviewed.body.invoice.lines[0].fulfillmentStatus).toBe('blocked_by_payment');
+
+    const betaManager = request.agent(createApp());
+    const betaSession = await selectContext(betaManager, await login(betaManager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-beta', 'sales.invoice.read_all');
+    await betaManager.get('/api/v1/sales/invoices').expect(200)
+      .expect(({ body }) => expect(body.invoices).toHaveLength(0));
+    await betaManager.get(`/api/v1/sales/invoices/${invoiceId}`).expect(404);
+    expect(betaSession.activeContext).not.toBeNull();
+    await withTenantTransaction({ workspaceId: ids.workspaceBeta, companyId: ids.companyBeta }, async (client) => {
+      for (const table of ['sales_transactions', 'sales_invoices', 'sales_invoice_lines', 'sales_payments']) {
+        const result = await client.query<{ count: string }>(`SELECT count(*)::text AS count FROM ${table} WHERE company_id = $1`, [ids.companyAlpha]);
+        expect(result.rows[0]?.count).toBe('0');
+      }
+    });
+  });
+
+  it('applies forced RLS to every new financial table and records Sale/Payment audit history', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_invoice_schema_verify' });
+    await owner.connect();
+    try {
+      const tables = await owner.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(`
+        SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
+        WHERE relname = ANY($1::text[]) ORDER BY relname
+      `, [[
+        'financial_accounts', 'payment_gateways', 'sales_payment_method_policies', 'sales_transactions',
+        'sales_invoices', 'sales_invoice_lines', 'sales_invoice_revisions', 'sales_payments',
+        'sales_invoice_events', 'sales_payment_review_events',
+      ]]);
+      expect(tables.rows).toHaveLength(10);
+      expect(tables.rows.every((row) => row.relrowsecurity && row.relforcerowsecurity)).toBe(true);
+    } finally {
+      await owner.end();
+    }
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const audit = await client.query<{ action: string; count: string }>(`
+        SELECT action, count(*)::text AS count FROM audit_entries
+        WHERE action IN ('sales.invoice.created', 'sales.invoice.supervisor_approved', 'sales.payment.recorded', 'sales.payment.reviewed')
+        GROUP BY action ORDER BY action
+      `);
+      expect(audit.rows.map((row) => row.action)).toEqual([
+        'sales.invoice.created', 'sales.invoice.supervisor_approved', 'sales.payment.recorded', 'sales.payment.reviewed',
+      ]);
+      expect(audit.rows.every((row) => Number(row.count) > 0)).toBe(true);
     });
   });
 });
