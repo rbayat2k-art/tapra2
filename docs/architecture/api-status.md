@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-15 against `agent/organization-access-foundation`
+> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
 > Supersedes: none
 > Superseded by: none
 
@@ -33,8 +33,10 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/customers/:customerId/phones` | افزودن phone و provenance؛ نیازمند `customer.identity.manage` و `Idempotency-Key` |
 | `POST` | `/api/v1/customers/:customerId/addresses` | افزودن address و provenance؛ نیازمند `customer.identity.manage` و `Idempotency-Key` |
 | `POST` | `/api/v1/customers/duplicates/check` | تشخیص قطعی `EXACT_MATCH` و هشدار نام یکسان `POSSIBLE_DUPLICATE` بدون merge خودکار |
-| `POST` | `/api/v1/customers/merge` | merge کنترل‌شده، deterministic و reversible؛ نیازمند `customer.merge` و `Idempotency-Key` |
-| `POST` | `/api/v1/customers/merges/:operationId/unmerge` | بازگردانی merge و بازیابی profile مستقل؛ نیازمند `customer.merge` |
+| `POST` | `/api/v1/customers/merge` | merge relationshipهای همان Company؛ deterministic و reversible، نیازمند `customer.merge` و `Idempotency-Key` |
+| `POST` | `/api/v1/customers/merges/:operationId/unmerge` | بازگردانی relationship merge و بازیابی profile مستقل؛ نیازمند `customer.merge` |
+| `POST` | `/api/v1/customer-identities/merge` | reconciliation هویت مرکزی Workspace با lineage/Audit؛ نیازمند `customer.identity.reconcile`، Scope `WORKSPACE` و `Idempotency-Key` |
+| `POST` | `/api/v1/customer-identities/merges/:operationId/unmerge` | بازگردانی reconciliation مرکزی بدون حذف history؛ نیازمند `customer.identity.reconcile` و Scope `WORKSPACE` |
 | `GET` | `/api/v1/customer-imports` | summary پاک‌سازی‌شده ImportJobهای context فعال؛ نیازمند `customer.import.read` |
 | `GET` | `/api/v1/customer-imports/:jobId` | جزئیات خام staging، classification، candidate و تصمیم‌ها؛ نیازمند `customer.import.read` و `customer.import.review` |
 | `POST` | `/api/v1/customer-imports` | دریافت محدود `text/csv` و ساخت staging؛ نیازمند `customer.import.create` و `Idempotency-Key` |
@@ -48,13 +50,13 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 - session در cookie `tapra2_session` نگهداری می‌شود و token خام وارد database نمی‌شود.
 - state-changing routeها header معتبر `x-csrf-token` می‌خواهند.
-- Customer routeها به active Workspace/Company و permission متناسب نیاز دارند. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
+- Customer relationship routeها به active Workspace/Company و permission متناسب نیاز دارند. Identity reconciliation فقط در Workspace context مجاز است. Import از `customer.read` مستقل و دارای `customer.import.read/create/review/approve` است.
 - client اجازه ارسال `workspace_id` یا `company_id` برای Customer ندارد؛ context از session استخراج می‌شود.
 - mutationهای Organization فقط در Workspace/Company/Unit مجاز اجرا می‌شوند؛ Shared Service فقط Workspace-scoped است.
 - Impersonation حداکثر ۳۰ دقیقه است، Password هدف را دریافت نمی‌کند و Permission مؤثر را به اشتراک Actor و target محدود می‌کند.
 - خطاها JSON با `error.code`, `error.message` و `correlationId` برمی‌گردند.
 - endpointهای فهرست‌شده contract کامل platform نیستند و pagination عمومی هنوز اجرا نشده است.
-- merge winner از profile قدیمی‌تر و سپس UUID به‌صورت deterministic انتخاب می‌شود؛ client نمی‌تواند canonical را تحمیل کند.
+- winner در هر دو نوع merge از رکورد قدیمی‌تر و سپس UUID به‌صورت deterministic انتخاب می‌شود؛ client نمی‌تواند canonical را تحمیل کند. relationship merge و identity reconciliation دو operation مستقل‌اند.
 
 ## مرز آینده
 

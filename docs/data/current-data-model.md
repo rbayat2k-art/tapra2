@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-15 against `agent/organization-access-foundation`
+> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,11 +18,12 @@
 | Organization | `workspaces`, `companies`, `organization_units` برای `BRANCH`، `DEPARTMENT`، `TEAM` و `SHARED_SERVICE` |
 | Identity | `persons`, `user_accounts`, `sessions` |
 | Access | `memberships`, `roles`, `permissions`, `role_assignments`, `role_permissions` و `legacy_role_mappings` |
-| Workspace identity | `customer_identities` و `customer_identity_phones` برای هویت/شماره مرکزی و یکتا در Workspace |
-| Company relationship | `customers` رابطه Company با identity؛ `customer_phones` و `customer_addresses` observation و داده عملیاتی Company |
+| Workspace identity | `customer_identities` و `customer_identity_phones` برای هویت/شماره مرکزی و یکتا در Workspace؛ status و alias به canonical Identity برای reconciliation |
+| Company relationship | `customers` رابطه Company با `identity_id` تاریخی و `canonical_identity_id` فعال؛ `customer_phones` و `customer_addresses` observation و داده عملیاتی Company |
 | Provenance | `customer_sources` برای منبع، reference، زمان مشاهده/ورود، confidence و verification foundation |
 | Customer history | `customer_timeline_events` برای eventهای server-generated اجراشده |
-| Identity reconciliation | `customer_merge_operations` برای merge دارای lineage و unmerge واقعی بدون حذف profile بازنده |
+| Company relationship reconciliation | `customer_merge_operations` برای merge دو profile همان Company و unmerge واقعی بدون حذف profile بازنده |
+| Central identity reconciliation | `customer_identity_merge_operations` برای lineage، reason، snapshot، Audit و reverse هویت Workspace-level |
 | Impersonation | `session_impersonations` برای نمای زمان‌دار، دلیل، actor/target context و پایان نشست |
 | Audit | `audit_entries` با actor واقعی، user مؤثر، impersonation، context، action، resource و correlation |
 
@@ -32,9 +33,9 @@
 
 یک `UserAccount` می‌تواند از طریق چند `Membership` و چند `role_assignment` در Scopeهای `WORKSPACE`، `COMPANY`، `BRANCH`، `DEPARTMENT`، `TEAM` و `SELF` نقش متفاوت داشته باشد. assignment قدیمی بدون Scope هنگام migration بر اساس Company عضویت به Scope سازگار تبدیل می‌شود؛ assignment جدید Scope صریح دارد. Session، context فعال را با `membership + scope type + scope id` نگه می‌دارد، نه فقط Company.
 
-شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و `customer_identity_phones` مانع تعلق بی‌صدای یک phone به دو identity در همان Workspace است. یک identity می‌تواند برای چند Company رابطه جدا داشته باشد، اما هر Company فقط relationship و داده عملیاتی context خود را از طریق RLS می‌بیند. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
+شماره با تابع immutable `normalize_customer_phone` نرمال می‌شود و `customer_identity_phones` مانع تعلق بی‌صدای یک phone به دو identity ناسازگار در همان Workspace است. Identity بازنده حذف نمی‌شود و با `merged_into_identity_id` به canonical متصل می‌ماند. relationshipهای جدید و referenceهای آینده از `canonical_identity_id` استفاده می‌کنند، درحالی‌که `identity_id` اولیه برای lineage پایدار می‌ماند. هر Company فقط relationship و داده عملیاتی context خود را از طریق RLS می‌بیند. address دارای search text ساده است، ولی similarity/geocoding اجرا نشده است.
 
-در merge، phone/address/source روی Customer اصلی خود باقی می‌مانند و profile canonical آن‌ها را از رابطه merge فعال جمع می‌کند. `lineage_snapshot` و هر دو ردیف Customer حفظ می‌شوند؛ unmerge رابطه را reverse و profile بازنده را دوباره active می‌کند.
+در relationship merge، phone/address/source روی Customer اصلی خود باقی می‌مانند و profile canonical آن‌ها را از رابطه merge فعال جمع می‌کند. در identity reconciliation نیز هیچ Identity یا phone حذف نمی‌شود؛ operation snapshot و alias canonical حفظ می‌شوند. unmerge مرکزی pointerهای canonical را بازیابی می‌کند و سپس unmerge رابطه می‌تواند profileهای مستقل را فعال کند.
 
 ## مدل Prototype
 

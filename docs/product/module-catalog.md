@@ -21,7 +21,7 @@
 | ساختار سازمانی | `CompaniesView`, `CostCentersView` | شرکت‌ها، حساب‌های بانکی و مراکز هزینه | [current data model](../data/current-data-model.md) |
 | ذی‌نفعان | `VendorsView`, `VendorCategoriesView` | دفترچه ذی‌نفعان و دسته‌بندی آن‌ها | [current data model](../data/current-data-model.md) |
 | پشتیبانی | `SupportView`, `SupportCaseFormModal`, `SupportCaseDetailModal` | پرونده شکایت/عودت و ارسال ردیف تأییدشده به خزانه | [support business rules](../domains/support/business-rules.md) |
-| مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | Customer 360 سروری و CSV staging/reconciliation/approval در یک تجربه واحد | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
+| مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | نمای جامع مشتری و Import سروری؛ relationship شرکتی مستقل و foundation آشتی هویت مرکزی Workspace | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
 | Sales queue/campaign | `SalesQueueView`, `LeadAssignmentView`, `CampaignsView` | UI و منطق prototype برای lead، تماس، assignment و campaign | [integration status](../engineering/canonical-product-integration.md) |
 | Sales catalog | `ProductsView`, `ServicesView`, `PromotionsView` | catalog و promotion prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales invoice/coordination | `SalesInvoiceView`, `BatchInvoiceImportView`, `CoordinationInboxView`, `SalesFinancialConfirmationView` | workflow prototype ثبت، هماهنگی و بررسی مالی Sales | [integration status](../engineering/canonical-product-integration.md) |

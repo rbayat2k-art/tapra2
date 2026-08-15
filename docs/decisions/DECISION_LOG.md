@@ -404,3 +404,21 @@ checkoutهای قدیمی و Codex workspaceهای قبلی source branch آین
 
 **Impact:**
 دانش یکتای معتبر بدون بازگرداندن معماری localStorage یا تغییر Backend/PostgreSQL/Customer 360 حفظ شد. هیچ application code، package configuration، migration، database یا runtime behavior تغییر نکرد. مسیرهای legacy فقط پس از تأیید cleanup جداگانه قابل حذف‌اند.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Central Customer identity separated from Company relationship reconciliation
+
+**Context:**
+Customer 360 پیش از این Identity و normalized phone مشترک Workspace داشت، اما `customer_merge_operations` فقط profileهای همان Company را merge می‌کرد و lifecycle مستقل برای تشخیص اینکه دو Identity با شماره‌های متفاوت واقعاً یک شخص‌اند وجود نداشت.
+
+**Decision:**
+`identity_id` به‌عنوان lineage تاریخی و تغییرناپذیر relationship حفظ می‌شود و `canonical_identity_id` مرجع فعال برای اتصال‌های آینده است. merge رابطه Company-scoped و reconciliation هویت Workspace-scoped دو operation مستقل‌اند. reconciliation مرکزی فقط با permission اختصاصی و `WORKSPACE` Scope اجرا می‌شود، Identity بازنده را حذف نمی‌کند، canonical را deterministic انتخاب می‌کند و lineage، Audit، reason و reverse را در `customer_identity_merge_operations` نگه می‌دارد.
+
+**Reason:**
+یک شخص باید در Workspace یک هویت منطقی پایدار داشته باشد، بدون آن‌که داده عملیاتی Companyها مخلوط یا وجود رابطه Company دیگر افشا شود. حفظ alias به‌جای حذف یا بازنویسی ID همچنین referenceهای قبلی و recovery را ایمن نگه می‌دارد.
+
+**Impact:**
+referenceهای آینده مانند Lead و Invoice باید `canonical_identity_id` را نگه دارند و در صورت نیاز lineage ID اولیه را resolve کنند. PRهای قدیمی Sales که مستقیماً به `customers.identity_id` یا migration numbering قبلی وابسته‌اند، پیش از merge باید با migrationهای `0011` و `0012` تطبیق داده شوند. هیچ Sales/Invoice/Finance feature در این تصمیم پیاده‌سازی نشد.

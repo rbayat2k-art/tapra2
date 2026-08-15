@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار پیاده‌سازی‌شده Customer Import، staging و reconciliation است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
 > Supersedes: none
 > Superseded by: none
 
@@ -36,13 +36,15 @@ classificationهای فعلی:
 - `POSSIBLE_DUPLICATE`
 - `REVIEW_REQUIRED`
 
-تطبیق قطعی بر normalized phone متکی است. نام یکسان فقط هشدار احتمالی است. تکرار phone در همان فایل به ردیف رهبر متصل می‌شود تا چند purchase row یک شخص، چند Customer نسازد. fuzzy matching، address similarity و AI resolution اجرا نشده‌اند.
+تطبیق قطعی بر normalized phone متکی است. نام یکسان فقط هشدار احتمالی است. تکرار phone در همان فایل به ردیف رهبر متصل می‌شود تا چند purchase row یک شخص، چند Customer نسازد. هنگام Approval، owner شماره از `customer_identity_phones` resolve و alias احتمالی به canonical Identity دنبال می‌شود؛ Import نمی‌تواند Identity دوم ناسازگار برای همان شماره بسازد. fuzzy matching، address similarity و AI resolution اجرا نشده‌اند.
 
 تصمیم‌های پشتیبانی‌شده عبارت‌اند از `CREATE_NEW`, `LINK_TO_EXISTING`, `LINK_TO_STAGED`, `REJECT`, `KEEP_FOR_REVIEW`. تصمیم‌های کم‌ریسک می‌توانند دسته‌ای ثبت شوند، اما موارد مبهم به تصمیم صریح reviewer نیاز دارند. Import تا وقتی تصمیم باز وجود دارد approve نمی‌شود و Import هرگز Customerها را خودکار merge نمی‌کند.
 
 ## مرز Approval، provenance و تاریخچه خرید
 
 Approval در transaction tenant-scoped اجرا می‌شود و پردازش تکراری همان Job، Customer یا source تکراری ایجاد نمی‌کند. فقط در این مرز Customer جدید ساخته یا source به Customer موجود متصل می‌شود. عملیات material در `audit_entries` ثبت می‌شوند و timeline رویدادهای `customer_imported` یا `import_data_linked` دریافت می‌کند.
+
+وجود Identity در Company دیگر به Import نمایش داده نمی‌شود. در Company جدید، Approval می‌تواند relationship مستقل را به همان canonical Identity متصل کند، اما candidateها و داده عملیاتی Company دیگر را برنمی‌گرداند.
 
 اطلاعات purchase شامل reference، date، amount و item/service در staging و `customer_sources.metadata` حفظ می‌شود. این اطلاعات Invoice authoritative نیست. تبدیل آن به Sales/Invoice رسمی به مدل Sales آینده موکول شده است.
 
