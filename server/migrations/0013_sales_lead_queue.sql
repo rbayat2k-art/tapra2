@@ -12,7 +12,8 @@ ALTER TABLE customer_timeline_events
   ADD CONSTRAINT customer_timeline_events_event_type_check CHECK (event_type IN (
     'customer_created', 'phone_added', 'address_added', 'source_linked',
     'customer_merged', 'customer_split', 'customer_imported', 'import_data_linked',
-    'sales_lead_created', 'sales_call_logged'
+    'sales_lead_created', 'sales_call_logged', 'sales_marketing_linked',
+    'customer_identity_merged', 'customer_identity_split'
   ));
 
 ALTER TABLE memberships
@@ -46,7 +47,7 @@ CREATE TABLE sales_leads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL,
   company_id uuid NOT NULL,
-  customer_identity_id uuid NOT NULL,
+  canonical_identity_id uuid NOT NULL,
   customer_id uuid NOT NULL,
   tracking_code text NOT NULL CHECK (length(trim(tracking_code)) BETWEEN 3 AND 40),
   source text NOT NULL CHECK (length(trim(source)) BETWEEN 1 AND 200),
@@ -72,7 +73,7 @@ CREATE TABLE sales_leads (
   UNIQUE (workspace_id, company_id, tracking_code),
   UNIQUE (workspace_id, company_id, idempotency_key),
   FOREIGN KEY (workspace_id, company_id) REFERENCES companies(workspace_id, id),
-  FOREIGN KEY (workspace_id, customer_identity_id) REFERENCES customer_identities(workspace_id, id),
+  FOREIGN KEY (workspace_id, canonical_identity_id) REFERENCES customer_identities(workspace_id, id),
   FOREIGN KEY (workspace_id, company_id, customer_id) REFERENCES customers(workspace_id, company_id, id),
   FOREIGN KEY (workspace_id, company_id, current_assignee_membership_id)
     REFERENCES memberships(workspace_id, company_id, id)
@@ -133,7 +134,7 @@ CREATE TABLE sales_call_logs (
   workspace_id uuid NOT NULL,
   company_id uuid NOT NULL,
   lead_id uuid NOT NULL,
-  customer_identity_id uuid NOT NULL,
+  canonical_identity_id uuid NOT NULL,
   customer_id uuid NOT NULL,
   salesperson_membership_id uuid NOT NULL,
   actor_user_account_id uuid NOT NULL REFERENCES user_accounts(id),
@@ -154,7 +155,7 @@ CREATE TABLE sales_call_logs (
   UNIQUE (workspace_id, company_id, id),
   UNIQUE (workspace_id, company_id, idempotency_key),
   FOREIGN KEY (workspace_id, company_id, lead_id) REFERENCES sales_leads(workspace_id, company_id, id),
-  FOREIGN KEY (workspace_id, customer_identity_id) REFERENCES customer_identities(workspace_id, id),
+  FOREIGN KEY (workspace_id, canonical_identity_id) REFERENCES customer_identities(workspace_id, id),
   FOREIGN KEY (workspace_id, company_id, customer_id) REFERENCES customers(workspace_id, company_id, id),
   FOREIGN KEY (workspace_id, company_id, salesperson_membership_id)
     REFERENCES memberships(workspace_id, company_id, id),
@@ -171,7 +172,7 @@ CREATE TABLE sales_customer_relationships (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL,
   company_id uuid NOT NULL,
-  customer_identity_id uuid NOT NULL,
+  canonical_identity_id uuid NOT NULL,
   customer_id uuid NOT NULL,
   owner_membership_id uuid,
   status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'released')),
@@ -185,7 +186,7 @@ CREATE TABLE sales_customer_relationships (
   UNIQUE (workspace_id, company_id, id),
   UNIQUE (workspace_id, company_id, customer_id),
   FOREIGN KEY (workspace_id, company_id) REFERENCES companies(workspace_id, id),
-  FOREIGN KEY (workspace_id, customer_identity_id) REFERENCES customer_identities(workspace_id, id),
+  FOREIGN KEY (workspace_id, canonical_identity_id) REFERENCES customer_identities(workspace_id, id),
   FOREIGN KEY (workspace_id, company_id, customer_id) REFERENCES customers(workspace_id, company_id, id),
   FOREIGN KEY (workspace_id, company_id, owner_membership_id)
     REFERENCES memberships(workspace_id, company_id, id),
@@ -283,4 +284,5 @@ GRANT SELECT, INSERT, UPDATE ON sales_policies TO tapra2_app;
 GRANT SELECT, INSERT, UPDATE ON sales_leads TO tapra2_app;
 GRANT SELECT, INSERT ON sales_lead_assignments, sales_lead_timeline_events, sales_call_logs,
   sales_customer_relationship_events TO tapra2_app;
+GRANT UPDATE(canonical_identity_id) ON sales_call_logs TO tapra2_app;
 GRANT SELECT, INSERT, UPDATE ON sales_customer_relationships TO tapra2_app;
