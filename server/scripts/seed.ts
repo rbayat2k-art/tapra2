@@ -19,7 +19,6 @@ const ids = {
   membershipDemoAlpha: '50000000-0000-4000-8000-000000000001',
   membershipDemoBeta: '50000000-0000-4000-8000-000000000002',
   membershipAlphaOnly: '50000000-0000-4000-8000-000000000003',
-  membershipDemoWorkspace: '50000000-0000-4000-8000-000000000005',
   roleAlphaManager: '60000000-0000-4000-8000-000000000001',
   roleBetaManager: '60000000-0000-4000-8000-000000000002',
   roleAlphaReader: '60000000-0000-4000-8000-000000000003',
@@ -94,15 +93,32 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       INSERT INTO memberships(id, workspace_id, company_id, person_id) VALUES
         ($1, $2, $3, $4),
         ($5, $6, $7, $4),
-        ($8, $2, $3, $9),
-        ($10, $2, NULL, $4)
+        ($8, $2, $3, $9)
       ON CONFLICT (id) DO UPDATE SET status = 'active', valid_until = NULL
     `, [
       ids.membershipDemoAlpha, ids.workspaceAlpha, ids.companyAlpha, ids.personDemo,
       ids.membershipDemoBeta, ids.workspaceBeta, ids.companyBeta,
       ids.membershipAlphaOnly, ids.personAlphaOnly,
-      ids.membershipDemoWorkspace,
     ]);
+    await client.query(`
+      INSERT INTO memberships(workspace_id, company_id, person_id)
+      SELECT $1, NULL, $2
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM memberships
+        WHERE workspace_id = $1
+          AND company_id IS NULL
+          AND person_id = $2
+      )
+      ON CONFLICT DO NOTHING
+    `, [ids.workspaceAlpha, ids.personDemo]);
+    await client.query(`
+      UPDATE memberships
+      SET status = 'active', valid_until = NULL
+      WHERE workspace_id = $1
+        AND company_id IS NULL
+        AND person_id = $2
+    `, [ids.workspaceAlpha, ids.personDemo]);
     await client.query(`
       INSERT INTO permissions(code, description) VALUES
         ('customer.read', 'Read Customers in the active context'),
@@ -153,15 +169,22 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
         ($1, $2, $3, 'COMPANY', $4),
         ($5, $6, $7, 'COMPANY', $8),
-        ($1, $9, $10, 'COMPANY', $4),
-        ($1, $11, $12, 'WORKSPACE', NULL)
+        ($1, $9, $10, 'COMPANY', $4)
       ON CONFLICT DO NOTHING
     `, [
       ids.workspaceAlpha, ids.membershipDemoAlpha, ids.roleAlphaManager, ids.companyAlpha,
       ids.workspaceBeta, ids.membershipDemoBeta, ids.roleBetaManager, ids.companyBeta,
       ids.membershipAlphaOnly, ids.roleAlphaReader,
-      ids.membershipDemoWorkspace, ids.roleWorkspaceAdmin,
     ]);
+    await client.query(`
+      INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+      SELECT $1, membership.id, $3, 'WORKSPACE', NULL
+      FROM memberships membership
+      WHERE membership.workspace_id = $1
+        AND membership.company_id IS NULL
+        AND membership.person_id = $2
+      ON CONFLICT DO NOTHING
+    `, [ids.workspaceAlpha, ids.personDemo, ids.roleWorkspaceAdmin]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
