@@ -32,6 +32,11 @@ export const requireCsrf: RequestHandler = (request, response, next) => {
 export const requireActiveContext: RequestHandler = asyncHandler(async (_request, response, next) => {
   const session = getAuthenticatedSession(response.locals);
   if (!session.activeMembershipId) throw new AppError(409, 'active_context_required', 'Select an active Workspace and Company context.');
-  response.locals.activeContext = await assertMembershipAvailable(session.userAccountId, session.activeMembershipId);
+  response.locals.activeContext = await assertMembershipAvailable(
+    session.userAccountId,
+    session.activeMembershipId,
+    session.activeScopeType ?? undefined,
+    session.activeScopeId ?? undefined,
+  );
   next();
 });

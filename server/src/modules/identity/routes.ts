@@ -21,7 +21,13 @@ const loginInput = z.object({
   password: z.string().min(8).max(200),
 });
 
-const contextInput = z.object({ membershipId: z.string().uuid() });
+const contextInput = z.object({
+  membershipId: z.string().uuid(),
+  scopeType: z.enum(['WORKSPACE', 'COMPANY', 'BRANCH', 'DEPARTMENT', 'TEAM', 'SELF']).optional(),
+  scopeId: z.string().uuid().optional(),
+}).refine((value) => Boolean(value.scopeType) === Boolean(value.scopeId), {
+  message: 'scopeType and scopeId must be supplied together.',
+});
 
 export function identityRoutes(): Router {
   const router = Router();
@@ -58,9 +64,20 @@ export function identityRoutes(): Router {
   router.post('/session/context', requireAuthentication, requireCsrf, asyncHandler(async (request, response) => {
     const input = contextInput.parse(request.body);
     const session = getAuthenticatedSession(response.locals);
-    await assertMembershipAvailable(session.userAccountId, input.membershipId);
-    await query('UPDATE sessions SET active_membership_id = $1 WHERE id = $2', [input.membershipId, session.sessionId]);
-    response.json(await buildSessionView({ ...session, activeMembershipId: input.membershipId }));
+    const selected = await assertMembershipAvailable(
+      session.userAccountId, input.membershipId, input.scopeType, input.scopeId,
+    );
+    await query(`
+      UPDATE sessions
+      SET active_membership_id = $1, active_scope_type = $2, active_scope_id = $3
+      WHERE id = $4
+    `, [input.membershipId, selected.scope.type, selected.scope.id, session.sessionId]);
+    response.json(await buildSessionView({
+      ...session,
+      activeMembershipId: input.membershipId,
+      activeScopeType: selected.scope.type,
+      activeScopeId: selected.scope.id,
+    }));
   }));
 
   return router;

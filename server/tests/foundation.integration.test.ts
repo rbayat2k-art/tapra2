@@ -16,6 +16,7 @@ interface SessionResponse {
     membershipId: string;
     workspace: { id: string; slug: string };
     company: { id: string } | null;
+    scope: { type: 'WORKSPACE' | 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'TEAM' | 'SELF'; id: string };
     permissions: string[];
   }>;
   activeContext: null | { membershipId: string };
@@ -122,7 +123,7 @@ async function selectContext(
   const response = await agent
     .post('/api/v1/session/context')
     .set('x-csrf-token', session.csrfToken)
-    .send({ membershipId: membership.membershipId })
+    .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
     .expect(200);
   return response.body as SessionResponse;
 }
@@ -175,7 +176,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
   it('authenticates, verifies membership, and requires an active context', async () => {
     const agent = request.agent(createApp());
     const session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
-    expect(session.memberships).toHaveLength(2);
+    expect(session.memberships.some((item) => item.company?.id)).toBe(true);
+    expect(session.memberships.some((item) => item.company === null)).toBe(true);
     expect(session.activeContext).toBeNull();
     await agent.get('/api/v1/customers').expect(409);
 
@@ -715,7 +717,7 @@ describe('Foundation Sprint 1 vertical slice', () => {
       const response = await agent
         .post('/api/v1/session/context')
         .set('x-csrf-token', session.csrfToken)
-        .send({ membershipId: membership.membershipId })
+        .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
         .expect(200);
       session = response.body as SessionResponse;
     };

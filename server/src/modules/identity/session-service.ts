@@ -5,6 +5,7 @@ import { query } from '../../infrastructure/database/pool.js';
 import { AppError } from '../../shared/errors.js';
 import { buildSessionView } from '../organization/context-service.js';
 import type { AuthenticatedSession, SessionView } from './types.js';
+import type { OrganizationScopeType } from './types.js';
 
 const cookieName = 'tapra2_session';
 
@@ -16,6 +17,8 @@ interface SessionRow {
   email: string;
   csrf_token: string;
   active_membership_id: string | null;
+  active_scope_type: OrganizationScopeType | null;
+  active_scope_id: string | null;
 }
 
 function hashToken(token: string): string {
@@ -60,6 +63,8 @@ export async function createSession(response: Response, account: {
     email: account.email,
     csrfToken,
     activeMembershipId: null,
+    activeScopeType: null,
+    activeScopeId: null,
   });
 }
 
@@ -83,6 +88,8 @@ export async function resolveSession(request: Request): Promise<AuthenticatedSes
       ua.email,
       s.csrf_token,
       s.active_membership_id
+      , s.active_scope_type
+      , s.active_scope_id
   `, [hashToken(rawToken)]);
   const row = result.rows[0];
   return row ? {
@@ -93,6 +100,8 @@ export async function resolveSession(request: Request): Promise<AuthenticatedSes
     email: row.email,
     csrfToken: row.csrf_token,
     activeMembershipId: row.active_membership_id,
+    activeScopeType: row.active_scope_type,
+    activeScopeId: row.active_scope_id,
   } : null;
 }
 
