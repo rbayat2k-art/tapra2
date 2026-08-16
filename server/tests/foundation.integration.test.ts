@@ -1034,11 +1034,10 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send({ fullName: 'مدیر داده مشترک', email: `shared-data-${Date.now()}@tapra.local` })
       .expect(201);
     expect(workspaceUser.body.temporaryPassword).toMatch(/^.{20,}$/);
-    const workspaceMembership = await admin
-      .post('/api/v1/organization/memberships')
-      .set('x-csrf-token', adminSession.csrfToken)
-      .send({ personId: workspaceUser.body.account.personId })
-      .expect(201);
+    // Provisioning is atomic: an account is never hidden as an orphan without a Membership.
+    const organizationAfterProvisioning = await admin.get('/api/v1/organization').expect(200);
+    expect(organizationAfterProvisioning.body.organization.users.some((item: { id: string }) => item.id === workspaceUser.body.account.id)).toBe(true);
+    const workspaceMembership = { body: { membership: workspaceUser.body.account.membership } };
     expect(workspaceMembership.body.membership.companyId).toBeNull();
     const sharedRole = await admin
       .post('/api/v1/organization/roles')
@@ -1087,6 +1086,11 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('x-csrf-token', adminSession.csrfToken)
       .send({ code: `viewer_${Date.now()}`, name: 'مشاهده‌گر', permissionCodes: ['organization.read'] })
       .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: alphaMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'COMPANY', scopeId: company.body.company.id })
+      .expect(400);
     await admin
       .post('/api/v1/organization/role-assignments')
       .set('x-csrf-token', adminSession.csrfToken)

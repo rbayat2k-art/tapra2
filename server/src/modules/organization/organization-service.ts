@@ -283,20 +283,30 @@ export async function updateUnit(mutation: MutationContext, unitId: string, inpu
   } catch (error) { return translateConflict(error); }
 }
 
-export async function createUser(mutation: MutationContext, input: { fullName: string; email: string }) {
+export async function createUser(mutation: MutationContext, input: { fullName: string; email: string; companyId?: string }) {
   assertWorkspaceScope(mutation.context);
   const temporaryPassword = randomBytes(24).toString('base64url');
   const passwordHash = await hashPassword(temporaryPassword);
   try {
     const account = await withWorkspaceTransaction({ workspaceId: mutation.context.workspace.id, companyId: null }, async (client) => {
+      if (input.companyId) {
+        const company = await client.query('SELECT 1 FROM companies WHERE workspace_id = $1 AND id = $2 AND is_active = true', [mutation.context.workspace.id, input.companyId]);
+        if (!company.rowCount) throw new AppError(400, 'company_not_found', 'The selected Company is not available in this Workspace.');
+      }
       const person = await client.query<{ id: string }>('INSERT INTO persons(full_name) VALUES ($1) RETURNING id', [input.fullName]);
       const result = await client.query(`
         INSERT INTO user_accounts(person_id, email, password_hash, requires_password_change)
         VALUES ($1, $2, $3, true)
         RETURNING id, person_id AS "personId", email, is_active AS "isActive", requires_password_change AS "requiresPasswordChange"
       `, [person.rows[0]?.id, input.email, passwordHash]);
-      await audit(client, mutation, { action: 'organization.user.created', resourceType: 'user_account', resourceId: result.rows[0]?.id, newState: { ...result.rows[0], fullName: input.fullName } });
-      return { ...result.rows[0], fullName: input.fullName };
+      const membership = await client.query(`
+        INSERT INTO memberships(workspace_id, company_id, person_id)
+        VALUES ($1, $2, $3)
+        RETURNING id, company_id AS "companyId", person_id AS "personId", status,
+          valid_from AS "validFrom", valid_until AS "validUntil"
+      `, [mutation.context.workspace.id, input.companyId ?? null, person.rows[0]?.id]);
+      await audit(client, mutation, { action: 'organization.user.created', resourceType: 'user_account', resourceId: result.rows[0]?.id, newState: { ...result.rows[0], fullName: input.fullName, membership: membership.rows[0] } });
+      return { ...result.rows[0], fullName: input.fullName, membership: membership.rows[0] };
     });
     return { account, temporaryPassword };
   } catch (error) { return translateConflict(error); }
@@ -327,8 +337,8 @@ export async function createMembership(mutation: MutationContext, input: { perso
   else assertWorkspaceScope(mutation.context);
   try {
     return await withWorkspaceTransaction({ workspaceId: mutation.context.workspace.id, companyId: mutation.context.company?.id ?? null }, async (client) => {
-      const person = await client.query('SELECT 1 FROM persons WHERE id = $1', [input.personId]);
-      if (!person.rowCount) throw new AppError(404, 'person_not_found', 'Person was not found.');
+      const account = await client.query('SELECT 1 FROM user_accounts WHERE person_id = $1', [input.personId]);
+      if (!account.rowCount) throw new AppError(404, 'user_account_not_found', 'UserAccount was not found.');
       const result = await client.query(`
         INSERT INTO memberships(workspace_id, company_id, person_id)
         VALUES ($1, $2, $3)
@@ -389,8 +399,9 @@ function assignmentTarget(
 
 export async function assignRole(mutation: MutationContext, input: { membershipId: string; roleId: string; scopeType: OrganizationScopeType; scopeId?: string; validUntil?: string }) {
   return withWorkspaceTransaction({ workspaceId: mutation.context.workspace.id, companyId: mutation.context.company?.id ?? null }, async (client) => {
-    const membership = await client.query<{ company_id: string | null }>('SELECT company_id FROM memberships WHERE workspace_id = $1 AND id = $2', [mutation.context.workspace.id, input.membershipId]);
+    const membership = await client.query<{ company_id: string | null; status: string }>('SELECT company_id, status FROM memberships WHERE workspace_id = $1 AND id = $2', [mutation.context.workspace.id, input.membershipId]);
     if (!membership.rowCount) throw new AppError(404, 'membership_not_found', 'Membership was not found.');
+    if (membership.rows[0]?.status !== 'active') throw new AppError(409, 'membership_inactive', 'An inactive Membership cannot receive a Role assignment.');
     const role = await client.query('SELECT 1 FROM roles WHERE workspace_id = $1 AND id = $2 AND is_active = true', [mutation.context.workspace.id, input.roleId]);
     if (!role.rowCount) throw new AppError(404, 'role_not_found', 'Role was not found.');
     let target = assignmentTarget(input, membership.rows[0]?.company_id ?? null);
@@ -398,6 +409,13 @@ export async function assignRole(mutation: MutationContext, input: { membershipI
       const unit = await client.query<{ company_id: string; unit_type: string }>('SELECT company_id, unit_type FROM organization_units WHERE workspace_id = $1 AND id = $2 AND is_active = true', [mutation.context.workspace.id, target.organizationUnitId]);
       if (!unit.rowCount || unit.rows[0]?.unit_type !== input.scopeType) throw new AppError(400, 'assignment_scope_invalid', 'Organization unit does not match the requested Scope type.');
       target = { companyId: unit.rows[0]?.company_id, organizationUnitId: target.organizationUnitId };
+    }
+    const membershipCompanyId = membership.rows[0]?.company_id ?? null;
+    if (input.scopeType === 'WORKSPACE' && membershipCompanyId) {
+      throw new AppError(400, 'assignment_scope_invalid', 'A Company Membership cannot receive a Workspace Scope.');
+    }
+    if (membershipCompanyId && target.companyId && membershipCompanyId !== target.companyId) {
+      throw new AppError(400, 'assignment_scope_invalid', 'The Scope target must belong to the Membership Company.');
     }
     if (input.scopeType === 'WORKSPACE') assertWorkspaceScope(mutation.context);
     else if (target.companyId) assertCompanyScope(mutation.context, target.companyId);
