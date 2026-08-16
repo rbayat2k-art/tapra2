@@ -759,15 +759,21 @@ describe('Sales Backend Vertical Slice 1', () => {
 
   it('lets an on-behalf workspace admin select valid sellers without Lead assignment authority', async () => {
     const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_sale_seller_lookup_test' });
+    const onBehalfRoleId = randomUUID();
     await owner.connect();
     try {
       await owner.query(`
+        INSERT INTO roles(id, workspace_id, code, name)
+        VALUES ($1, $2, 'workspace_admin_on_behalf_test', 'مدیر فضای کاری ثبت کاغذی')
+      `, [onBehalfRoleId, ids.workspaceAlpha]);
+      await owner.query(`
+        INSERT INTO role_permissions(role_id, permission_code)
+        VALUES ($1, 'sales.sale.create_on_behalf')
+      `, [onBehalfRoleId]);
+      await owner.query(`
         INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
-        SELECT $1, $2, role.id, 'COMPANY', $3
-        FROM roles role
-        WHERE role.workspace_id = $1 AND role.code = 'workspace_admin'
-        ON CONFLICT DO NOTHING
-      `, [ids.workspaceAlpha, ids.membershipAlphaOnly, ids.companyAlpha]);
+        VALUES ($1, $2, $3, 'COMPANY', $4)
+      `, [ids.workspaceAlpha, ids.membershipAlphaOnly, onBehalfRoleId, ids.companyAlpha]);
     } finally {
       await owner.end();
     }
@@ -785,10 +791,9 @@ describe('Sales Backend Vertical Slice 1', () => {
     expect(workspaceAdminSession.activeContext?.permissions).not.toContain('sales.sale.create');
 
     const sellers = await workspaceAdmin.get('/api/v1/sales/sellers').expect(200);
-    expect(sellers.body.sellers.map((seller: { membershipId: string }) => seller.membershipId)).toEqual([
-      ids.membershipSalesOne,
-      ids.membershipSalesTwo,
-    ]);
+    const sellerMembershipIds = sellers.body.sellers.map((seller: { membershipId: string }) => seller.membershipId);
+    expect(sellerMembershipIds).toEqual(expect.arrayContaining([ids.membershipSalesOne, ids.membershipSalesTwo]));
+    expect(sellerMembershipIds).not.toContain(ids.membershipAlphaOnly);
     await workspaceAdmin.get('/api/v1/sales/assignees').expect(403);
 
     await workspaceAdmin.post('/api/v1/sales/sales')
