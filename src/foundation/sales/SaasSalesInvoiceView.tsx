@@ -34,6 +34,7 @@ import {
   SALES_PAYMENT_METHOD_LABELS,
   SALES_PAYMENT_STATUS_LABELS,
 } from './labels';
+import { salesInvoiceLoadDependencies } from './loadDependencies';
 
 interface Props {
   mode?: 'sales' | 'financial_review';
@@ -163,6 +164,9 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     if (!canRead || (mode === 'financial_review' && !canReviewPayment)) return;
     setLoading(true);
     try {
+      const dependencies = salesInvoiceLoadDependencies({
+        mode, canCreate, canCreateOnBehalf, canRecordPayment, canManageInfrastructure,
+      });
       const invoiceResponse = await foundationApi.listSalesInvoices();
       setInvoices(invoiceResponse.invoices);
       const selectableInvoices = mode === 'financial_review'
@@ -170,11 +174,13 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         : invoiceResponse.invoices;
       setSelectedId((current) => current && selectableInvoices.some((invoice) => invoice.id === current)
         ? current : selectableInvoices[0]?.id ?? null);
-      if (mode === 'sales' && (canCreate || canCreateOnBehalf)) {
+      if (dependencies.customers) {
         setCustomers((await foundationApi.listCustomers()).customers);
+      }
+      if (dependencies.sellers) {
         setSellers((await foundationApi.listSaleSellers()).sellers);
       }
-      if (mode === 'sales' && (canRecordPayment || canManageInfrastructure)) {
+      if (dependencies.paymentInfrastructure) {
         const paymentInfrastructure = await foundationApi.getSalesPaymentInfrastructure();
         setInfrastructure(paymentInfrastructure);
         setPaymentAccountId((current) => current || paymentInfrastructure.accounts.find((account) => account.active)?.id || '');
