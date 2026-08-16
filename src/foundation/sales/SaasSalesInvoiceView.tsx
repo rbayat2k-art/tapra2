@@ -129,7 +129,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
 
   const [invoices, setInvoices] = useState<FoundationSalesInvoice[]>([]);
   const [customers, setCustomers] = useState<FoundationCustomer[]>([]);
-  const [assignees, setAssignees] = useState<SalesAssignee[]>([]);
+  const [sellers, setSellers] = useState<SalesAssignee[]>([]);
   const [infrastructure, setInfrastructure] = useState<SalesPaymentInfrastructure | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,7 +160,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   const [accountReference, setAccountReference] = useState('');
 
   const load = useCallback(async () => {
-    if (!canRead) return;
+    if (!canRead || (mode === 'financial_review' && !canReviewPayment)) return;
     setLoading(true);
     try {
       const invoiceResponse = await foundationApi.listSalesInvoices();
@@ -170,9 +170,11 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         : invoiceResponse.invoices;
       setSelectedId((current) => current && selectableInvoices.some((invoice) => invoice.id === current)
         ? current : selectableInvoices[0]?.id ?? null);
-      if (canCreate || canCreateOnBehalf) setCustomers((await foundationApi.listCustomers()).customers);
-      if (canCreateOnBehalf) setAssignees((await foundationApi.listSalesAssignees()).assignees);
-      if (canRecordPayment || canManageInfrastructure) {
+      if (mode === 'sales' && (canCreate || canCreateOnBehalf)) {
+        setCustomers((await foundationApi.listCustomers()).customers);
+        setSellers((await foundationApi.listSaleSellers()).sellers);
+      }
+      if (mode === 'sales' && (canRecordPayment || canManageInfrastructure)) {
         const paymentInfrastructure = await foundationApi.getSalesPaymentInfrastructure();
         setInfrastructure(paymentInfrastructure);
         setPaymentAccountId((current) => current || paymentInfrastructure.accounts.find((account) => account.active)?.id || '');
@@ -183,7 +185,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [canCreate, canCreateOnBehalf, canManageInfrastructure, canRead, canRecordPayment, mode, session?.activeContext?.contextKey]);
+  }, [canCreate, canCreateOnBehalf, canManageInfrastructure, canRead, canRecordPayment, canReviewPayment, mode, session?.activeContext?.contextKey]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -196,6 +198,8 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     .map((policy) => policy.method as Exclude<SalesPaymentMethod, 'payment_gateway'>) ?? [];
 
   const activeAccounts = infrastructure?.accounts.filter((account) => account.active) ?? [];
+  const directSaleUsable = canCreate && sellers.some((seller) => seller.membershipId === session?.activeContext?.membershipId);
+  const canOpenCreate = directSaleUsable || canCreateOnBehalf;
 
   const replaceInvoice = (invoice: FoundationSalesInvoice, message: string) => {
     setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)]);
@@ -338,7 +342,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
     } catch (caught) { setError(messageFrom(caught)); } finally { setSaving(false); }
   };
 
-  if (!canRead) return <div dir="rtl" className="p-6 text-slate-500">برای مشاهده فاکتورهای فروش دسترسی لازم را ندارید.</div>;
+  if (!canRead || (mode === 'financial_review' && !canReviewPayment)) return <div dir="rtl" className="p-6 text-slate-500">برای مشاهده این بخش دسترسی لازم را ندارید.</div>;
 
   return <div dir="rtl" className="space-y-6">
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -354,7 +358,10 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         </p>
       </div>
       <div className="flex gap-2">
-        {mode === 'sales' && (canCreate || canCreateOnBehalf) && <button type="button" onClick={() => setCreateOpen((value) => !value)} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white">
+        {mode === 'sales' && canOpenCreate && <button type="button" onClick={() => {
+          setEntryMode(directSaleUsable ? 'direct' : 'paper_entry');
+          setCreateOpen((value) => !value);
+        }} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white">
           <Plus className="h-4 w-4" />ثبت فروش جدید
         </button>}
         <button type="button" onClick={() => void load()} disabled={loading} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600">
@@ -386,13 +393,14 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         </label>
         {canCreateOnBehalf && <label className="text-sm text-slate-600">روش ثبت
           <select value={entryMode} onChange={(event) => setEntryMode(event.target.value as SaleEntryMode)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
-            {(Object.keys(SALE_ENTRY_MODE_LABELS) as SaleEntryMode[]).map((item) => <option key={item} value={item}>{SALE_ENTRY_MODE_LABELS[item]}</option>)}
+            {directSaleUsable && <option value="direct">{SALE_ENTRY_MODE_LABELS.direct}</option>}
+            <option value="paper_entry">{SALE_ENTRY_MODE_LABELS.paper_entry}</option>
           </select>
         </label>}
         {entryMode === 'paper_entry' && <label className="text-sm text-slate-600">فروشنده واقعی
           <select value={sellerMembershipId} onChange={(event) => setSellerMembershipId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
             <option value="">انتخاب فروشنده</option>
-            {assignees.map((seller) => <option key={seller.membershipId} value={seller.membershipId}>{seller.fullName}</option>)}
+            {sellers.map((seller) => <option key={seller.membershipId} value={seller.membershipId}>{seller.fullName}</option>)}
           </select>
         </label>}
       </div>

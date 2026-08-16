@@ -151,6 +151,7 @@ export const foundationApi = {
   listSalesLeads: () => request<{ leads: SalesLead[] }>('/sales/leads'),
   readSalesLead: (leadId: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}`),
   listSalesAssignees: () => request<{ assignees: SalesAssignee[] }>('/sales/assignees'),
+  listSaleSellers: () => request<{ sellers: SalesAssignee[] }>('/sales/sellers'),
   createSalesLead: (input: {
     customerId: string; source: string; declaredInterest: string; priority: 'low' | 'normal' | 'high';
     campaignReference?: string; promotionReference?: string; context?: Record<string, unknown>;

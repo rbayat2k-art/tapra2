@@ -28,6 +28,7 @@ import {
   invoiceItemTypes,
   invoiceLineSourceTypes,
   listSalesInvoices,
+  listSaleSellers,
   paymentMethods,
   paymentReviewDecisions,
   readSalesInvoice,
@@ -172,6 +173,10 @@ export function salesRoutes(): Router {
 
   router.get('/sales/invoices', asyncHandler(async (_request, response) => {
     response.json({ invoices: await listSalesInvoices(getActiveContext(response.locals)) });
+  }));
+
+  router.get('/sales/sellers', asyncHandler(async (_request, response) => {
+    response.json({ sellers: await listSaleSellers(getActiveContext(response.locals)) });
   }));
 
   router.get('/sales/invoices/:invoiceId', asyncHandler(async (request, response) => {
