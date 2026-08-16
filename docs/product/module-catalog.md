@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای فهرست ماژول‌های پیاده‌سازی‌شده و مرز مسئولیت آن‌ها است.
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -24,6 +24,7 @@
 | مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | نمای جامع مشتری و Import سروری؛ relationship شرکتی مستقل و آشتی هویت مرکزی Workspace | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
 | Sales Lead/queue | `SaasSalesQueueView`, `SaasLeadAssignmentView` | Lead، صف شخصی، assignment/reassignment، Call Log و Campaign/Promotion context متصل به PostgreSQL | [current lead operations](../domains/sales/current-lead-operations.md) |
 | Sales invoice/payment | `SaasSalesInvoiceView` | ثبت مستقیم/کاغذی Sale، ساخت و revision فاکتور، Payment مستقل و بررسی مالی متصل به PostgreSQL | [current invoice/payment](../domains/sales/current-invoice-payment.md) |
+| Warehouse Foundation | `WarehouseFoundationView` | Warehouse، ledger موجودی، Receiving، Reservation چندانباره، Transfer، Adjustment، Count و Return متصل به PostgreSQL | [current Warehouse foundation](../domains/warehouse/current-foundation.md) |
 | Sales campaign | `CampaignsView` | Campaign UI و منطق prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales catalog | `ProductsView`, `ServicesView`, `PromotionsView` | catalog و promotion prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales coordination/batch | `BatchInvoiceImportView`, `CoordinationInboxView` | ثبت گروهی و هماهنگی legacy همچنان prototype-backed؛ Viewهای قدیمی Invoice/Financial فقط برای بازیابی source باقی‌اند | [integration status](../engineering/canonical-product-integration.md) |
@@ -47,4 +48,4 @@
 
 ## خارج از وضعیت فعلی
 
-Backend و API Foundation، Customer 360/Import، Sales Lead/Queue/Assignment/Call/Marketing Context و Sale/Invoice/Payment/Financial Review اکنون CURRENT هستند. UI و منطق مدیریت کامل Campaign/Promotion، Catalog، Batch Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ linkage فعلی فقط reference و snapshot تاریخی را ثبت می‌کند. Inventory واقعی، Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.
+Backend و API Foundation، Customer 360/Import، Sales Lead/Queue/Assignment/Call/Marketing Context، Sale/Invoice/Payment/Financial Review و Warehouse Foundation اکنون CURRENT هستند. UI و منطق مدیریت کامل Campaign/Promotion، Catalog، Batch Invoice، Coordination، Shipment/Delivery و Service Fulfillment همچنان prototype-backed یا future هستند؛ linkage فعلی فقط reference و snapshot تاریخی را ثبت می‌کند. Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.

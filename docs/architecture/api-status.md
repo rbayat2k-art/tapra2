@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current API and backend status
 > Owner: Architecture Owner
-> Last validated: 2026-08-16 against `agent/sale-invoice-payment-foundation`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -60,8 +60,16 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `POST` | `/api/v1/sales/invoices/:invoiceId/supervisor-approval` | تأیید سرپرست با منع self-approval فروشنده |
 | `POST` | `/api/v1/sales/invoices/:invoiceId/payments` | ثبت idempotent Payment مستقل یا correction برای Payment برگشتی |
 | `POST` | `/api/v1/sales/invoices/:invoiceId/payments/:paymentId/review` | تأیید یا برگشت مستقل هر Payment؛ reason برای برگشت و maker-checker سمت server الزامی است |
+| `GET` | `/api/v1/warehouse` | overview مجاز Warehouse، Location، Item، Balance، Movement و عملیات context فعال |
+| `POST` | `/api/v1/warehouse/warehouses`, `/locations`, `/items` | ایجاد Warehouse master data با Permission، Scope و Audit |
+| `POST` | `/api/v1/warehouse/receipts[/:receiptId/post]` | ثبت و post دریافت؛ Manual Receiving به Permission/reason/evidence مستقل نیاز دارد |
+| `POST` | `/api/v1/warehouse/reservations[/:reservationId/release]` | رزرو Line واجد شرایط مالی، allocation چندانباره و آزادسازی بدون تغییر موجودی فیزیکی |
+| `POST` | `/api/v1/warehouse/transfers[/:transferId/dispatch|receive]` | انتقال کامل داخلی بین Warehouseها؛ partial receipt workflow در v1 فعال نیست |
+| `POST` | `/api/v1/warehouse/adjustments`, `/counts` و actionهای submit/approve | کنترل maker-checker و ثبت اختلاف در ledger |
+| `POST` | `/api/v1/warehouse/returns[/:returnId/receive]` و inspection Line | دریافت و disposition مستقل برگشتی |
+| `POST` | `/api/v1/warehouse/movements/:movementId/reverse` | reversal ممیزی‌شده بدون Update/Delete تاریخچه |
 
-قرارداد دامنه‌ای endpointهای CURRENT در [Customer Import](../domains/sales/customer-import.md)، [عملیات فعلی Lead](../domains/sales/current-lead-operations.md) و [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) توضیح داده شده است.
+قرارداد دامنه‌ای endpointهای CURRENT در [Customer Import](../domains/sales/customer-import.md)، [عملیات فعلی Lead](../domains/sales/current-lead-operations.md)، [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) و [Warehouse Foundation](../domains/warehouse/current-foundation.md) توضیح داده شده است.
 
 ## قراردادهای مشترک
 
@@ -77,4 +85,4 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 
 ## مرز آینده
 
-مبلغ‌های مالی endpointهای Invoice/Payment رشته decimal صحیح در Rial هستند و نباید در client به `JavaScript number` تبدیل شوند. endpointهای Finance/Treasury عمومی، Payment Gateway اجرایی، Support، Warehouse/Shipment، Service Fulfillment، Refund، موتور مدیریت Campaign/Promotion، Commission، AI Sales و integrationهای بیرونی هنوز وجود ندارند. endpointهای Invoice/Payment بالا فقط vertical slice فروش و بررسی مالی مشتری را پوشش می‌دهند و accounting ledger یا Finance کامل نیستند. endpoint Marketing موجود فقط reference و snapshot را به Lead/relationship متصل می‌کند و موتور Campaign، pricing یا eligibility نیست. طراحی احتمالی قابلیت‌های کامل باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.
+مبلغ‌های مالی endpointهای Invoice/Payment رشته decimal صحیح در Rial و quantityهای Warehouse رشته decimal با حداکثر شش رقم اعشار هستند؛ هیچ‌کدام نباید در client به `JavaScript number` تبدیل شوند. endpointهای Finance/Treasury عمومی، Payment Gateway اجرایی، Support، Shipment/Delivery، Service Fulfillment، Refund، موتور مدیریت Campaign/Promotion، Commission، AI Sales و integrationهای بیرونی هنوز وجود ندارند. endpointهای Warehouse فقط foundation موجودی تا reservation/return را پوشش می‌دهند و Logistics/Shipment یا Inventory accounting نیستند. طراحی قابلیت‌های کامل آینده باید در [API draft](../future/api-contract-draft.md) با وضعیت `DRAFT` باقی بماند.

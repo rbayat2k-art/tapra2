@@ -3,11 +3,11 @@
 > Status: APPROVED-FUTURE
 > Source of truth: این سند برای قواعد پذیرفته‌شده Invoice release، Warehouse، Logistics، Service execution و لغو است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-15 against confirmed business decisions
+> Last validated: 2026-08-16 against Warehouse Foundation implementation and confirmed business decisions
 > Supersedes: بخش‌های متناقض Payment return و COD در طراحی قدیمی Sales
 > Superseded by: none
 
-مرحله `Sale → Invoice → Payment → Financial Review` اکنون اجرا شده و مرجع رفتار آن [فروش، فاکتور و پرداخت فعلی](current-invoice-payment.md) است. این سند فقط برای بخش‌های هنوز اجرا‌نشده Warehouse، Shipment، Service execution، Cancellation/Refund و settlement مرجع `APPROVED-FUTURE` است؛ وجود foundation مالی به معنی اجرای این مراحل آینده نیست.
+مرحله `Sale → Invoice → Payment → Financial Review` و Warehouse Foundation تا Reservation اجرا شده‌اند. مرجع رفتار مالی [فروش، فاکتور و پرداخت فعلی](current-invoice-payment.md) و مرجع رفتار موجودی [بنیاد فعلی انبار](../warehouse/current-foundation.md) است. این سند برای Shipment، Delivery، Service execution، Cancellation orchestration/Refund و settlement همچنان مرجع `APPROVED-FUTURE` است؛ وجود foundation موجودی به معنی اجرای این مراحل آینده نیست.
 
 ## ورودی پذیرفته‌شده از مرحله CURRENT
 
@@ -69,7 +69,7 @@
 Vertical sliceها باید به این ترتیب پیش بروند:
 
 1. `Sale → Invoice → Payment → Financial Review` — تکمیل‌شده و CURRENT؛
-2. Warehouse ledger و reservation پس از پرداخت کامل؛
+2. Warehouse ledger و reservation پس از پرداخت کامل — تکمیل‌شده و CURRENT؛
 3. Product Shipment/Delivery؛
 4. Service Execution/Activation؛
 5. Cancellation orchestration، Return و Refund؛

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current persistence model
 > Owner: Data Owner
-> Last validated: 2026-08-15 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -11,7 +11,7 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 
 ## PostgreSQL
 
-- session، Organization/Access foundation، Customer 360/Import، Lead و مسیر فعلی Sale/Invoice/Payment و AuditEntry در PostgreSQL ذخیره می‌شوند.
+- session، Organization/Access foundation، Customer 360/Import، Lead، مسیر فعلی Sale/Invoice/Payment، Warehouse Foundation و AuditEntry در PostgreSQL ذخیره می‌شوند.
 - migrationها checksum، ترتیب نام و advisory lock دارند و تکرار اجرای آن‌ها idempotent است.
 - service runtime با نقش محدود `tapra2_app` و migration با `tapra2_owner` اجرا می‌شود.
 - تمام relationهای Customer 360، Sales فعلی و AuditEntry در transaction دارای tenant context اجرا و با RLS محدود می‌شوند.
@@ -24,11 +24,16 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 - migration `0014_sales_marketing_context_links.sql` Campaign/Promotion reference و snapshot تماس را بدون ساخت موتور Campaign یا pricing اضافه می‌کند؛ link، relationship history، Customer timeline و Audit در transaction tenant-scoped ثبت می‌شوند.
 - migration `0012z_legacy_sales_renumber_bridge.sql` فقط installationهای دارای نام‌های قدیمی `0009_sales_*`/`0010_sales_*` و checksum شناخته‌شده را بدون اجرای دوباره جدول‌سازها به نام‌های canonical `0013`/`0014` ارتقا می‌دهد؛ روی نصب تازه no-op است.
 - migration `0015_sale_invoice_payment.sql` Sale، Invoice revision، Line، Payment مستقل، حساب مقصد، method policy، history، RLS و Audit foundation را اضافه می‌کند.
+- migrationهای `0016` تا `0018` setup عملیاتی مالی و lifecycle سه‌حالته Payment را به‌صورت forward-only تثبیت می‌کنند.
+- migration `0019_warehouse_inventory_core.sql` master data انبار، tracking، ledger append-only، projection موجودی، Permission و RLS را اضافه می‌کند.
+- migration `0020_warehouse_operations.sql` Receiving، Reservation/Allocation و Transfer را اضافه می‌کند.
+- migration `0021_warehouse_controls_and_returns.sql` Adjustment، Count و Return/Inspection را با maker-checker اضافه می‌کند.
+- migration `0022_invoice_inventory_item_handoff.sql` اتصال nullable و non-destructive ردیف Invoice به Inventory Item پایدار را ایجاد می‌کند.
 - Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
 ## localStorage
 
-سایر قابلیت‌های Prototype همچنان از `src/utils/storage.ts` و کلیدهای موجود مرورگر استفاده می‌کنند. هیچ پاک‌سازی، تبدیل یا انتقال خودکار داده قدیمی اجرا نشده است. مسیر عادی Customer، Lead/Queue و صفحه‌های «فاکتور فروش»/«تأیید مالی فروش» فقط PostgreSQL را استفاده می‌کنند؛ storage قدیمی Customer/Sales صرفاً برای compatibility، قابلیت‌های migrateنشده و migration evidence در code باقی است.
+سایر قابلیت‌های Prototype همچنان از `src/utils/storage.ts` و کلیدهای موجود مرورگر استفاده می‌کنند. هیچ پاک‌سازی، تبدیل یا انتقال خودکار داده قدیمی اجرا نشده است. مسیر عادی Customer، Lead/Queue، «فاکتور فروش»/«تأیید مالی فروش» و «عملیات انبار» فقط PostgreSQL را استفاده می‌کنند؛ storage قدیمی Customer/Sales/Fulfillment صرفاً برای compatibility، قابلیت‌های migrateنشده و migration evidence در code باقی است.
 
 ## محدودیت‌ها
 
