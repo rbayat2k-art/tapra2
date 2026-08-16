@@ -15,8 +15,8 @@
 
 - ثبت Sale همیشه در همان transaction یک Invoice می‌سازد؛ برای هر Sale دقیقاً یک Invoice وجود دارد.
 - Sale به `canonical_identity_id` پایدار Workspace و `customer_id` رابطه عملیاتی Company متصل است.
-- `DIRECT` فروشنده و actor را از membership فعال می‌گیرد.
-- `PAPER_ENTRY` فقط با `sales.sale.create_on_behalf` مجاز است و seller واقعی را جدا از actor ثبت‌کننده نگه می‌دارد.
+- `DIRECT` فروشنده و actor را از membership فعال می‌گیرد؛ فقط وقتی همان membership یک فروشنده فعال و مجاز همان Company باشد قابل ثبت است.
+- `PAPER_ENTRY` فقط با `sales.sale.create_on_behalf` مجاز است و seller واقعی را جدا از actor ثبت‌کننده نگه می‌دارد. فهرست فروشنده‌های واقعی این مسیر با همین authority فروش خوانده می‌شود و به permissionهای assignment/reassignment Lead وابسته نیست.
 - اگر Sale از Lead ساخته شود، Customer آن باید همان رابطه Company باشد و فروش مستقیم فقط برای assignee فعلی مجاز است.
 - الزام تأیید سرپرست یک policy در سطح Company و برای فروش‌های جدید به‌طور پیش‌فرض روشن است. مقدار policy هنگام ساخت روی Invoice snapshot می‌شود تا تغییر بعدی سابقه قبلی را عوض نکند.
 - وقتی policy روشن باشد فاکتور ابتدا `awaiting_supervisor_approval` است و فروشنده نمی‌تواند فاکتور خودش را تأیید کند. وقتی خاموش باشد Invoice مستقیماً `awaiting_payment` می‌شود.
@@ -69,7 +69,7 @@
 
 ## UI فعلی
 
-- `SaasSalesInvoiceView` مسیر «فاکتور فروش» و «تأیید مالی فروش» را از API دریافت می‌کند.
+- `SaasSalesInvoiceView` مسیر «فاکتور فروش» و «تأیید مالی فروش» را از API دریافت می‌کند؛ در کارتابل Financial Review فقط وابستگی‌های همان کارتابل بارگذاری می‌شوند.
 - labelهای status، روش پرداخت، نوع Line و وضعیت اجرا فارسی و RTL هستند؛ codeهای English فقط در contract داخلی می‌مانند.
 - UI مجوز ایجاد نمی‌کند و خطای Backend را به پیام فارسی امن تبدیل می‌کند.
 - `SalesInvoiceView` و `SalesFinancialConfirmationView` قدیمی برای بازیابی کد legacy باقی‌اند، اما در این دو مسیر عملیاتی mount نمی‌شوند.
