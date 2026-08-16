@@ -240,7 +240,7 @@ export type SalesInvoiceStatus =
   | 'awaiting_supervisor_approval' | 'awaiting_payment' | 'awaiting_financial_review'
   | 'partially_paid' | 'payment_correction_required' | 'overpayment_hold'
   | 'financially_approved' | 'cancellation_requested' | 'cancelled';
-export type SalesPaymentStatus = 'submitted' | 'approved' | 'needs_correction' | 'superseded';
+export type SalesPaymentStatus = 'submitted' | 'approved' | 'needs_correction';
 
 export interface SalesInvoiceLineInput {
   itemType: InvoiceItemType;

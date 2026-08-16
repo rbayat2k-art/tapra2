@@ -15,6 +15,8 @@ export const paymentMethods = ['card_to_card', 'bank_transfer', 'payment_gateway
 export type PaymentMethod = typeof paymentMethods[number];
 export const paymentReviewDecisions = ['approved', 'needs_correction'] as const;
 export type PaymentReviewDecision = typeof paymentReviewDecisions[number];
+export const paymentStatuses = ['submitted', 'approved', 'needs_correction'] as const;
+export type PaymentStatus = typeof paymentStatuses[number];
 
 const postgresBigintMax = 9_223_372_036_854_775_807n;
 const rialPattern = /^(0|[1-9][0-9]*)$/;
@@ -120,7 +122,7 @@ export interface SalesInvoiceView {
     id: string; amount: string; method: PaymentMethod; occurredAt: string;
     lastFourDigits: string | null; destinationAccountId: string | null;
     destinationAccountName: string | null; trackingNumber: string | null;
-    receiptReference: string | null; status: string; recorderName: string;
+    receiptReference: string | null; status: PaymentStatus; recorderName: string;
     reviewerName: string | null; reviewedAt: string | null; reviewReason: string | null;
     correctsPaymentId: string | null; supersededByPaymentId: string | null;
   }>;
@@ -252,7 +254,7 @@ async function loadInvoice(client: PoolClient, rowOrId: InvoiceRow | string): Pr
   const payments = await client.query<{
       id: string; amount: string; payment_method: PaymentMethod; occurred_at: Date | string;
       last_four_digits: string | null; destination_account_id: string | null; destination_account_name: string | null;
-      tracking_number: string | null; receipt_reference: string | null; status: string;
+      tracking_number: string | null; receipt_reference: string | null; status: PaymentStatus;
       recorder_name: string; reviewer_name: string | null; reviewed_at: Date | string | null;
       review_reason: string | null; corrects_payment_id: string | null; superseded_by_payment_id: string | null;
     }>(`
@@ -278,7 +280,7 @@ async function loadInvoice(client: PoolClient, rowOrId: InvoiceRow | string): Pr
     `, [row.id]);
   const approved = await client.query<{ total: string }>(`
       SELECT COALESCE(sum(amount), 0)::text AS total FROM sales_payments
-      WHERE invoice_id = $1 AND status = 'approved'
+      WHERE invoice_id = $1 AND status = 'approved' AND superseded_by_payment_id IS NULL
     `, [row.id]);
   return {
     id: row.id, code: row.invoice_code, revision: row.revision, status: row.status,
@@ -543,7 +545,7 @@ export async function reviseSalesInvoice(
     }
     const payments = await client.query<{ count: string }>(`
       SELECT count(*)::text AS count FROM sales_payments
-      WHERE invoice_id = $1 AND status <> 'superseded'
+      WHERE invoice_id = $1
     `, [invoiceId]);
     if (Number(payments.rows[0]?.count) > 0) {
       throw new AppError(409, 'invoice_has_payments', 'An Invoice with Payment activity cannot be revised by this flow.');
@@ -634,7 +636,7 @@ async function deriveInvoicePaymentState(client: PoolClient, invoiceId: string):
     SELECT COALESCE(sum(amount) FILTER (WHERE status = 'approved'), 0)::text AS approved,
       count(*) FILTER (WHERE status = 'submitted')::text AS submitted_count,
       count(*) FILTER (WHERE status = 'needs_correction')::text AS correction_count
-    FROM sales_payments WHERE invoice_id = $1
+    FROM sales_payments WHERE invoice_id = $1 AND superseded_by_payment_id IS NULL
   `, [invoiceId]);
   const approvedAmount = BigInt(totals.rows[0]?.approved ?? '0');
   const finalAmount = BigInt(row.final_amount);
@@ -699,7 +701,10 @@ export async function recordSalesPayment(
     }
     if (input.correctsPaymentId) {
       const previous = await client.query<{ id: string }>(`
-        SELECT id FROM sales_payments WHERE id = $1 AND invoice_id = $2 AND status = 'needs_correction' FOR UPDATE
+        SELECT id FROM sales_payments
+        WHERE id = $1 AND invoice_id = $2 AND status = 'needs_correction'
+          AND superseded_by_payment_id IS NULL
+        FOR UPDATE
       `, [input.correctsPaymentId, invoiceId]);
       if (!previous.rows[0]) throw new AppError(409, 'payment_correction_invalid', 'Only a returned Payment can be corrected.');
     }
@@ -719,8 +724,9 @@ export async function recordSalesPayment(
     ]);
     if (input.correctsPaymentId) {
       await client.query(`
-        UPDATE sales_payments SET status = 'superseded', superseded_by_payment_id = $2,
-          updated_at = now(), version = version + 1 WHERE id = $1
+        UPDATE sales_payments SET superseded_by_payment_id = $2,
+          updated_at = now(), version = version + 1
+        WHERE id = $1 AND status = 'needs_correction' AND superseded_by_payment_id IS NULL
       `, [input.correctsPaymentId, paymentId]);
     }
     const derived = await deriveInvoicePaymentState(client, invoiceId);
@@ -760,7 +766,7 @@ export async function reviewSalesPayment(
   return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
     const invoice = await assertInvoiceReadable(client, context, invoiceId, true);
     const payment = await client.query<{
-      id: string; status: string; recorded_by_user_account_id: string; amount: string;
+      id: string; status: PaymentStatus; recorded_by_user_account_id: string; amount: string;
       creator_actor_user_account_id: string; creator_effective_user_account_id: string;
     }>(`
       SELECT id, status, recorded_by_user_account_id, amount,
@@ -785,7 +791,8 @@ export async function reviewSalesPayment(
     if (input.decision === 'approved') {
       const totals = await client.query<{ approved: string }>(`
         SELECT COALESCE(sum(amount) FILTER (WHERE status = 'approved'), 0)::text AS approved
-        FROM sales_payments WHERE invoice_id = $1
+        FROM sales_payments
+        WHERE invoice_id = $1 AND superseded_by_payment_id IS NULL
       `, [invoiceId]);
       if (BigInt(totals.rows[0]?.approved ?? '0') + BigInt(previous.amount) > BigInt(invoice.final_amount)) {
         throw new AppError(409, 'payment_overpayment_denied', 'Approving this Payment would exceed the Invoice total.');

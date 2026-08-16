@@ -57,7 +57,6 @@ export const SALES_PAYMENT_STATUS_LABELS: Record<SalesPaymentStatus, string> = {
   submitted: 'در انتظار بررسی',
   approved: 'تأیید شده',
   needs_correction: 'برگشت برای اصلاح',
-  superseded: 'با نسخه اصلاحی جایگزین شده',
 };
 
 export const SALES_PAYMENT_METHOD_LABELS: Record<SalesPaymentMethod, string> = {
