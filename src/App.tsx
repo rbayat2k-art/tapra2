@@ -64,6 +64,7 @@ import { ContextSelector } from './foundation/organization/ContextSelector';
 import { FoundationContextBar } from './foundation/organization/FoundationContextBar';
 import { OrganizationAdminView } from './foundation/organization/OrganizationAdminView';
 import { SaasCustomerWorkspace } from './foundation/customers/SaasCustomerWorkspace';
+import { WarehouseFoundationView } from './foundation/warehouse/WarehouseFoundationView';
 import { resolveLegacyShellUser } from './integration/legacyShellIdentity';
 
 export default function App() {
@@ -376,13 +377,18 @@ export default function App() {
       // یک id باز که دیگر در Registry نیست (نباید پیش بیاید) به‌صورت ایمن دست‌نخورده می‌ماند —
       // فقط idهای شناخته‌شده‌ای که واقعاً دیگر مجاز نیستند بسته می‌شوند.
       if (!navItem) continue;
-      const allowed = isNavItemVisible(navItem, { currentUser, effectivePermissions, isAdmin: isAdminUser });
+      const allowed = isNavItemVisible(navItem, {
+        currentUser,
+        effectivePermissions,
+        isAdmin: isAdminUser,
+        foundationPermissions: foundation.session?.activeContext?.permissions ?? [],
+      });
       if (!allowed) {
         closeTab(tab.id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTabs, effectivePermissions, currentUser]);
+  }, [openTabs, effectivePermissions, currentUser, foundation.session?.activeContext]);
 
   // Modals
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
@@ -1459,6 +1465,10 @@ export default function App() {
 
                   {tab.id === 'sales_financial_confirmation' && (
                     <SaasSalesInvoiceView mode="financial_review" />
+                  )}
+
+                  {tab.id === 'warehouse_foundation' && (
+                    <WarehouseFoundationView />
                   )}
 
                   {tab.id === 'fulfillment_cases' && (

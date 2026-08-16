@@ -90,7 +90,7 @@ export async function assertLocation(
 export async function listWarehouseOverview(context: MembershipContext): Promise<Record<string, unknown>> {
   requireWarehousePermission(context, 'warehouse.read');
   return withWorkspaceTransaction({ workspaceId: context.workspace.id, companyId: context.company?.id ?? null }, async (client) => {
-    const [warehouses, locations, items, balances, movements, receipts, reservations, transfers, adjustments, counts, returns] = await Promise.all([
+    const [warehouses, locations, items, balances, movements, receipts, reservations, allocations, transfers, adjustments, counts, returns, returnLines] = await Promise.all([
       client.query(`SELECT id, operator_company_id AS "operatorCompanyId", operator_unit_id AS "operatorUnitId", code, name,
         description, is_active AS "isActive", created_at AS "createdAt" FROM warehouses ORDER BY name, id`),
       client.query(`SELECT id, warehouse_id AS "warehouseId", code, name, location_type AS "locationType",
@@ -118,6 +118,9 @@ export async function listWarehouseOverview(context: MembershipContext): Promise
         reserved_quantity::text AS "reservedQuantity", shortage_quantity::text AS "shortageQuantity", status,
         created_at AS "createdAt", released_at AS "releasedAt", release_reason AS "releaseReason"
         FROM inventory_reservations ORDER BY created_at DESC, id DESC LIMIT 100`),
+      client.query(`SELECT id, reservation_id AS "reservationId", warehouse_id AS "warehouseId", location_id AS "locationId",
+        stock_identity_id AS "stockIdentityId", quantity::text, status, created_at AS "createdAt", released_at AS "releasedAt"
+        FROM inventory_allocations ORDER BY created_at DESC, id DESC LIMIT 500`),
       client.query(`SELECT id, owner_company_id AS "ownerCompanyId", source_warehouse_id AS "sourceWarehouseId",
         destination_warehouse_id AS "destinationWarehouseId", source_location_id AS "sourceLocationId",
         destination_location_id AS "destinationLocationId", status, reason, created_at AS "createdAt",
@@ -131,11 +134,15 @@ export async function listWarehouseOverview(context: MembershipContext): Promise
       client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", returns_location_id AS "returnsLocationId",
         customer_id AS "customerId", invoice_id AS "invoiceId", status, reason, evidence_note AS "evidenceNote",
         created_at AS "createdAt", received_at AS "receivedAt" FROM inventory_returns ORDER BY created_at DESC, id DESC LIMIT 100`),
+      client.query(`SELECT id, return_id AS "returnId", inventory_item_id AS "inventoryItemId", quantity::text,
+        lot_code AS "lotCode", serial_code AS "serialCode", stock_identity_id AS "stockIdentityId"
+        FROM inventory_return_lines ORDER BY return_id, line_number, id`),
     ]);
     return {
       warehouses: warehouses.rows, locations: locations.rows, items: items.rows, balances: balances.rows,
-      movements: movements.rows, receipts: receipts.rows, reservations: reservations.rows, transfers: transfers.rows,
-      adjustments: adjustments.rows, counts: counts.rows, returns: returns.rows,
+      movements: movements.rows, receipts: receipts.rows, reservations: reservations.rows, allocations: allocations.rows,
+      transfers: transfers.rows, adjustments: adjustments.rows, counts: counts.rows, returns: returns.rows,
+      returnLines: returnLines.rows,
     };
   });
 }

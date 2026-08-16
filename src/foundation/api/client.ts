@@ -20,6 +20,10 @@ import type {
   SalesMarketingLinkType,
   SalesPaymentInfrastructure,
   SalesPaymentMethod,
+  InventoryReturnDisposition,
+  InventoryTrackingMode,
+  WarehouseLocationType,
+  WarehouseOverview,
 } from './contracts';
 
 export class FoundationApiError extends Error {
@@ -220,4 +224,58 @@ export const foundationApi = {
   }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}/payments/${paymentId}/review`, {
     method: 'POST', body: JSON.stringify(input),
   }, csrfToken),
+  readWarehouse: () => request<{ warehouse: WarehouseOverview }>('/warehouse'),
+  createWarehouse: (input: { ownerCompanyId?: string; operatorUnitId?: string; code: string; name: string; description?: string }, csrfToken: string) =>
+    request<{ warehouse: WarehouseOverview['warehouses'][number] }>('/warehouse/warehouses', { method: 'POST', body: JSON.stringify(input) }, csrfToken),
+  createWarehouseLocation: (warehouseId: string, input: { code: string; name: string; locationType: WarehouseLocationType }, csrfToken: string) =>
+    request<{ location: WarehouseOverview['locations'][number] }>(`/warehouse/warehouses/${warehouseId}/locations`, { method: 'POST', body: JSON.stringify(input) }, csrfToken),
+  createInventoryItem: (input: { sku: string; name: string; catalogReference: string; trackingMode: InventoryTrackingMode; uom: string }, csrfToken: string) =>
+    request<{ item: WarehouseOverview['items'][number] }>('/warehouse/items', { method: 'POST', body: JSON.stringify(input) }, csrfToken),
+  createWarehouseReceipt: (input: {
+    ownerCompanyId?: string; warehouseId: string; receivingLocationId: string; receiptType: 'PURCHASE' | 'MANUAL';
+    sourceNote: string; reason?: string; lines: Array<{ inventoryItemId: string; quantity: string; lotCode?: string; serialCode?: string; evidenceNote: string }>;
+  }, csrfToken: string) => request<{ receipt: { id: string; status: string } }>('/warehouse/receipts', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  postWarehouseReceipt: (receiptId: string, csrfToken: string) => request<{ receipt: { id: string; status: string } }>(`/warehouse/receipts/${receiptId}/post`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  createInventoryReservation: (input: { ownerCompanyId?: string; invoiceLineId: string }, csrfToken: string) =>
+    request<{ reservation: { id: string; status: string; requestedQuantity: string; reservedQuantity: string; shortageQuantity: string } }>('/warehouse/reservations', {
+      method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+    }, csrfToken),
+  releaseInventoryReservation: (reservationId: string, reason: string, csrfToken: string) => request<{ reservation: { id: string; status: string } }>(`/warehouse/reservations/${reservationId}/release`, { method: 'POST', body: JSON.stringify({ reason }) }, csrfToken),
+  createWarehouseTransfer: (input: {
+    ownerCompanyId?: string; sourceWarehouseId: string; destinationWarehouseId: string; sourceLocationId: string;
+    destinationLocationId: string; reason: string; lines: Array<{ stockIdentityId: string; quantity: string }>;
+  }, csrfToken: string) => request<{ transfer: { id: string; status: string } }>('/warehouse/transfers', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  dispatchWarehouseTransfer: (transferId: string, csrfToken: string) => request<{ transfer: { id: string; status: string } }>(`/warehouse/transfers/${transferId}/dispatch`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  receiveWarehouseTransfer: (transferId: string, csrfToken: string) => request<{ transfer: { id: string; status: string } }>(`/warehouse/transfers/${transferId}/receive`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  createInventoryAdjustment: (input: {
+    ownerCompanyId?: string; warehouseId: string; locationId: string; reason: string; evidenceNote: string;
+    lines: Array<{ stockIdentityId: string; direction: 'IN' | 'OUT'; quantity: string }>;
+  }, csrfToken: string) => request<{ adjustment: { id: string; status: string } }>('/warehouse/adjustments', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  submitInventoryAdjustment: (id: string, csrfToken: string) => request<{ adjustment: { id: string; status: string } }>(`/warehouse/adjustments/${id}/submit`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  approveInventoryAdjustment: (id: string, csrfToken: string) => request<{ adjustment: { id: string; status: string } }>(`/warehouse/adjustments/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  createInventoryCount: (input: {
+    ownerCompanyId?: string; warehouseId: string; locationId: string; reason: string;
+    lines: Array<{ stockIdentityId: string; actualQuantity: string }>;
+  }, csrfToken: string) => request<{ count: { id: string; status: string } }>('/warehouse/counts', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  submitInventoryCount: (id: string, csrfToken: string) => request<{ count: { id: string; status: string } }>(`/warehouse/counts/${id}/submit`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  approveInventoryCount: (id: string, csrfToken: string) => request<{ count: { id: string; status: string } }>(`/warehouse/counts/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  createInventoryReturn: (input: {
+    ownerCompanyId?: string; warehouseId: string; returnsLocationId: string; customerId?: string; invoiceId?: string;
+    reason: string; evidenceNote: string; lines: Array<{ inventoryItemId: string; quantity: string; lotCode?: string; serialCode?: string }>;
+  }, csrfToken: string) => request<{ inventoryReturn: { id: string; status: string } }>('/warehouse/returns', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  receiveInventoryReturn: (id: string, csrfToken: string) => request<{ inventoryReturn: { id: string; status: string } }>(`/warehouse/returns/${id}/receive`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  inspectInventoryReturnLine: (returnId: string, lineId: string, input: {
+    disposition: InventoryReturnDisposition; quantity: string; destinationLocationId?: string; reason: string;
+  }, csrfToken: string) => request<{ inspection: { id: string; status: string } }>(`/warehouse/returns/${returnId}/lines/${lineId}/inspect`, { method: 'POST', body: JSON.stringify(input) }, csrfToken),
+  reverseInventoryMovement: (movementId: string, reason: string, csrfToken: string) => request<{ movement: { movementId: string } }>(`/warehouse/movements/${movementId}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }, csrfToken),
 };

@@ -11,6 +11,7 @@ import {
   ChevronDown, MoreHorizontal, UsersRound, PanelRightClose, PanelRightOpen, X,
   Briefcase, MapPinned, ChevronsUpDown
 } from 'lucide-react';
+import { useFoundationSession } from '../foundation/auth/FoundationSessionContext';
 
 interface SidebarProps {
   activeTab: string;
@@ -49,14 +50,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile
 }) => {
+  const foundation = useFoundationSession();
   // بند «مأموریت بازطراحی UI»: هیچ Permission را تغییر نده — دقیقاً همان چک preexisting
   // (role==='admin' خام، نه isSystemAdmin) که Sidebar/App.tsx's tabAccessMap قبلاً برای سه آیتم
   // admin/roles_permissions/all_communications استفاده می‌کردند، حفظ شده.
   const isAdmin = currentUser?.role === 'admin';
   const effectivePermissions = useEffectivePermissions(currentUser, roles);
 
-  const visibilityCtx: NavVisibilityContext = { currentUser, effectivePermissions, isAdmin };
-  const groupedNavItems = useMemo(() => getVisibleGroupedNavItems(visibilityCtx), [currentUser, effectivePermissions, isAdmin]);
+  const foundationPermissions = foundation.session?.activeContext?.permissions ?? [];
+  const visibilityCtx: NavVisibilityContext = { currentUser, effectivePermissions, isAdmin, foundationPermissions };
+  const groupedNavItems = useMemo(() => getVisibleGroupedNavItems(visibilityCtx), [currentUser, effectivePermissions, isAdmin, foundationPermissions]);
   const activeGroup: NavGroupId | undefined = groupedNavItems.find((g) => g.items.some((i) => i.id === activeTab))?.group;
 
   // باز/بسته بودن هر گروه فقط برای همین کاربر، در localStorage — پیش‌فرض: فقط گروه فعال باز است.
