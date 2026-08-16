@@ -54,10 +54,12 @@ login محلی legacy در مسیر عادی قابل‌استفاده نیست.
 
 - `npm run lint`: موفق برای Web و Backend.
 - `npm run build`: موفق؛ هشدار bundle بزرگ باقی است.
-- `npm test`: `461/461` موفق در `26` فایل، شامل PostgreSQL، ماتریس ۳۰ سناریویی Role/Permission/Scope، Organization/Scope، Customer identity reconciliation، Sales isolation/policy/marketing linkage، migration populated database و تست‌های domain legacy.
-- browser: Login، context selection/switching، Organization Admin، Impersonation، Dashboard، Sales Lead/queue/assignment/call/relationship lock/marketing context، Customer 360 و Import بررسی شدند.
+- `npm test`: `495/495` موفق در `34` فایل، شامل PostgreSQL، migration، Organization/Scope، Customer identity reconciliation، Sales، Invoice/Payment، Warehouse و تست‌های domain legacy.
+- `npm run lint` و `npm run build`: موفق؛ هشدار شناخته‌شده اندازه bundle باقی است.
+- migration QA جداگانه: زنجیره `0001` تا `0023` روی database تست اعمال و seed کنترل‌شده با موفقیت اجرا شد؛ migration جدیدی در این تغییر وجود ندارد.
+- browser: مدیر مجموعه و کاربر محدود impersonated در desktop و viewport عرض `390px` بررسی شدند. ناوبری Permission-aware، guard شرکت، Dashboard بدون metric ساختگی، Organization server-backed، Customer خواندنی، RTL، Drawer موبایل و پیام خطای فارسی تأیید شدند.
 - tenant check مرورگر: Company بتا Customer نمونه بتا را دید و Customer نمونه آلفا را ندید.
-- browser console: بدون warning/error در سناریوی بررسی‌شده.
+- browser console: بدون warning/error در سناریوی بررسی‌شده؛ یک `<main>` و بدون overflow افقی در desktop/mobile.
 
 پوسته عملیاتی علاوه بر enforcement مستقل Backend، View و action فاقد Permission را نمایش نمی‌دهد. خطاهای API در client متمرکز به پیام امن فارسی برگردانده می‌شوند و متن خام یا فنی Backend در UI عادی نمایش داده نمی‌شود. این کنترل‌های نمایشی مرز امنیتی جایگزین server نیستند.
 
