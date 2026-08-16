@@ -177,7 +177,21 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ('organization.user.manage', 'Create and activate or deactivate UserAccounts'),
         ('organization.membership.manage', 'Create and update Memberships'),
         ('organization.role.manage', 'Create Roles and assign scoped Roles'),
-        ('organization.impersonate', 'Start a time-limited audited impersonation session')
+        ('organization.impersonate', 'Start a time-limited audited impersonation session'),
+        ('warehouse.read', 'Read Warehouse inventory and operational records in the active context'),
+        ('warehouse.manage', 'Manage Warehouses and Warehouse Locations in the active context'),
+        ('warehouse.item.manage', 'Manage Workspace Inventory Items and tracking identities'),
+        ('warehouse.receiving.create', 'Create Warehouse Receiving records'),
+        ('warehouse.receiving.post', 'Post validated Warehouse Receiving records to the inventory ledger'),
+        ('warehouse.receiving.manual', 'Create manual Receiving with mandatory reason and evidence'),
+        ('warehouse.reservation.manage', 'Create and release financially eligible inventory Reservations'),
+        ('warehouse.transfer.manage', 'Create, dispatch and receive internal Warehouse Transfers'),
+        ('warehouse.adjustment.create', 'Create Inventory Adjustments'),
+        ('warehouse.adjustment.approve', 'Approve and post Inventory Adjustments created by another user'),
+        ('warehouse.count.create', 'Create and submit Inventory Counts'),
+        ('warehouse.count.approve', 'Approve and post Inventory Counts created by another user'),
+        ('warehouse.return.manage', 'Receive and inspect Customer inventory Returns'),
+        ('warehouse.movement.reverse', 'Reverse a posted Inventory Movement without rewriting history')
       ON CONFLICT (code) DO UPDATE SET description = EXCLUDED.description
     `);
     await client.query(`
@@ -242,6 +256,14 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($5, 'sales.invoice.edit_draft')
       ON CONFLICT DO NOTHING
     `, [roleAlphaManager, roleBetaManager, roleAlphaReader, roleWorkspaceAdmin, roleAlphaSeller]);
+    await client.query(`
+      INSERT INTO role_permissions(role_id, permission_code)
+      SELECT role_id, permission.code
+      FROM unnest($1::uuid[]) AS role_id
+      CROSS JOIN permissions permission
+      WHERE permission.code LIKE 'warehouse.%'
+      ON CONFLICT DO NOTHING
+    `, [[roleAlphaManager, roleBetaManager, roleWorkspaceAdmin]]);
     await client.query(`
       INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
         ($1, $2, $3, 'COMPANY', $4),

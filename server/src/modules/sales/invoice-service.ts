@@ -334,9 +334,12 @@ async function insertInvoiceLines(
     await client.query(`
       INSERT INTO sales_invoice_lines(
         workspace_id, company_id, invoice_id, invoice_revision, line_number, item_type,
-        catalog_reference, item_name, quantity, unit_price, discount_amount, line_total,
+        catalog_reference, inventory_item_id, item_name, quantity, unit_price, discount_amount, line_total,
         source_type, item_snapshot
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7,
+        (SELECT id FROM inventory_items
+          WHERE workspace_id = $1 AND catalog_reference = $7 AND is_active = true AND $6 = 'goods'),
+        $8, $9, $10, $11, $12, $13, $14)
     `, [
       context.workspace.id, context.company!.id, invoiceId, revision, line.lineNumber, line.itemType,
       line.catalogReference ?? null, line.itemName, line.quantity, line.unitPrice,
