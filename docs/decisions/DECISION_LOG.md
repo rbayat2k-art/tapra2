@@ -539,3 +539,18 @@ migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log
 
 **Impact:**
 authority CURRENT این رفتار [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) است. migrationهای `0015` و تاریخچه قبلی بازنویسی نشدند؛ اصلاح‌ها فقط با migrationهای افزایشی اعمال شدند. Warehouse، Shipment، Service Fulfillment، Refund، accounting ledger و Payment Gateway اجرایی همچنان خارج از محدوده CURRENT هستند.
+
+---
+
+### Date: 2026-08-16
+
+**Title:** Payment correction lineage separated from business status
+
+**Context:**
+بازبینی نهایی PR #15 نشان داد `superseded` نباید status چهارم Payment باشد. lifecycle مصوب Payment فقط `submitted`، `approved` و `needs_correction` است و در عین حال تاریخچه correction باید بدون حذف یا overwrite باقی بماند.
+
+**Decision:**
+Payment برگشتی پس از ساخته‌شدن correction همچنان `needs_correction` می‌ماند. رکورد جدید `submitted` است؛ `corrects_payment_id` روی revision جدید و `superseded_by_payment_id` روی رکورد قبلی lineage دوطرفه و current revision را مشخص می‌کنند. queryهای عملیاتی فقط revision فاقد `superseded_by_payment_id` را actionable می‌دانند. migration افزایشی `0018` داده‌های معتبر قبلی را تبدیل، constraint سه‌حالته را enforce و description مجوز `sales.payment.review` را با wording «Approve or return ... for correction» همسان می‌کند.
+
+**Impact:**
+هیچ history، review reason یا Audit حذف نمی‌شود؛ migrationهای `0015`، `0016` و `0017` بازنویسی نمی‌شوند. هر lineage ناقص در زمان migration fail-safe متوقف می‌شود تا تبدیل مبهم یا مخرب انجام نشود.

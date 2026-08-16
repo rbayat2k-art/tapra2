@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده `Sale → Invoice → Payment → Financial Review` است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-16 against migrations `0015`–`0017`, Backend tests and browser validation
+> Last validated: 2026-08-16 against migrations `0015`–`0018`, Backend tests and browser validation
 > Supersedes: بخش اجراشده Invoice/Payment در اسناد آینده Sales
 > Superseded by: none
 
@@ -35,10 +35,10 @@
 - همه مبلغ‌های API رشته عدد صحیح decimal در Rial، در Backend از نوع `bigint` و در PostgreSQL از نوع `bigint` هستند؛ مسیر مالی از `JavaScript number` استفاده نمی‌کند.
 - روش‌های manual فعلی `card_to_card` و `bank_transfer` هستند. `payment_gateway` فقط برای integration اختصاصی رزرو شده و از مسیر ثبت دستی پذیرفته نمی‌شود.
 - `cash`، `cheque` و `cod` در policy توسعه پیش‌فرض غیرفعال‌اند؛ فعال‌سازی آینده نیازمند policy صریح است.
-- وضعیت submission/review فقط `submitted`، `approved` یا `needs_correction` است؛ `superseded` فقط lineage نسخه اصلاحی را نشان می‌دهد. تصمیم مستقل `rejected` در این Flow وجود ندارد.
+- lifecycle تجاری Payment دقیقاً سه وضعیت `submitted`، `approved` و `needs_correction` دارد. وضعیت چهارم `superseded` و تصمیم مستقل `rejected` در این Flow وجود ندارند.
 - بازبینی مالی هنگام Impersonation fail-closed است. actor واقعی و user مؤثر سازنده Payment هر دو ثبت می‌شوند و هیچ‌کدام نمی‌تواند همان Payment را review کند.
 - تصمیم review فقط `approved` یا `needs_correction` است؛ برگشت برای اصلاح reason اجباری دارد.
-- اصلاح Payment برگشتی یک رکورد جدید می‌سازد؛ رکورد قبلی `superseded` و lineage دوطرفه حفظ می‌شود.
+- اصلاح Payment برگشتی یک رکورد جدید با وضعیت `submitted` می‌سازد. رکورد قبلی در وضعیت `needs_correction` و با تمام review/reason قبلی حفظ می‌شود؛ `corrects_payment_id` و `superseded_by_payment_id` lineage دوطرفه و revision قابل اقدام فعلی را مشخص می‌کنند.
 - Return فقط همان Payment را تغییر می‌دهد و Paymentهای دیگر یا Invoice را بازنویسی نمی‌کند.
 
 ## دروازه مالی اجرا
@@ -78,6 +78,7 @@
 - `server/migrations/0015_sale_invoice_payment.sql`
 - `server/migrations/0016_payment_review_safety.sql`
 - `server/migrations/0017_sales_collection_policy.sql`
+- `server/migrations/0018_payment_lineage_status_cleanup.sql`
 - `server/src/modules/sales/invoice-service.ts`
 - `server/src/modules/sales/routes.ts`
 - `server/tests/sales.integration.test.ts`

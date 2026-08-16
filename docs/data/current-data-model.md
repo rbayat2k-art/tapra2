@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-16 against migrations `0001`–`0017`
+> Last validated: 2026-08-16 against migrations `0001`–`0018`
 > Supersedes: none
 > Superseded by: none
 
@@ -48,7 +48,7 @@
 
 ## مدل Prototype
 
-مبلغ‌های Invoice/Payment در PostgreSQL `bigint` و در API رشته decimal Rial هستند. `sales_payments` actor واقعی و user مؤثر سازنده را جدا نگه می‌دارد تا maker-checker حتی در Impersonation enforce شود. مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قراردادهای Sales اجراشده در migrationهای `0013` تا `0017` هستند؛ Warehouse، Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند.
+مبلغ‌های Invoice/Payment در PostgreSQL `bigint` و در API رشته decimal Rial هستند. `sales_payments` actor واقعی و user مؤثر سازنده را جدا نگه می‌دارد تا maker-checker حتی در Impersonation enforce شود. lifecycle تجاری Payment فقط `submitted`، `approved` و `needs_correction` است و revision اصلاحی با `corrects_payment_id` و `superseded_by_payment_id` مدل می‌شود، نه status چهارم. مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قراردادهای Sales اجراشده در migrationهای `0013` تا `0018` هستند؛ Warehouse، Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند.
 
 ## قواعد تغییر
 
