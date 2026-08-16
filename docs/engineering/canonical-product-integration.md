@@ -3,19 +3,20 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت اجرایی ادغام محصول legacy با Foundation SaaS است.
 > Owner: Product Integration
-> Last validated: 2026-08-15 against `agent/access-verification-matrix`
+> Last validated: 2026-08-16 against `agent/global-operational-shell-hardening`
 > Supersedes: none
 > Superseded by: none
 
 ## محصول visible فعلی
 
-Tapra2 اکنون یک shell واحد دارد. کاربر با Foundation login وارد می‌شود، Workspace/Company مجاز را انتخاب می‌کند و سپس Dashboard، Customers، Sales، Finance، Support، Organization/RBAC و Communications را در همان محصول می‌بیند.
+Tapra2 یک shell عملیاتی واحد دارد. ورود، context فعال، منوها، tabها، میان‌برها و عملیات قابل‌مشاهده با session و Permissionهای server تعیین می‌شوند؛ role یا permission قدیمی نمی‌تواند قابلیت عملیاتی جدیدی باز کند.
 
 - مسیر عادی login محلی prototype ندارد.
-- Customer همیشه `SaasCustomerWorkspace` را باز می‌کند.
-- CSV Import داخل Customer 360 و کنار profileها قرار دارد.
-- انتخاب فنی `Prototype / localStorage` یا `SaaS / PostgreSQL` از UI عادی حذف شده است.
-- تعویض context، tabهای باز را به Dashboard بازنشانی می‌کند.
+- ناوبری عادی فقط `CURRENT` و بخش معتبر `HYBRID` را نشان می‌دهد؛ Viewهای `PROTOTYPE` و `LEGACY` برای حفظ دانش در source باقی مانده‌اند اما entry point عملیاتی ندارند.
+- مسیرهای Company-scoped پیش از mount شدن View و ارسال API، به context شرکت معتبر نیاز دارند.
+- صفحه مشتری همیشه `SaasCustomerWorkspace` و صفحه سازمان همیشه `OrganizationAdminView` را باز می‌کند؛ بخش حساب‌های بانکی legacy در صفحه سازمان mount نمی‌شود.
+- Dashboard از session و capabilityهای مجاز استفاده می‌کند و تا وجود API معتبر، آمار ساختگی یا `localStorage` را به‌عنوان شاخص عملیاتی نشان نمی‌دهد.
+- تعویض context، tabهای نامعتبر را می‌بندد و دسترسی هر tab دوباره با Permission و context جدید محاسبه می‌شود.
 - داده legacy `localStorage` حذف یا خودکار ingest نشده است.
 
 ## قرارداد زبان و نمایش UI
@@ -35,15 +36,17 @@ Tapra2 اکنون یک shell واحد دارد. کاربر با Foundation login
 | Customer 360، identity/relationship، phone/address/source/timeline، merge/unmerge | `SaaS-backed` |
 | Customer Import و reconciliation | `SaaS-backed` |
 | Sales Lead، Queue، Assignment/Reassignment، Call Log و Campaign/Promotion context | `SaaS-backed` |
-| Dashboard، navigation، tabs و theme | `Hybrid`؛ session جدید و state نمایشی محلی |
-| مدیریت کامل Campaign/Promotion، Sales Invoice/Commission، Finance، Support و Communications | `Prototype-backed` تا vertical sliceهای بعدی |
-| bank/Issabel/SMS/portal/inventory/commission/GL/DR/BPMN | `Future` |
+| Sale/Invoice/Payment و Financial Review فروش | `SaaS-backed` |
+| Warehouse Foundation | `SaaS-backed` |
+| Dashboard، navigation، tabs و theme | `Hybrid`؛ authority دسترسی server و state نمایشی محلی، بدون metric ساختگی |
+| مدیریت کامل Campaign/Promotion، Commission، Finance عمومی، Support و Communications | `Prototype-backed` و مخفی از ناوبری عملیاتی |
+| bank/Issabel/SMS/portal/commission/GL/DR/BPMN و Logistics پیشرفته | `Future` |
 
 جزئیات capability-by-capability، شاهد Git/stash و تصمیم preservation در [Legacy Product Preservation Matrix](../archive/legacy-product-preservation-matrix.md) ثبت شده است. آن ماتریس همچنین Legacy → SaaS migration map و role mapping را نگه می‌دارد و این سند آن محتوا را تکرار نمی‌کند.
 
 ## RBAC reconciliation
 
-`resolveLegacyShellUser` فقط identity نمایشی shell را می‌سازد. این adapter نمی‌تواند permission server ایجاد کند. تمام APIها session، Membership، permission و RLS را مستقل enforce می‌کنند. حساب deterministic `demo@tapra.local` فقط برای نمایش کامل محصول محلی به profile مدیر prototype نگاشت می‌شود؛ این نگاشت هیچ bypass در Backend ندارد.
+`resolveLegacyShellUser` فقط identity نمایشی و کم‌اختیار shell را می‌سازد. این adapter نه permission server را به permission قدیمی تبدیل می‌کند و نه هیچ حسابی را به مدیر prototype ارتقا می‌دهد. تمام APIها session، Membership، permission و RLS را مستقل enforce می‌کنند.
 
 login محلی legacy در مسیر عادی قابل‌استفاده نیست. Impersonation فقط از مسیر server-backed، با permission اختصاصی، reason الزامی، انقضای محدود و Audit actor/effective user قابل‌استفاده است و permission مؤثر را بالاتر از Admin آغازکننده نمی‌برد. roleهای legacy برای migration حفظ شده‌اند، اما مرجع authorization SaaS نیستند.
 
@@ -56,6 +59,6 @@ login محلی legacy در مسیر عادی قابل‌استفاده نیست.
 - tenant check مرورگر: Company بتا Customer نمونه بتا را دید و Customer نمونه آلفا را ندید.
 - browser console: بدون warning/error در سناریوی بررسی‌شده.
 
-Browser validation ماتریس Access نشان داد Backend در Context فاقد `organization.read` صفحه مدیریت را رد می‌کند و در Context مجاز `WORKSPACE`، Organization Admin و Role/Scope server-backed قابل‌استفاده‌اند. نمایش لینک legacy در Context فاقد permission و باقی‌ماندن بعضی واژه‌های فنی English در Organization UI بدهی UX هستند؛ هیچ‌کدام bypass سمت server ایجاد نمی‌کنند.
+پوسته عملیاتی علاوه بر enforcement مستقل Backend، View و action فاقد Permission را نمایش نمی‌دهد. خطاهای API در client متمرکز به پیام امن فارسی برگردانده می‌شوند و متن خام یا فنی Backend در UI عادی نمایش داده نمی‌شود. این کنترل‌های نمایشی مرز امنیتی جایگزین server نیستند.
 
 این validation گواه production readiness کامل نیست. ماژول‌های prototype-backed باید به‌ترتیب vertical slice به Backend منتقل شوند.

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current system architecture and technology stack
 > Owner: Architecture Owner
-> Last validated: 2026-08-11 against `agent/sales-backend-slice-1`
+> Last validated: 2026-08-16 against `agent/global-operational-shell-hardening`
 > Supersedes: none
 > Superseded by: none
 
@@ -20,18 +20,18 @@ Tapra2 اکنون یک vertical slice از معماری SaaS را در کنار 
 | Organization | `Workspace`، `Company`، `Membership`، انتخاب context و permission سمت server |
 | Customer 360 slice | profile، phone/address چندتایی، provenance، timeline، duplicate check و merge/unmerge تراکنشی در PostgreSQL |
 | Sales Lead slice | Lead، صف شخصی، assignment/reassignment، Call Log، relationship policy، Campaign/Promotion context و history تراکنشی در PostgreSQL |
-| Canonical product shell | Dashboard، navigation چندگروهی، tabها، Sales، Finance، Support، Organization/RBAC و Communications در یک SPA واحد |
-| Prototype backing | منطق domainهای migrateنشده همچنان در `localStorage` اجرا می‌شود و authorization SaaS محسوب نمی‌شود |
+| Canonical product shell | Dashboard عملیاتی، navigation و tabهای permission-aware برای Customer، Sales، Invoice/Payment، Warehouse و Organization در یک SPA واحد |
+| Prototype preservation | منطق domainهای migrateنشده در source و `localStorage` حفظ شده، اما از ناوبری عملیاتی مخفی است و authorization SaaS محسوب نمی‌شود |
 
 ورودی Backend در `server/src/index.ts` و composition آن در `server/src/app/create-app.ts` است. Web client فقط از client متمرکز `src/foundation/api/client.ts` به Foundation API متصل می‌شود.
 
 ## مرز فعلی migration
 
-- session، Customer 360/Import و Sales Lead/Queue/Assignment/Call/Marketing Context از PostgreSQL استفاده می‌کنند.
+- session، Organization، Customer 360/Import، Sales Lead/Queue/Assignment/Call، Sale/Invoice/Payment/Financial Review و Warehouse Foundation از PostgreSQL استفاده می‌کنند.
 - صفحه Customer فقط تجربه واحد `SaasCustomerWorkspace` را نشان می‌دهد؛ فناوری persistence از UI عادی حذف شده است.
 - هیچ داده قدیمی `localStorage` حذف یا خودکار migrate نمی‌شود.
-- domainهای مالی، Support، Letters، Chat و Sales خارج از vertical slice فعلی در shell حفظ شده‌اند، اما هنوز server-backed نشده‌اند.
-- موتور کامل Campaign/Promotion، Warehouse/Fulfillment، Commission، AI Sales، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند. Invoice/Payment محدود فروش اکنون اجرا شده، اما Finance عمومی یا accounting ledger نیست.
+- domainهای مالی عمومی، Support، Letters، Chat و Sales خارج از vertical slice فعلی در source حفظ شده‌اند، اما هنوز server-backed نیستند و در ناوبری عادی نمایش داده نمی‌شوند.
+- موتور کامل Campaign/Promotion، Shipment/Delivery، Service Fulfillment، Commission، AI Sales، Outbox و integration آینده با وجود ADR یا سند DRAFT، CURRENT نیستند. Invoice/Payment محدود فروش و Warehouse Foundation اجرا شده‌اند، اما Finance عمومی، accounting ledger یا Logistics پیشرفته نیستند.
 
 Customer 360 foundation هویت Workspace-level را نگه می‌دارد و عملیات Sales فعلی relationship/activity، Sale و Invoice شرکت را به آن متصل می‌کند. fuzzy matching، import حجیم و AI entity resolution اجرا نشده‌اند. merge رکورد بازنده را حذف نمی‌کند و از رابطه دارای lineage برای unmerge استفاده می‌کند. UIهای Campaign، Catalog، Batch Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ `SaasSalesInvoiceView` برای ثبت Sale/Invoice و Financial Review از Backend استفاده می‌کند، اما وجود این vertical slice به معنی Backend کامل Sales/Finance نیست.
 
