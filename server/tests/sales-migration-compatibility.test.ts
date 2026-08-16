@@ -1,9 +1,10 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { config as loadDotEnv } from 'dotenv';
 import { Client } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../scripts/migrate.js';
+import { seedDatabase } from '../scripts/seed.js';
 
 loadDotEnv({ path: '.env.local', quiet: true });
 const migrationUrl = process.env.TEST_DATABASE_MIGRATION_URL;
@@ -13,6 +14,16 @@ if (!migrationUrl || !runtimeUrl) throw new Error('TEST_DATABASE_MIGRATION_URL a
 const legacyChecksums = {
   lead: '5dc3fd8406316ad6ef7baea4bfa0bd204302134afeb7a6b55bcf5e0aebbecb4d',
   marketing: 'f0da64e7ba372345b3af1e18f70dffaa4461363447f72208d897159af85b865f',
+} as const;
+
+const fixtureIds = {
+  workspace: '10000000-0000-4000-8000-000000000001',
+  company: '20000000-0000-4000-8000-000000000001',
+  account: '40000000-0000-4000-8000-000000000001',
+  sellerMembership: '50000000-0000-4000-8000-000000000004',
+  identity: '65000000-0000-4000-8000-000000000001',
+  customer: '70000000-0000-4000-8000-000000000001',
+  financialAccount: '80000000-0000-4000-8000-000000000001',
 } as const;
 
 function assertDedicatedTestDatabase(connectionString: string): void {
@@ -103,9 +114,9 @@ describe('Sales migration compatibility', () => {
         '0009_sales_lead_queue.sql', '0010_sales_marketing_context_links.sql',
         '0013_sales_lead_queue.sql', '0014_sales_marketing_context_links.sql',
         '0015_sale_invoice_payment.sql', '0016_payment_review_safety.sql',
-        '0017_sales_collection_policy.sql',
+        '0017_sales_collection_policy.sql', '0018_payment_lineage_status_cleanup.sql',
       ]]);
-      expect(ledger.rows).toHaveLength(7);
+      expect(ledger.rows).toHaveLength(8);
       expect(ledger.rows.find((row) => row.name === '0009_sales_lead_queue.sql')?.checksum).toBe(legacyChecksums.lead);
       expect(ledger.rows.find((row) => row.name === '0010_sales_marketing_context_links.sql')?.checksum).toBe(legacyChecksums.marketing);
       const beforeRerun = await verify.query<{ migrations: string; policies: string }>(`
@@ -147,8 +158,142 @@ describe('Sales migration compatibility', () => {
         WHERE relname = ANY(ARRAY['sales_invoices', 'sales_payments', 'sales_invoice_policies'])
       `);
       expect(tables.rows[0]?.count).toBe('3');
+      const canonical = await fresh.query<{ description: string; constraint_definition: string }>(`
+        SELECT permission.description,
+          pg_get_constraintdef(constraint_row.oid) AS constraint_definition
+        FROM permissions permission
+        CROSS JOIN pg_constraint constraint_row
+        WHERE permission.code = 'sales.payment.review'
+          AND constraint_row.conrelid = 'sales_payments'::regclass
+          AND constraint_row.conname = 'sales_payments_status_check'
+      `);
+      expect(canonical.rows[0]?.description).toBe('Approve or return an individual Sales Payment for correction');
+      expect(canonical.rows[0]?.description.toLowerCase()).not.toContain('reject');
+      expect(canonical.rows[0]?.constraint_definition).toContain("'submitted'::text");
+      expect(canonical.rows[0]?.constraint_definition).toContain("'approved'::text");
+      expect(canonical.rows[0]?.constraint_definition).toContain("'needs_correction'::text");
+      expect(canonical.rows[0]?.constraint_definition).not.toContain('superseded');
+      expect(canonical.rows[0]?.constraint_definition).not.toContain('rejected');
     } finally {
       await fresh.end();
+    }
+  }, 60_000);
+
+  it('converts persisted superseded correction lineage without losing review history', async () => {
+    await resetTestDatabase();
+    await runMigrations(migrationUrl, { through: '0017_sales_collection_policy.sql' });
+    const previousMigrationUrl = process.env.DATABASE_MIGRATION_URL;
+    const previousRuntimeUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_MIGRATION_URL = migrationUrl;
+    process.env.DATABASE_URL = runtimeUrl;
+    try {
+      await seedDatabase(migrationUrl);
+    } finally {
+      if (previousMigrationUrl === undefined) delete process.env.DATABASE_MIGRATION_URL;
+      else process.env.DATABASE_MIGRATION_URL = previousMigrationUrl;
+      if (previousRuntimeUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousRuntimeUrl;
+    }
+
+    const saleId = randomUUID();
+    const invoiceId = randomUUID();
+    const originalPaymentId = randomUUID();
+    const correctionPaymentId = randomUUID();
+    const setup = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_superseded_lineage_fixture' });
+    await setup.connect();
+    try {
+      await setup.query("SELECT set_config('app.workspace_id', $1, false), set_config('app.company_id', $2, false)", [
+        fixtureIds.workspace, fixtureIds.company,
+      ]);
+      await setup.query(`
+        INSERT INTO sales_transactions(
+          id, workspace_id, company_id, canonical_identity_id, customer_id,
+          seller_membership_id, actor_user_account_id, entry_mode, idempotency_key
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'direct', $8)
+      `, [
+        saleId, fixtureIds.workspace, fixtureIds.company, fixtureIds.identity, fixtureIds.customer,
+        fixtureIds.sellerMembership, fixtureIds.account, randomUUID(),
+      ]);
+      await setup.query(`
+        INSERT INTO sales_invoices(
+          id, workspace_id, company_id, sale_id, invoice_code, status, payment_status,
+          subtotal_amount, discount_amount, final_amount, supervisor_approved_by_user_account_id,
+          supervisor_approved_at, created_by_user_account_id, sales_approval_required
+        ) VALUES ($1, $2, $3, $4, $5, 'awaiting_financial_review', 'submitted',
+          500000, 0, 500000, $6, now(), $6, true)
+      `, [invoiceId, fixtureIds.workspace, fixtureIds.company, saleId, `INV-MIG-${invoiceId.slice(0, 8)}`, fixtureIds.account]);
+      await setup.query(`
+        INSERT INTO sales_payments(
+          id, workspace_id, company_id, invoice_id, amount, payment_method, occurred_at,
+          last_four_digits, destination_account_id, tracking_number, status,
+          recorded_by_user_account_id, reviewed_by_user_account_id, reviewed_at, review_reason,
+          creator_actor_user_account_id, creator_effective_user_account_id, idempotency_key
+        ) VALUES ($1, $2, $3, $4, 500000, 'card_to_card', now(), '1234', $5,
+          'LEGACY-RETURNED', 'needs_correction', $6, $6, now(), 'اطلاعات رسید نیازمند اصلاح بود', $6, $6, $7)
+      `, [
+        originalPaymentId, fixtureIds.workspace, fixtureIds.company, invoiceId,
+        fixtureIds.financialAccount, fixtureIds.account, randomUUID(),
+      ]);
+      await setup.query(`
+        INSERT INTO sales_payments(
+          id, workspace_id, company_id, invoice_id, amount, payment_method, occurred_at,
+          last_four_digits, destination_account_id, tracking_number, status,
+          recorded_by_user_account_id, creator_actor_user_account_id,
+          creator_effective_user_account_id, corrects_payment_id, idempotency_key
+        ) VALUES ($1, $2, $3, $4, 500000, 'card_to_card', now(), '1234', $5,
+          'LEGACY-CORRECTION', 'submitted', $6, $6, $6, $7, $8)
+      `, [
+        correctionPaymentId, fixtureIds.workspace, fixtureIds.company, invoiceId,
+        fixtureIds.financialAccount, fixtureIds.account, originalPaymentId, randomUUID(),
+      ]);
+      await setup.query(`
+        UPDATE sales_payments
+        SET status = 'superseded', superseded_by_payment_id = $2
+        WHERE id = $1
+      `, [originalPaymentId, correctionPaymentId]);
+    } finally {
+      await setup.end();
+    }
+
+    await runMigrations(migrationUrl);
+    const verify = new Client({ connectionString: runtimeUrl, application_name: 'tapra2_payment_lineage_cleanup_verify' });
+    await verify.connect();
+    try {
+      await verify.query("SELECT set_config('app.workspace_id', $1, false), set_config('app.company_id', $2, false)", [
+        fixtureIds.workspace, fixtureIds.company,
+      ]);
+      const payments = await verify.query<{
+        id: string; status: string; corrects_payment_id: string | null; superseded_by_payment_id: string | null;
+        review_reason: string | null; reviewed_at: Date | null;
+      }>(`
+        SELECT id, status, corrects_payment_id, superseded_by_payment_id, review_reason, reviewed_at
+        FROM sales_payments WHERE id = ANY($1::uuid[]) ORDER BY id
+      `, [[originalPaymentId, correctionPaymentId]]);
+      const original = payments.rows.find((payment) => payment.id === originalPaymentId);
+      const correction = payments.rows.find((payment) => payment.id === correctionPaymentId);
+      expect(original).toMatchObject({
+        status: 'needs_correction', superseded_by_payment_id: correctionPaymentId,
+        review_reason: 'اطلاعات رسید نیازمند اصلاح بود',
+      });
+      expect(original?.reviewed_at).not.toBeNull();
+      expect(correction).toMatchObject({ status: 'submitted', corrects_payment_id: originalPaymentId });
+      await expect(verify.query("UPDATE sales_payments SET status = 'superseded' WHERE id = $1", [correctionPaymentId]))
+        .rejects.toThrow(/sales_payments_status_check/);
+
+      await runMigrations(migrationUrl);
+      const ledger = new Client({ connectionString: migrationUrl, application_name: 'tapra2_payment_lineage_rerun_verify' });
+      await ledger.connect();
+      try {
+        const applied = await ledger.query<{ count: string }>(`
+          SELECT count(*)::text AS count FROM schema_migrations
+          WHERE name = '0018_payment_lineage_status_cleanup.sql'
+        `);
+        expect(applied.rows[0]?.count).toBe('1');
+      } finally {
+        await ledger.end();
+      }
+    } finally {
+      await verify.end();
     }
   }, 60_000);
 });

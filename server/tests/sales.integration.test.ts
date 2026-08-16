@@ -488,13 +488,23 @@ describe('Sales Backend Vertical Slice 1', () => {
     const invoiceId = created.body.invoice.id as string;
     await manager.post(`/api/v1/sales/invoices/${invoiceId}/supervisor-approval`)
       .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    const otherPayment = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: '100000', paymentMethod: 'bank_transfer', occurredAt: new Date(Date.now() - 30_000).toISOString(),
+        lastFourDigits: '2222', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'PAY-OTHER-001',
+      }).expect(201);
+    const otherPaymentId = otherPayment.body.invoice.payments[0].id as string;
+    await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${otherPaymentId}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
+
     const recorded = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
       .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
       .send({
-        amount: '500000', paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 20_000).toISOString(),
+        amount: '400000', paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 20_000).toISOString(),
         lastFourDigits: '1111', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'PAY-WRONG-001',
       }).expect(201);
-    const returnedId = recorded.body.invoice.payments[0].id as string;
+    const returnedId = recorded.body.invoice.payments.find((payment: { trackingNumber: string }) => payment.trackingNumber === 'PAY-WRONG-001').id as string;
     await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${returnedId}/review`)
       .set('x-csrf-token', managerSession.csrfToken)
       .send({ decision: 'needs_correction' }).expect(400)
@@ -503,20 +513,51 @@ describe('Sales Backend Vertical Slice 1', () => {
       .set('x-csrf-token', managerSession.csrfToken)
       .send({ decision: 'needs_correction', reason: 'شماره پیگیری با رسید بانکی تطبیق ندارد' }).expect(200);
     expect(returned.body.invoice).toMatchObject({ status: 'payment_correction_required', paymentStatus: 'correction_required' });
-    expect(returned.body.invoice.payments[0]).toMatchObject({ status: 'needs_correction' });
+    expect(returned.body.invoice.payments.find((payment: { id: string }) => payment.id === returnedId))
+      .toMatchObject({ status: 'needs_correction' });
 
     const corrected = await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
       .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
       .send({
-        amount: '500000', paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 10_000).toISOString(),
+        amount: '400000', paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 10_000).toISOString(),
         lastFourDigits: '1111', destinationAccountId: ids.financialAccountAlpha,
         trackingNumber: 'PAY-CORRECT-001', correctsPaymentId: returnedId,
       }).expect(201);
-    expect(corrected.body.invoice.payments[0]).toMatchObject({ status: 'superseded', supersededByPaymentId: corrected.body.invoice.payments[1].id });
-    expect(corrected.body.invoice.payments[1]).toMatchObject({ status: 'submitted', correctsPaymentId: returnedId });
-    const approved = await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${corrected.body.invoice.payments[1].id}/review`)
+    const original = corrected.body.invoice.payments.find((payment: { id: string }) => payment.id === returnedId);
+    const revision = corrected.body.invoice.payments.find((payment: { correctsPaymentId: string | null }) => payment.correctsPaymentId === returnedId);
+    const untouched = corrected.body.invoice.payments.find((payment: { id: string }) => payment.id === otherPaymentId);
+    expect(original).toMatchObject({
+      status: 'needs_correction', supersededByPaymentId: revision.id,
+      reviewReason: 'شماره پیگیری با رسید بانکی تطبیق ندارد',
+    });
+    expect(original.reviewedAt).not.toBeNull();
+    expect(original.reviewerName).toBeTruthy();
+    expect(revision).toMatchObject({ status: 'submitted', correctsPaymentId: returnedId });
+    expect(untouched).toMatchObject({ status: 'approved', amount: '100000', supersededByPaymentId: null });
+
+    await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${returnedId}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('payment_already_reviewed'));
+    await sellerTwo.post(`/api/v1/sales/invoices/${invoiceId}/payments`)
+      .set('x-csrf-token', sellerTwoSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: '400000', paymentMethod: 'card_to_card', occurredAt: new Date().toISOString(),
+        lastFourDigits: '1111', destinationAccountId: ids.financialAccountAlpha,
+        trackingNumber: 'PAY-SECOND-CORRECTION', correctsPaymentId: returnedId,
+      }).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('payment_correction_invalid'));
+
+    const approved = await manager.post(`/api/v1/sales/invoices/${invoiceId}/payments/${revision.id}/review`)
       .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
-    expect(approved.body.invoice.status).toBe('financially_approved');
+    expect(approved.body.invoice).toMatchObject({
+      status: 'financially_approved', paymentStatus: 'paid', approvedPaymentAmount: '500000',
+    });
+    expect(approved.body.invoice.payments.find((payment: { id: string }) => payment.id === returnedId)).toMatchObject({
+      status: 'needs_correction', supersededByPaymentId: revision.id,
+      reviewReason: 'شماره پیگیری با رسید بانکی تطبیق ندارد',
+    });
+    expect(approved.body.invoice.payments.find((payment: { id: string }) => payment.id === otherPaymentId))
+      .toMatchObject({ status: 'approved', amount: '100000' });
   });
 
   it('keeps large Rial amounts exact and serializes duplicate Sale, Payment, and review requests', async () => {
