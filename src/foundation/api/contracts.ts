@@ -319,7 +319,7 @@ export interface SalesPaymentInfrastructure {
 }
 
 export type InventoryTrackingMode = 'NONE' | 'LOT' | 'SERIAL';
-export type WarehouseLocationType = 'RECEIVING' | 'STORAGE' | 'PICKING' | 'PACKING' | 'RETURNS' | 'QUARANTINE' | 'DAMAGED' | 'TRANSIT';
+export type WarehouseLocationType = 'RECEIVING' | 'SELLABLE' | 'PICKING' | 'PACKING' | 'RETURNS' | 'QUARANTINE' | 'DAMAGED' | 'TRANSIT';
 export type InventoryReturnDisposition = 'SELLABLE' | 'QUARANTINE' | 'DAMAGED' | 'RETURN_TO_SUPPLIER' | 'SCRAP';
 
 export interface WarehouseOverview {

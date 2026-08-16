@@ -251,6 +251,7 @@ export const foundationApi = {
   }, csrfToken),
   dispatchWarehouseTransfer: (transferId: string, csrfToken: string) => request<{ transfer: { id: string; status: string } }>(`/warehouse/transfers/${transferId}/dispatch`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
   receiveWarehouseTransfer: (transferId: string, csrfToken: string) => request<{ transfer: { id: string; status: string } }>(`/warehouse/transfers/${transferId}/receive`, { method: 'POST', body: JSON.stringify({}) }, csrfToken),
+  reverseWarehouseTransfer: (transferId: string, reason: string, csrfToken: string) => request<{ transfer: { id: string; status: string; reversedMovementCount: number } }>(`/warehouse/transfers/${transferId}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }, csrfToken),
   createInventoryAdjustment: (input: {
     ownerCompanyId?: string; warehouseId: string; locationId: string; reason: string; evidenceNote: string;
     lines: Array<{ stockIdentityId: string; direction: 'IN' | 'OUT'; quantity: string }>;

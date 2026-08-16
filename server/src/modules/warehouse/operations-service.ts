@@ -61,7 +61,7 @@ export async function createReceipt(
     const repeated = await client.query<{ id: string; status: string }>('SELECT id, status FROM warehouse_receipts WHERE workspace_id = $1 AND idempotency_key = $2', [mutation.context.workspace.id, idempotencyKey]);
     if (repeated.rows[0]) return repeated.rows[0];
     await assertWarehouseAccess(client, mutation.context, input.warehouseId, companyId);
-    await assertLocation(client, mutation.context.workspace.id, input.warehouseId, input.receivingLocationId, ['RECEIVING']);
+    await assertLocation(client, mutation.context.workspace.id, input.warehouseId, input.receivingLocationId, ['RECEIVING', 'SELLABLE']);
     const receipt = await client.query<{ id: string; status: string }>(`
       INSERT INTO warehouse_receipts(workspace_id, owner_company_id, warehouse_id, receiving_location_id,
         receipt_type, source_note, reason, created_by_user_account_id, idempotency_key)
@@ -177,8 +177,10 @@ export async function createReservation(
             AND allocation.status = 'ACTIVE'), 0)::text AS allocated_quantity
       FROM inventory_balances balance JOIN stock_identities identity ON identity.id = balance.stock_identity_id
       JOIN warehouses warehouse ON warehouse.id = balance.warehouse_id
+      JOIN warehouse_locations location ON location.id = balance.location_id AND location.warehouse_id = balance.warehouse_id
       WHERE balance.workspace_id = $1 AND balance.owner_company_id = $2 AND identity.inventory_item_id = $3
         AND balance.on_hand_quantity > 0 AND warehouse.is_active = true
+        AND location.is_active = true AND location.location_type = 'SELLABLE'
       ORDER BY balance.warehouse_id, balance.location_id, balance.stock_identity_id FOR UPDATE OF balance
     `, [mutation.context.workspace.id, companyId, line.inventory_item_id]);
     let remaining = requested;
@@ -293,6 +295,103 @@ export async function dispatchTransfer(mutation: WarehouseMutationContext, trans
 export async function receiveTransfer(mutation: WarehouseMutationContext, transferId: string): Promise<{ id: string; status: string }> {
   requireWarehousePermission(mutation.context, 'warehouse.transfer.manage');
   return changeTransferState(mutation, transferId, 'RECEIVE');
+}
+
+export async function reverseTransfer(
+  mutation: WarehouseMutationContext,
+  transferId: string,
+  reason: string,
+): Promise<{ id: string; status: 'CANCELLED'; reversedMovementCount: number }> {
+  requireWarehousePermission(mutation.context, 'warehouse.transfer.manage');
+  requireWarehousePermission(mutation.context, 'warehouse.movement.reverse');
+  if (mutation.session.impersonationId) {
+    throw new AppError(403, 'warehouse_approval_impersonation_forbidden', 'Inventory reversal is forbidden during impersonation.');
+  }
+  return withWorkspaceTransaction({ workspaceId: mutation.context.workspace.id, companyId: mutation.context.company?.id ?? null }, async (client) => {
+    await lockWarehouseIdempotency(client, 'transfer-reversal', transferId);
+    const transfer = await client.query<{
+      id: string; owner_company_id: string; source_warehouse_id: string; destination_warehouse_id: string;
+      status: 'DRAFT' | 'IN_TRANSIT' | 'RECEIVED' | 'CANCELLED';
+    }>(`SELECT id, owner_company_id, source_warehouse_id, destination_warehouse_id, status
+      FROM warehouse_transfers WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+    [mutation.context.workspace.id, transferId]);
+    const header = transfer.rows[0];
+    if (!header) throw new AppError(404, 'warehouse_transfer_not_found', 'Warehouse Transfer was not found.');
+    if (header.status === 'CANCELLED') return { id: header.id, status: 'CANCELLED', reversedMovementCount: 0 };
+    await assertWarehouseAccess(client, mutation.context, header.source_warehouse_id, header.owner_company_id);
+    await assertWarehouseAccess(client, mutation.context, header.destination_warehouse_id, header.owner_company_id);
+
+    const lines = await client.query<{
+      id: string; requested_quantity: string; received_quantity: string;
+    }>(`SELECT id, requested_quantity::text, received_quantity::text
+      FROM warehouse_transfer_lines WHERE workspace_id = $1 AND transfer_id = $2 ORDER BY line_number FOR UPDATE`,
+    [mutation.context.workspace.id, transferId]);
+    const movements = await client.query<{
+      id: string; stock_identity_id: string; movement_type: 'TRANSFER_OUT' | 'TRANSFER_IN'; quantity: string;
+      from_warehouse_id: string | null; from_location_id: string | null; to_warehouse_id: string | null;
+      to_location_id: string | null; source_line_id: string | null; reversed: boolean;
+    }>(`SELECT movement.id, movement.stock_identity_id, movement.movement_type, movement.quantity::text,
+        movement.from_warehouse_id, movement.from_location_id, movement.to_warehouse_id, movement.to_location_id,
+        movement.source_line_id, EXISTS (
+          SELECT 1 FROM inventory_movements reversal WHERE reversal.reverses_movement_id = movement.id
+        ) AS reversed
+      FROM inventory_movements movement
+      WHERE movement.workspace_id = $1 AND movement.source_type = 'WAREHOUSE_TRANSFER'
+        AND movement.source_id = $2 AND movement.movement_type IN ('TRANSFER_OUT', 'TRANSFER_IN')
+      ORDER BY movement.source_line_id, movement.occurred_at, movement.id FOR UPDATE OF movement`,
+    [mutation.context.workspace.id, transferId]);
+
+    const movementsByLine = new Map<string, typeof movements.rows>();
+    for (const movement of movements.rows) {
+      if (!movement.source_line_id || movement.reversed) {
+        throw new AppError(409, 'warehouse_transfer_reversal_unsafe', 'Transfer movement lineage is incomplete or already reversed.');
+      }
+      const grouped = movementsByLine.get(movement.source_line_id) ?? [];
+      grouped.push(movement);
+      movementsByLine.set(movement.source_line_id, grouped);
+    }
+
+    const lineIds = new Set(lines.rows.map((line) => line.id));
+    if (lineIds.size === 0 || [...movementsByLine.keys()].some((lineId) => !lineIds.has(lineId))) {
+      throw new AppError(409, 'warehouse_transfer_reversal_unsafe', 'Transfer movement lineage references an unknown or missing Line.');
+    }
+    for (const line of lines.rows) {
+      const lineMovements = movementsByLine.get(line.id) ?? [];
+      const outbound = lineMovements.filter((movement) => movement.movement_type === 'TRANSFER_OUT');
+      const inbound = lineMovements.filter((movement) => movement.movement_type === 'TRANSFER_IN');
+      const received = parseQuantity(line.received_quantity);
+      const requested = parseQuantity(line.requested_quantity);
+      const validDraft = header.status === 'DRAFT' && received === 0n && outbound.length === 0 && inbound.length === 0;
+      const validInTransit = header.status === 'IN_TRANSIT' && received === 0n && outbound.length === 1 && inbound.length === 0;
+      const validReceived = header.status === 'RECEIVED' && received === requested && outbound.length === 1 && inbound.length === 1;
+      if (!validDraft && !validInTransit && !validReceived) {
+        throw new AppError(409, 'warehouse_transfer_reversal_unsafe', 'Partial or inconsistent Transfer state cannot be reversed automatically.');
+      }
+    }
+    const orderedMovements = [...movements.rows].sort((left, right) => {
+      const leftOrder = left.movement_type === 'TRANSFER_IN' ? 0 : 1;
+      const rightOrder = right.movement_type === 'TRANSFER_IN' ? 0 : 1;
+      return leftOrder - rightOrder || (left.source_line_id ?? '').localeCompare(right.source_line_id ?? '') || left.id.localeCompare(right.id);
+    });
+    for (const movement of orderedMovements) {
+      await postInventoryMovement(client, {
+        workspaceId: mutation.context.workspace.id, ownerCompanyId: header.owner_company_id,
+        stockIdentityId: movement.stock_identity_id, movementType: 'REVERSAL', quantity: movement.quantity,
+        fromWarehouseId: movement.to_warehouse_id ?? undefined, fromLocationId: movement.to_location_id ?? undefined,
+        toWarehouseId: movement.from_warehouse_id ?? undefined, toLocationId: movement.from_location_id ?? undefined,
+        sourceType: 'WAREHOUSE_TRANSFER_REVERSAL', sourceId: transferId, sourceLineId: movement.source_line_id ?? undefined,
+        reversesMovementId: movement.id, reason, session: mutation.session, correlationId: mutation.correlationId,
+      });
+    }
+
+    await client.query(`UPDATE warehouse_transfers SET status = 'CANCELLED', reversed_from_status = $3,
+      reversal_reason = $4, reversed_by_user_account_id = $5, reversed_at = now()
+      WHERE workspace_id = $1 AND id = $2`,
+    [mutation.context.workspace.id, transferId, header.status, reason, mutation.session.userAccountId]);
+    await audit(client, mutation, header.owner_company_id, 'warehouse.transfer.reversed', 'warehouse_transfer', transferId,
+      { status: 'CANCELLED', reversedFromStatus: header.status, reversedMovementCount: orderedMovements.length }, reason);
+    return { id: transferId, status: 'CANCELLED', reversedMovementCount: orderedMovements.length };
+  });
 }
 
 async function changeTransferState(
@@ -631,7 +730,7 @@ export async function inspectReturnLine(
     if (needsDestination && !input.destinationLocationId) throw new AppError(400, 'return_destination_required', 'This Return disposition requires a destination Location.');
     if (!needsDestination && input.destinationLocationId) throw new AppError(400, 'return_destination_forbidden', 'This Return disposition does not accept a destination Location.');
     if (input.destinationLocationId) {
-      const allowed = input.disposition === 'QUARANTINE' ? ['QUARANTINE'] : input.disposition === 'DAMAGED' ? ['DAMAGED'] : ['STORAGE'];
+      const allowed = input.disposition === 'QUARANTINE' ? ['QUARANTINE'] : input.disposition === 'DAMAGED' ? ['DAMAGED'] : ['SELLABLE'];
       await assertLocation(client, mutation.context.workspace.id, header.warehouse_id, input.destinationLocationId, allowed);
     }
     const inspection = await client.query<{ id: string }>(`

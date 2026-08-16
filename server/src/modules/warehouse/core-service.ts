@@ -147,6 +147,73 @@ export async function listWarehouseOverview(context: MembershipContext): Promise
   });
 }
 
+interface ProjectionMismatch {
+  owner_company_id: string;
+  warehouse_id: string;
+  location_id: string;
+  stock_identity_id: string;
+  rebuilt_quantity: string;
+  projected_quantity: string;
+}
+
+export async function rebuildInventoryBalanceProjection(
+  client: PoolClient,
+  workspaceId: string,
+): Promise<ProjectionMismatch[]> {
+  const result = await client.query<ProjectionMismatch>(`
+    WITH movement_deltas AS (
+      SELECT workspace_id, owner_company_id, from_warehouse_id AS warehouse_id,
+        from_location_id AS location_id, stock_identity_id, -quantity AS quantity
+      FROM inventory_movements
+      WHERE workspace_id = $1 AND from_location_id IS NOT NULL
+      UNION ALL
+      SELECT workspace_id, owner_company_id, to_warehouse_id AS warehouse_id,
+        to_location_id AS location_id, stock_identity_id, quantity
+      FROM inventory_movements
+      WHERE workspace_id = $1 AND to_location_id IS NOT NULL
+    ), rebuilt AS (
+      SELECT workspace_id, owner_company_id, warehouse_id, location_id, stock_identity_id,
+        sum(quantity)::numeric(20,6) AS on_hand_quantity
+      FROM movement_deltas
+      GROUP BY workspace_id, owner_company_id, warehouse_id, location_id, stock_identity_id
+    )
+    SELECT COALESCE(rebuilt.owner_company_id, balance.owner_company_id)::text AS owner_company_id,
+      COALESCE(rebuilt.warehouse_id, balance.warehouse_id)::text AS warehouse_id,
+      COALESCE(rebuilt.location_id, balance.location_id)::text AS location_id,
+      COALESCE(rebuilt.stock_identity_id, balance.stock_identity_id)::text AS stock_identity_id,
+      COALESCE(rebuilt.on_hand_quantity, 0)::text AS rebuilt_quantity,
+      COALESCE(balance.on_hand_quantity, 0)::text AS projected_quantity
+    FROM rebuilt
+    FULL OUTER JOIN inventory_balances balance
+      ON balance.workspace_id = rebuilt.workspace_id
+      AND balance.owner_company_id = rebuilt.owner_company_id
+      AND balance.warehouse_id = rebuilt.warehouse_id
+      AND balance.location_id = rebuilt.location_id
+      AND balance.stock_identity_id = rebuilt.stock_identity_id
+    WHERE COALESCE(rebuilt.workspace_id, balance.workspace_id) = $1
+      AND COALESCE(rebuilt.on_hand_quantity, 0) <> COALESCE(balance.on_hand_quantity, 0)
+    ORDER BY owner_company_id, warehouse_id, location_id, stock_identity_id
+    LIMIT 101
+  `, [workspaceId]);
+  return result.rows;
+}
+
+export async function verifyInventoryBalanceProjection(
+  context: MembershipContext,
+): Promise<{ consistent: true; checkedAt: string }> {
+  requireWarehousePermission(context, 'warehouse.read');
+  return withWorkspaceTransaction({ workspaceId: context.workspace.id, companyId: context.company?.id ?? null }, async (client) => {
+    const mismatches = await rebuildInventoryBalanceProjection(client, context.workspace.id);
+    if (mismatches.length > 0) {
+      throw new AppError(409, 'inventory_projection_mismatch', 'Inventory Balance projection does not match the Movement ledger.', {
+        mismatchCount: mismatches.length,
+        mismatches: mismatches.slice(0, 100),
+      });
+    }
+    return { consistent: true, checkedAt: new Date().toISOString() };
+  });
+}
+
 export async function createWarehouse(
   mutation: WarehouseMutationContext,
   input: { ownerCompanyId?: string; operatorUnitId?: string; code: string; name: string; description?: string },
@@ -267,12 +334,12 @@ export async function resolveStockIdentity(
   }
   if (input.serialCode) {
     const serial = await client.query<{ id: string }>(`
-      INSERT INTO inventory_serials(workspace_id, inventory_item_id, owner_company_id, serial_code)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (workspace_id, inventory_item_id, owner_company_id, serial_code) DO UPDATE
+      INSERT INTO inventory_serials(workspace_id, inventory_item_id, serial_code)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (workspace_id, inventory_item_id, serial_code) DO UPDATE
         SET serial_code = EXCLUDED.serial_code
       RETURNING id
-    `, [input.workspaceId, input.inventoryItemId, input.ownerCompanyId, input.serialCode]);
+    `, [input.workspaceId, input.inventoryItemId, input.serialCode]);
     serialId = serial.rows[0]!.id;
   }
   const identity = await client.query<{ id: string }>(`
@@ -364,9 +431,17 @@ export async function postInventoryMovement(client: PoolClient, input: MovementI
       workspaceId: input.workspaceId, ownerCompanyId: input.ownerCompanyId,
       warehouseId: input.toWarehouseId, locationId: input.toLocationId, stockIdentityId: input.stockIdentityId,
     });
-    await client.query(`UPDATE inventory_balances SET on_hand_quantity = $4::numeric, version = version + 1, updated_at = now()
-      WHERE workspace_id = $1 AND location_id = $2 AND stock_identity_id = $3`,
-    [input.workspaceId, input.toLocationId, input.stockIdentityId, formatQuantity(current + quantity)]);
+    try {
+      await client.query(`UPDATE inventory_balances SET on_hand_quantity = $4::numeric, version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND location_id = $2 AND stock_identity_id = $3`,
+      [input.workspaceId, input.toLocationId, input.stockIdentityId, formatQuantity(current + quantity)]);
+    } catch (error) {
+      const databaseError = error as { code?: string; constraint?: string };
+      if (databaseError.code === '23505' && databaseError.constraint === 'inventory_balances_one_active_serial_idx') {
+        throw new AppError(409, 'serial_already_on_hand', 'Serial is already active in another ownership or Location state.');
+      }
+      throw error;
+    }
   }
 
   const movementId = randomUUID();
@@ -397,14 +472,17 @@ export async function reverseInventoryMovement(
   return withWorkspaceTransaction({ workspaceId: mutation.context.workspace.id, companyId: mutation.context.company?.id ?? null }, async (client) => {
     await lockWarehouseIdempotency(client, 'movement-reversal', movementId);
     const original = await client.query<{
-      id: string; owner_company_id: string; stock_identity_id: string; movement_type: string; quantity: string;
+      id: string; owner_company_id: string; stock_identity_id: string; movement_type: string; source_type: string; quantity: string;
       from_warehouse_id: string | null; from_location_id: string | null; to_warehouse_id: string | null; to_location_id: string | null;
-    }>(`SELECT id, owner_company_id, stock_identity_id, movement_type, quantity::text, from_warehouse_id, from_location_id,
+    }>(`SELECT id, owner_company_id, stock_identity_id, movement_type, source_type, quantity::text, from_warehouse_id, from_location_id,
       to_warehouse_id, to_location_id FROM inventory_movements WHERE workspace_id = $1 AND id = $2`,
     [mutation.context.workspace.id, movementId]);
     const row = original.rows[0];
     if (!row) throw new AppError(404, 'inventory_movement_not_found', 'Inventory Movement was not found.');
     if (row.movement_type === 'REVERSAL') throw new AppError(409, 'inventory_reversal_invalid', 'A reversal movement cannot itself be reversed.');
+    if (row.source_type === 'WAREHOUSE_TRANSFER' || ['TRANSFER_OUT', 'TRANSFER_IN'].includes(row.movement_type)) {
+      throw new AppError(409, 'transfer_document_reversal_required', 'Transfer movements can only be reversed atomically from the Transfer document.');
+    }
     const existing = await client.query('SELECT 1 FROM inventory_movements WHERE workspace_id = $1 AND reverses_movement_id = $2', [mutation.context.workspace.id, movementId]);
     if (existing.rowCount) throw new AppError(409, 'inventory_movement_already_reversed', 'Inventory Movement is already reversed.');
     const reversedId = await postInventoryMovement(client, {

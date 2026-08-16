@@ -16,6 +16,7 @@ import {
   listWarehouseOverview,
   reverseInventoryMovement,
   trackingModes,
+  verifyInventoryBalanceProjection,
 } from './core-service.js';
 import {
   approveAdjustment,
@@ -32,6 +33,7 @@ import {
   receiveReturn,
   receiveTransfer,
   releaseReservation,
+  reverseTransfer,
   returnDispositions,
   submitAdjustment,
   submitCount,
@@ -74,6 +76,10 @@ export function warehouseRoutes(): Router {
     response.json({ warehouse: await listWarehouseOverview(getActiveContext(response.locals)) });
   }));
 
+  router.get('/warehouse/projection/verify', asyncHandler(async (_request, response) => {
+    response.json({ projection: await verifyInventoryBalanceProjection(getActiveContext(response.locals)) });
+  }));
+
   router.post('/warehouse/warehouses', requireCsrf, asyncHandler(async (request, response) => {
     const input = z.object({
       ownerCompanyId: uuid.optional(), operatorUnitId: uuid.optional(), code: z.string().trim().min(2).max(40),
@@ -85,7 +91,7 @@ export function warehouseRoutes(): Router {
   router.post('/warehouse/warehouses/:warehouseId/locations', requireCsrf, asyncHandler(async (request, response) => {
     const input = z.object({
       code: z.string().trim().min(1).max(60), name: z.string().trim().min(1).max(200),
-      locationType: z.enum(['RECEIVING', 'STORAGE', 'PICKING', 'PACKING', 'RETURNS', 'QUARANTINE', 'DAMAGED', 'TRANSIT']),
+      locationType: z.enum(['RECEIVING', 'SELLABLE', 'PICKING', 'PACKING', 'RETURNS', 'QUARANTINE', 'DAMAGED', 'TRANSIT']),
     }).parse(request.body);
     response.status(201).json({ location: await createWarehouseLocation(mutation(response), uuid.parse(request.params.warehouseId), input) });
   }));
@@ -137,6 +143,10 @@ export function warehouseRoutes(): Router {
   }));
   router.post('/warehouse/transfers/:transferId/receive', requireCsrf, asyncHandler(async (request, response) => {
     response.json({ transfer: await receiveTransfer(mutation(response), uuid.parse(request.params.transferId)) });
+  }));
+  router.post('/warehouse/transfers/:transferId/reverse', requireCsrf, asyncHandler(async (request, response) => {
+    const input = z.object({ reason }).parse(request.body);
+    response.json({ transfer: await reverseTransfer(mutation(response), uuid.parse(request.params.transferId), input.reason) });
   }));
 
   router.post('/warehouse/adjustments', requireCsrf, asyncHandler(async (request, response) => {
