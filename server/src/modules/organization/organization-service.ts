@@ -359,7 +359,11 @@ export async function updateMembershipStatus(mutation: MutationContext, membersh
     const companyId = previous.rows[0]?.company_id as string | null;
     if (companyId) assertCompanyScope(mutation.context, companyId); else assertWorkspaceScope(mutation.context);
     const result = await client.query(`
-      UPDATE memberships SET status = $3, updated_at = now(), valid_until = CASE WHEN $3 = 'ended' THEN now() ELSE valid_until END
+      UPDATE memberships SET status = $3, updated_at = now(), valid_until = CASE
+        WHEN $3 = 'ended' THEN now()
+        WHEN $3 = 'active' THEN NULL
+        ELSE valid_until
+      END
       WHERE workspace_id = $1 AND id = $2 RETURNING id, company_id AS "companyId", person_id AS "personId", status
     `, [mutation.context.workspace.id, membershipId, status]);
     await audit(client, mutation, { action: 'organization.membership.status_changed', resourceType: 'membership', resourceId: membershipId, companyId, previousState: previous.rows[0], newState: result.rows[0] });

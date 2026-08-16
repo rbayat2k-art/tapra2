@@ -13,6 +13,7 @@
 
 - `Membership` می‌تواند Workspace-level (`company_id = NULL`) یا Company-level باشد.
 - Provisioning اولیهٔ `UserAccount`، credential موقتِ یک‌بارنمایش و Membership انتخاب‌شده در یک تراکنش انجام می‌شود؛ بنابراین UserAccount جدید بدون Membership معتبر در Workspace رها نمی‌شود. تغییر credential اجباری در اولین ورود همچنان server-side است.
+- Membership پایان‌یافته با فعال‌سازی مجدد دورهٔ اعتبار باز (`valid_until = NULL`) می‌گیرد؛ Membership دارای `valid_until` منقضی، حتی با status فعال، context قابل‌استفاده ایجاد نمی‌کند.
 - `role_assignments` Scope صریح `WORKSPACE`، `COMPANY`، `BRANCH`، `DEPARTMENT`، `TEAM` یا `SELF` دارد.
 - یک UserAccount می‌تواند بدون ساخت account دوم، Role متفاوت در چند Company/Scope داشته باشد.
 - Permission سمت server محاسبه می‌شود؛ در Impersonation نتیجه به اشتراک Permissionهای Admin و target محدود می‌شود.
