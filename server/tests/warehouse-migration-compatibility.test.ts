@@ -116,5 +116,6 @@ describe('Warehouse migration compatibility', () => {
     } finally { await client.end(); }
 
     await expect(runMigrations(migrationUrl!)).rejects.toThrow(/duplicate workspace\/item\/serial rows/i);
+    await reset();
   }, 60_000);
 });
