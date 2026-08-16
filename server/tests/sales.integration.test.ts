@@ -763,9 +763,11 @@ describe('Sales Backend Vertical Slice 1', () => {
     try {
       await owner.query(`
         INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
-        VALUES ($1, $2, $3, 'COMPANY', $4)
+        SELECT $1, $2, role.id, 'COMPANY', $3
+        FROM roles role
+        WHERE role.workspace_id = $1 AND role.code = 'workspace_admin'
         ON CONFLICT DO NOTHING
-      `, [ids.workspaceAlpha, ids.membershipAlphaOnly, '60000000-0000-4000-8000-000000000004', ids.companyAlpha]);
+      `, [ids.workspaceAlpha, ids.membershipAlphaOnly, ids.companyAlpha]);
     } finally {
       await owner.end();
     }
