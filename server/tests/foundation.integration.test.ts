@@ -1034,12 +1034,16 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .send({ fullName: 'مدیر داده مشترک', email: `shared-data-${Date.now()}@tapra.local` })
       .expect(201);
     expect(workspaceUser.body.temporaryPassword).toMatch(/^.{20,}$/);
-    const workspaceMembership = await admin
+    // Provisioning is atomic: an account is never hidden as an orphan without a Membership.
+    const organizationAfterProvisioning = await admin.get('/api/v1/organization').expect(200);
+    expect(organizationAfterProvisioning.body.organization.users.some((item: { id: string }) => item.id === workspaceUser.body.account.id)).toBe(true);
+    const workspaceMembership = { body: { membership: workspaceUser.body.account.membership } };
+    expect(workspaceMembership.body.membership.companyId).toBeNull();
+    await admin
       .post('/api/v1/organization/memberships')
       .set('x-csrf-token', adminSession.csrfToken)
-      .send({ personId: workspaceUser.body.account.personId })
-      .expect(201);
-    expect(workspaceMembership.body.membership.companyId).toBeNull();
+      .send({ personId: randomUUID() })
+      .expect(404);
     const sharedRole = await admin
       .post('/api/v1/organization/roles')
       .set('x-csrf-token', adminSession.csrfToken)
@@ -1053,6 +1057,33 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('x-csrf-token', adminSession.csrfToken)
       .send({ membershipId: workspaceMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'WORKSPACE' })
       .expect(201);
+
+    await admin
+      .patch(`/api/v1/organization/memberships/${workspaceMembership.body.membership.id}/status`)
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ status: 'ended' })
+      .expect(200)
+      .expect(({ body }) => expect(body.membership.status).toBe('ended'));
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: workspaceMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'WORKSPACE' })
+      .expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('membership_inactive'));
+    await admin
+      .patch(`/api/v1/organization/memberships/${workspaceMembership.body.membership.id}/status`)
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ status: 'active' })
+      .expect(200)
+      .expect(({ body }) => expect(body.membership.status).toBe('active'));
+    await withTenantTransaction({
+      workspaceId: '10000000-0000-4000-8000-000000000001', companyId: '20000000-0000-4000-8000-000000000001',
+    }, async (client) => {
+      const membership = await client.query<{ status: string; valid_until: string | null }>(
+        'SELECT status, valid_until FROM memberships WHERE id = $1', [workspaceMembership.body.membership.id],
+      );
+      expect(membership.rows[0]).toEqual({ status: 'active', valid_until: null });
+    });
 
     const sharedAgent = request.agent(createApp());
     let sharedSession = await activateTemporaryCredential(sharedAgent, workspaceUser.body.account.email, workspaceUser.body.temporaryPassword);
@@ -1087,6 +1118,11 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .set('x-csrf-token', adminSession.csrfToken)
       .send({ code: `viewer_${Date.now()}`, name: 'مشاهده‌گر', permissionCodes: ['organization.read'] })
       .expect(201);
+    await admin
+      .post('/api/v1/organization/role-assignments')
+      .set('x-csrf-token', adminSession.csrfToken)
+      .send({ membershipId: alphaMembership.body.membership.id, roleId: sharedRole.body.role.id, scopeType: 'COMPANY', scopeId: company.body.company.id })
+      .expect(400);
     await admin
       .post('/api/v1/organization/role-assignments')
       .set('x-csrf-token', adminSession.csrfToken)
