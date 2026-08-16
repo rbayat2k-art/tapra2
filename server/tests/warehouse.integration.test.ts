@@ -74,6 +74,17 @@ async function selectContext(
     .expect(200)).body as SessionResponse;
 }
 
+async function selectWorkspaceContext(
+  agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string, permission: string,
+): Promise<SessionResponse> {
+  const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug
+    && item.company === null && item.scope.type === 'WORKSPACE' && item.permissions.includes(permission));
+  if (!membership) throw new Error(`Workspace context ${workspaceSlug}/${permission} was not found.`);
+  return (await agent.post('/api/v1/session/context').set('x-csrf-token', session.csrfToken)
+    .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
+    .expect(200)).body as SessionResponse;
+}
+
 describe('Warehouse Foundation', () => {
   let manager: ReturnType<typeof request.agent>;
   let managerSession: SessionResponse;
@@ -81,6 +92,9 @@ describe('Warehouse Foundation', () => {
   let makerSession: SessionResponse;
   let paymentMaker: ReturnType<typeof request.agent>;
   let paymentMakerSession: SessionResponse;
+  let workspaceManager: ReturnType<typeof request.agent>;
+  let workspaceManagerSession: SessionResponse;
+  let secondAlphaCompany = '';
   let warehouseOne = '';
   let warehouseTwo = '';
   let receivingOne = '';
@@ -126,6 +140,13 @@ describe('Warehouse Foundation', () => {
     makerSession = await selectContext(maker, await login(maker, 'sales-one@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'warehouse.adjustment.create');
     paymentMaker = request.agent(createApp());
     paymentMakerSession = await selectContext(paymentMaker, await login(paymentMaker, 'sales-two@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'sales.payment.record');
+    workspaceManager = request.agent(createApp());
+    workspaceManagerSession = await selectWorkspaceContext(
+      workspaceManager, await login(workspaceManager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-alpha', 'warehouse.manage',
+    );
+    secondAlphaCompany = (await workspaceManager.post('/api/v1/organization/companies')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ code: 'ALPHA_SECOND_OWNER', name: 'شرکت دوم در Workspace آلفا' }).expect(201)).body.company.id as string;
   });
 
   afterAll(async () => { await closePool(); });
@@ -171,12 +192,12 @@ describe('Warehouse Foundation', () => {
     warehouseOne = await createWarehouse('ALPHA_MAIN', 'انبار اصلی آلفا');
     warehouseTwo = await createWarehouse('ALPHA_SECOND', 'انبار دوم آلفا');
     receivingOne = await createLocation(warehouseOne, 'REC', 'دریافت', 'RECEIVING');
-    storageOne = await createLocation(warehouseOne, 'STO', 'موجودی قابل فروش', 'STORAGE');
+    storageOne = await createLocation(warehouseOne, 'STO', 'موجودی قابل فروش', 'SELLABLE');
     returnsOne = await createLocation(warehouseOne, 'RET', 'ورودی برگشتی', 'RETURNS');
     quarantineOne = await createLocation(warehouseOne, 'QUA', 'قرنطینه', 'QUARANTINE');
     damagedOne = await createLocation(warehouseOne, 'DMG', 'آسیب‌دیده', 'DAMAGED');
     receivingTwo = await createLocation(warehouseTwo, 'REC', 'دریافت', 'RECEIVING');
-    storageTwo = await createLocation(warehouseTwo, 'STO', 'موجودی قابل فروش', 'STORAGE');
+    storageTwo = await createLocation(warehouseTwo, 'STO', 'موجودی قابل فروش', 'SELLABLE');
     const createItem = async (sku: string, trackingMode: string, catalogReference: string, uom: string) => (
       await manager.post('/api/v1/warehouse/items').set('x-csrf-token', managerSession.csrfToken)
         .send({ sku, name: `کالای ${sku}`, catalogReference, trackingMode, uom }).expect(201)
@@ -203,7 +224,7 @@ describe('Warehouse Foundation', () => {
 
     const key = randomUUID();
     const receiptInput = {
-      warehouseId: warehouseOne, receivingLocationId: receivingOne, receiptType: 'MANUAL',
+      warehouseId: warehouseOne, receivingLocationId: storageOne, receiptType: 'MANUAL',
       sourceNote: 'صورت‌جلسه دریافت دستی', reason: 'موجودی اولیه کنترل‌شده',
       lines: [
         { inventoryItemId: itemNone, quantity: '12.123456', evidenceNote: 'صورت‌جلسه شماره ۱' },
@@ -234,7 +255,7 @@ describe('Warehouse Foundation', () => {
     const second = await manager.post('/api/v1/warehouse/receipts')
       .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
       .send({
-        warehouseId: warehouseTwo, receivingLocationId: receivingTwo, receiptType: 'PURCHASE', sourceNote: 'خرید انبار دوم',
+        warehouseId: warehouseTwo, receivingLocationId: storageTwo, receiptType: 'PURCHASE', sourceNote: 'خرید انبار دوم',
         lines: [{ inventoryItemId: itemNone, quantity: '4.000000', evidenceNote: 'فاکتور خرید انبار دوم' }],
       }).expect(201);
     await manager.post(`/api/v1/warehouse/receipts/${second.body.receipt.id}/post`)
@@ -251,6 +272,83 @@ describe('Warehouse Foundation', () => {
       const serial = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM inventory_serials WHERE serial_code = $1', ['SER-001']);
       expect(serial.rows[0]?.count).toBe('1');
     });
+  });
+
+  it('keeps one physical Serial identity across owners and rejects concurrent duplicate Receiving', async () => {
+    const otherWarehouse = await workspaceManager.post('/api/v1/warehouse/warehouses')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ ownerCompanyId: secondAlphaCompany, code: 'SECOND_OWNER_WH', name: 'انبار شرکت دوم' }).expect(201);
+    const otherLocation = await workspaceManager.post(`/api/v1/warehouse/warehouses/${otherWarehouse.body.warehouse.id}/locations`)
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ code: 'SELLABLE', name: 'موجودی قابل فروش', locationType: 'SELLABLE' }).expect(201);
+
+    const duplicateOwnerReceipt = await workspaceManager.post('/api/v1/warehouse/receipts')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        ownerCompanyId: secondAlphaCompany, warehouseId: otherWarehouse.body.warehouse.id,
+        receivingLocationId: otherLocation.body.location.id, receiptType: 'PURCHASE', sourceNote: 'تکرار مالکیت Serial',
+        lines: [{ inventoryItemId: itemSerial, quantity: '1', serialCode: 'SER-001', evidenceNote: 'سند خرید شرکت دوم' }],
+      }).expect(201);
+    await workspaceManager.post(`/api/v1/warehouse/receipts/${duplicateOwnerReceipt.body.receipt.id}/post`)
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('serial_already_on_hand'));
+
+    const serialCode = `SER-CONCURRENT-${randomUUID()}`;
+    const alphaReceipt = await workspaceManager.post('/api/v1/warehouse/receipts')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        ownerCompanyId: ids.companyAlpha, warehouseId: warehouseOne, receivingLocationId: storageOne,
+        receiptType: 'PURCHASE', sourceNote: 'دریافت همزمان آلفا',
+        lines: [{ inventoryItemId: itemSerial, quantity: '1', serialCode, evidenceNote: 'سند آلفا' }],
+      }).expect(201);
+    const otherReceipt = await workspaceManager.post('/api/v1/warehouse/receipts')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        ownerCompanyId: secondAlphaCompany, warehouseId: otherWarehouse.body.warehouse.id,
+        receivingLocationId: otherLocation.body.location.id, receiptType: 'PURCHASE', sourceNote: 'دریافت همزمان شرکت دوم',
+        lines: [{ inventoryItemId: itemSerial, quantity: '1', serialCode, evidenceNote: 'سند شرکت دوم' }],
+      }).expect(201);
+    const results = await Promise.all([
+      workspaceManager.post(`/api/v1/warehouse/receipts/${alphaReceipt.body.receipt.id}/post`)
+        .set('x-csrf-token', workspaceManagerSession.csrfToken),
+      workspaceManager.post(`/api/v1/warehouse/receipts/${otherReceipt.body.receipt.id}/post`)
+        .set('x-csrf-token', workspaceManagerSession.csrfToken),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    expect(results.find((result) => result.status === 409)?.body.error.code).toBe('serial_already_on_hand');
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: null }, async (client) => {
+      const physical = await client.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM inventory_serials WHERE inventory_item_id = $1 AND serial_code = $2',
+        [itemSerial, serialCode],
+      );
+      expect(physical.rows[0]?.count).toBe('1');
+    });
+  });
+
+  it('keeps Shared Service Warehouse stock isolated by owner Company', async () => {
+    const unit = await workspaceManager.post('/api/v1/organization/units')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ type: 'SHARED_SERVICE', code: 'WAREHOUSE_SHARED', name: 'خدمات مشترک انبار', serviceKind: 'DATA' }).expect(201);
+    const warehouse = await workspaceManager.post('/api/v1/warehouse/warehouses')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ operatorUnitId: unit.body.unit.id, code: 'SHARED_WH', name: 'انبار خدمات مشترک' }).expect(201);
+    const location = await workspaceManager.post(`/api/v1/warehouse/warehouses/${warehouse.body.warehouse.id}/locations`)
+      .set('x-csrf-token', workspaceManagerSession.csrfToken)
+      .send({ code: 'SELLABLE', name: 'موجودی قابل فروش', locationType: 'SELLABLE' }).expect(201);
+    const receipt = await workspaceManager.post('/api/v1/warehouse/receipts')
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        ownerCompanyId: secondAlphaCompany, warehouseId: warehouse.body.warehouse.id,
+        receivingLocationId: location.body.location.id, receiptType: 'PURCHASE', sourceNote: 'موجودی شرکت دوم در انبار مشترک',
+        lines: [{ inventoryItemId: itemNone, quantity: '1', evidenceNote: 'سند خرید شرکت دوم' }],
+      }).expect(201);
+    await workspaceManager.post(`/api/v1/warehouse/receipts/${receipt.body.receipt.id}/post`)
+      .set('x-csrf-token', workspaceManagerSession.csrfToken).expect(200);
+    const workspaceOverview = await workspaceManager.get('/api/v1/warehouse').expect(200);
+    expect(workspaceOverview.body.warehouse.warehouses.some((entry: { id: string }) => entry.id === warehouse.body.warehouse.id)).toBe(true);
+    const companyOverview = await manager.get('/api/v1/warehouse').expect(200);
+    expect(companyOverview.body.warehouse.warehouses.some((entry: { id: string }) => entry.id === warehouse.body.warehouse.id)).toBe(false);
+    expect(companyOverview.body.warehouse.balances.some((entry: { ownerCompanyId: string }) => entry.ownerCompanyId === secondAlphaCompany)).toBe(false);
   });
 
   async function createEligibleInvoice(itemName: string, catalogReference: string, quantity: number): Promise<{ invoiceId: string; lineId: string }> {
@@ -319,12 +417,99 @@ describe('Warehouse Foundation', () => {
       .expect(({ body }) => expect(body.error.code).toBe('old_invoice_revision_denied'));
   });
 
+  it('reserves only SELLABLE stock and keeps duplicate Reservation requests idempotent', async () => {
+    const createNoneItem = async (suffix: string) => (await manager.post('/api/v1/warehouse/items')
+      .set('x-csrf-token', managerSession.csrfToken)
+      .send({
+        sku: `LOCATION-${suffix}`, name: `کالای محل ${suffix}`, catalogReference: `CAT-LOCATION-${suffix}`,
+        trackingMode: 'NONE', uom: 'PCS',
+      }).expect(201)).body.item.id as string;
+    const addByAdjustment = async (inventoryItemId: string, locationId: string) => {
+      const identityReceipt = await manager.post('/api/v1/warehouse/receipts')
+        .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+        .send({
+          warehouseId: warehouseOne, receivingLocationId: storageOne, receiptType: 'PURCHASE', sourceNote: 'ایجاد هویت موجودی',
+          lines: [{ inventoryItemId, quantity: '1', evidenceNote: 'سند پایه' }],
+        }).expect(201);
+      await manager.post(`/api/v1/warehouse/receipts/${identityReceipt.body.receipt.id}/post`)
+        .set('x-csrf-token', managerSession.csrfToken).expect(200);
+      const stockIdentityId = await withTenantTransaction(
+        { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha },
+        async (client) => (await client.query<{ id: string }>(
+          'SELECT id FROM stock_identities WHERE inventory_item_id = $1', [inventoryItemId],
+        )).rows[0]!.id,
+      );
+      const adjust = async (targetLocationId: string, direction: 'IN' | 'OUT') => {
+        const adjustment = await maker.post('/api/v1/warehouse/adjustments')
+          .set('x-csrf-token', makerSession.csrfToken).set('idempotency-key', randomUUID())
+          .send({
+            warehouseId: warehouseOne, locationId: targetLocationId,
+            reason: 'آماده‌سازی محل برای آزمون', evidenceNote: 'سند آزمون کنترل‌شده',
+            lines: [{ stockIdentityId, direction, quantity: '1' }],
+          }).expect(201);
+        await maker.post(`/api/v1/warehouse/adjustments/${adjustment.body.adjustment.id}/submit`)
+          .set('x-csrf-token', makerSession.csrfToken).expect(200);
+        await manager.post(`/api/v1/warehouse/adjustments/${adjustment.body.adjustment.id}/approve`)
+          .set('x-csrf-token', managerSession.csrfToken).expect(200);
+      };
+      await adjust(storageOne, 'OUT');
+      await adjust(locationId, 'IN');
+    };
+
+    const sellableItem = await createNoneItem('SELLABLE');
+    const sellableReceipt = await manager.post('/api/v1/warehouse/receipts')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        warehouseId: warehouseOne, receivingLocationId: storageOne, receiptType: 'PURCHASE', sourceNote: 'موجودی قابل فروش',
+        lines: [{ inventoryItemId: sellableItem, quantity: '1', evidenceNote: 'سند خرید' }],
+      }).expect(201);
+    await manager.post(`/api/v1/warehouse/receipts/${sellableReceipt.body.receipt.id}/post`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    const eligible = await createEligibleInvoice('کالای قابل فروش', 'CAT-LOCATION-SELLABLE', 1);
+    const key = randomUUID();
+    const reserved = await manager.post('/api/v1/warehouse/reservations')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', key)
+      .send({ invoiceLineId: eligible.lineId }).expect(201);
+    const retried = await manager.post('/api/v1/warehouse/reservations')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', key)
+      .send({ invoiceLineId: eligible.lineId }).expect(201);
+    expect(retried.body.reservation.id).toBe(reserved.body.reservation.id);
+    expect(reserved.body.reservation.status).toBe('RESERVED');
+    await expect(withTenantTransaction(
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha },
+      async (client) => client.query(`UPDATE inventory_allocations SET warehouse_id = $2, location_id = $3
+        WHERE reservation_id = $1`, [reserved.body.reservation.id, warehouseOne, quarantineOne]),
+    )).rejects.toMatchObject({ code: '23514' });
+
+    for (const [suffix, locationId] of [
+      ['RECEIVING', receivingOne], ['QUARANTINE', quarantineOne], ['DAMAGED', damagedOne], ['RETURNS', returnsOne],
+    ] as const) {
+      const itemId = await createNoneItem(suffix);
+      await addByAdjustment(itemId, locationId);
+      const invoice = await createEligibleInvoice(`کالای ${suffix}`, `CAT-LOCATION-${suffix}`, 1);
+      const result = await manager.post('/api/v1/warehouse/reservations')
+        .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+        .send({ invoiceLineId: invoice.lineId }).expect(201);
+      expect(result.body.reservation).toMatchObject({
+        status: 'PARTIALLY_RESERVED', reservedQuantity: '0.000000', shortageQuantity: '1.000000',
+      });
+    }
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const invalid = await client.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM inventory_allocations allocation
+        JOIN warehouse_locations location ON location.id = allocation.location_id
+        WHERE location.location_type <> 'SELLABLE'
+      `);
+      expect(invalid.rows[0]?.count).toBe('0');
+    });
+  });
+
   it('prevents concurrent oversell, supports partial reservation, and releases without changing physical stock', async () => {
     const item = await manager.post('/api/v1/warehouse/items').set('x-csrf-token', managerSession.csrfToken)
       .send({ sku: 'CONCURRENT-001', name: 'کالای آزمون همزمانی', catalogReference: 'CAT-CONCURRENT-001', trackingMode: 'NONE', uom: 'PCS' }).expect(201);
     const receipt = await manager.post('/api/v1/warehouse/receipts')
       .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
-      .send({ warehouseId: warehouseOne, receivingLocationId: receivingOne, receiptType: 'PURCHASE', sourceNote: 'خرید همزمانی', lines: [{ inventoryItemId: item.body.item.id, quantity: '5', evidenceNote: 'فاکتور خرید' }] }).expect(201);
+      .send({ warehouseId: warehouseOne, receivingLocationId: storageOne, receiptType: 'PURCHASE', sourceNote: 'خرید همزمانی', lines: [{ inventoryItemId: item.body.item.id, quantity: '5', evidenceNote: 'فاکتور خرید' }] }).expect(201);
     await manager.post(`/api/v1/warehouse/receipts/${receipt.body.receipt.id}/post`).set('x-csrf-token', managerSession.csrfToken).expect(200);
     const first = await createEligibleInvoice('کالای همزمان اول', 'CAT-CONCURRENT-001', 4);
     const second = await createEligibleInvoice('کالای همزمان دوم', 'CAT-CONCURRENT-001', 4);
@@ -353,7 +538,7 @@ describe('Warehouse Foundation', () => {
     const key = randomUUID();
     const input = {
       sourceWarehouseId: warehouseOne, destinationWarehouseId: warehouseTwo,
-      sourceLocationId: receivingOne, destinationLocationId: storageTwo, reason: 'تأمین انبار دوم',
+      sourceLocationId: storageOne, destinationLocationId: storageTwo, reason: 'تأمین انبار دوم',
       lines: [{ stockIdentityId: noneStockIdentity, quantity: '1.000001' }],
     };
     const created = await manager.post('/api/v1/warehouse/transfers').set('x-csrf-token', managerSession.csrfToken)
@@ -367,11 +552,90 @@ describe('Warehouse Foundation', () => {
       .set('x-csrf-token', managerSession.csrfToken).expect(200)
       .expect(({ body }) => expect(body.transfer.status).toBe('RECEIVED'));
 
+    const transferOutMovement = await withTenantTransaction(
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha },
+      async (client) => (await client.query<{ id: string }>(`
+        SELECT id FROM inventory_movements WHERE source_type = 'WAREHOUSE_TRANSFER'
+          AND source_id = $1 AND movement_type = 'TRANSFER_OUT'
+      `, [created.body.transfer.id])).rows[0]!.id,
+    );
+    await manager.post(`/api/v1/warehouse/movements/${transferOutMovement}/reverse`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت تک‌حرکت ممنوع' }).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('transfer_document_reversal_required'));
+    await manager.post(`/api/v1/warehouse/transfers/${created.body.transfer.id}/reverse`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت کامل انتقال دریافت‌شده' }).expect(200)
+      .expect(({ body }) => expect(body.transfer.status).toBe('CANCELLED'));
+
+    const inTransit = await manager.post('/api/v1/warehouse/transfers')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ ...input, lines: [{ stockIdentityId: noneStockIdentity, quantity: '0.250000' }] }).expect(201);
+    await manager.post(`/api/v1/warehouse/transfers/${inTransit.body.transfer.id}/dispatch`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    await manager.post(`/api/v1/warehouse/transfers/${inTransit.body.transfer.id}/reverse`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'لغو کامل پیش از دریافت' }).expect(200)
+      .expect(({ body }) => expect(body.transfer.status).toBe('CANCELLED'));
+
+    const concurrent = await manager.post('/api/v1/warehouse/transfers')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ ...input, lines: [{ stockIdentityId: noneStockIdentity, quantity: '0.500000' }] }).expect(201);
+    await manager.post(`/api/v1/warehouse/transfers/${concurrent.body.transfer.id}/dispatch`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    await manager.post(`/api/v1/warehouse/transfers/${concurrent.body.transfer.id}/receive`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    const concurrentResults = await Promise.all([
+      manager.post(`/api/v1/warehouse/transfers/${concurrent.body.transfer.id}/reverse`)
+        .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت همزمان کامل' }),
+      manager.post(`/api/v1/warehouse/transfers/${concurrent.body.transfer.id}/reverse`)
+        .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت همزمان کامل' }),
+    ]);
+    expect(concurrentResults.map((result) => result.status)).toEqual([200, 200]);
+
+    const partial = await manager.post('/api/v1/warehouse/transfers')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ ...input, lines: [{ stockIdentityId: noneStockIdentity, quantity: '0.750000' }] }).expect(201);
+    await manager.post(`/api/v1/warehouse/transfers/${partial.body.transfer.id}/dispatch`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      await client.query('UPDATE warehouse_transfer_lines SET received_quantity = $2 WHERE transfer_id = $1', [partial.body.transfer.id, '0.250000']);
+    });
+    await manager.post(`/api/v1/warehouse/transfers/${partial.body.transfer.id}/reverse`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت ناایمن انتقال جزئی' }).expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('warehouse_transfer_reversal_unsafe'));
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const partialReversals = await client.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM inventory_movements
+        WHERE source_type = 'WAREHOUSE_TRANSFER_REVERSAL' AND source_id = $1
+      `, [partial.body.transfer.id]);
+      expect(partialReversals.rows[0]?.count).toBe('0');
+      await client.query('UPDATE warehouse_transfer_lines SET received_quantity = 0 WHERE transfer_id = $1', [partial.body.transfer.id]);
+      const concurrentReversals = await client.query<{ count: string }>(`
+        SELECT count(*)::text AS count FROM inventory_movements
+        WHERE source_type = 'WAREHOUSE_TRANSFER_REVERSAL' AND source_id = $1
+      `, [concurrent.body.transfer.id]);
+      expect(concurrentReversals.rows[0]?.count).toBe('2');
+    });
+    await manager.post(`/api/v1/warehouse/transfers/${partial.body.transfer.id}/reverse`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'برگشت کامل پس از رفع وضعیت جزئی' }).expect(200);
+
     const excessive = await manager.post('/api/v1/warehouse/transfers').set('x-csrf-token', managerSession.csrfToken)
       .set('idempotency-key', randomUUID()).send({ ...input, lines: [{ stockIdentityId: noneStockIdentity, quantity: '999999' }] }).expect(201);
     await manager.post(`/api/v1/warehouse/transfers/${excessive.body.transfer.id}/dispatch`)
       .set('x-csrf-token', managerSession.csrfToken).expect(409)
       .expect(({ body }) => expect(body.error.code).toBe('negative_inventory_denied'));
+
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      const conservation = await client.query<{ source_id: string; net: string }>(`
+        WITH effects AS (
+          SELECT source_id, -quantity AS delta FROM inventory_movements
+          WHERE source_type IN ('WAREHOUSE_TRANSFER', 'WAREHOUSE_TRANSFER_REVERSAL') AND from_location_id IS NOT NULL
+          UNION ALL
+          SELECT source_id, quantity AS delta FROM inventory_movements
+          WHERE source_type IN ('WAREHOUSE_TRANSFER', 'WAREHOUSE_TRANSFER_REVERSAL') AND to_location_id IS NOT NULL
+        )
+        SELECT source_id, sum(delta)::text AS net FROM effects GROUP BY source_id HAVING sum(delta) <> 0
+      `);
+      expect(conservation.rows).toHaveLength(0);
+    });
   });
 
   it('enforces maker-checker for Adjustments and Counts and creates immutable reversible ledger entries', async () => {
@@ -443,6 +707,31 @@ describe('Warehouse Foundation', () => {
       const rows = await client.query<{ disposition: string }>('SELECT disposition FROM inventory_return_inspections WHERE return_id = $1 ORDER BY disposition', [returned.body.inventoryReturn.id]);
       expect(rows.rows.map((row) => row.disposition).sort()).toEqual(dispositions.map((item) => item.disposition).sort());
     });
+  });
+
+  it('rebuilds InventoryBalance from the immutable Movement ledger and detects projection drift', async () => {
+    await manager.get('/api/v1/warehouse/projection/verify').expect(200)
+      .expect(({ body }) => expect(body.projection.consistent).toBe(true));
+    const changed = await withTenantTransaction(
+      { workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha },
+      async (client) => (await client.query<{ location_id: string; stock_identity_id: string }>(`
+        UPDATE inventory_balances SET on_hand_quantity = on_hand_quantity + 0.000001
+        WHERE (workspace_id, location_id, stock_identity_id) = (
+          SELECT balance.workspace_id, balance.location_id, balance.stock_identity_id FROM inventory_balances balance
+          JOIN stock_identities identity ON identity.id = balance.stock_identity_id
+          WHERE identity.serial_id IS NULL ORDER BY balance.location_id, balance.stock_identity_id LIMIT 1
+        )
+        RETURNING location_id, stock_identity_id
+      `)).rows[0]!,
+    );
+    await manager.get('/api/v1/warehouse/projection/verify').expect(409)
+      .expect(({ body }) => expect(body.error.code).toBe('inventory_projection_mismatch'));
+    await withTenantTransaction({ workspaceId: ids.workspaceAlpha, companyId: ids.companyAlpha }, async (client) => {
+      await client.query(`UPDATE inventory_balances SET on_hand_quantity = on_hand_quantity - 0.000001
+        WHERE location_id = $1 AND stock_identity_id = $2`, [changed.location_id, changed.stock_identity_id]);
+    });
+    await manager.get('/api/v1/warehouse/projection/verify').expect(200)
+      .expect(({ body }) => expect(body.projection.consistent).toBe(true));
   });
 
   it('keeps Company operational stock isolated by FORCE RLS and never changes Payment status', async () => {
