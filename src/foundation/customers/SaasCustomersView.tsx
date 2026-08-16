@@ -43,7 +43,7 @@ const sourceLabels: Record<string, string> = {
   website: 'وب‌سایت',
   campaign: 'کمپین',
   external_company: 'شرکت بیرونی',
-  api_integration: 'API',
+  api_integration: 'یکپارچه‌سازی سامانه',
 };
 
 function formatDate(value: string): string {

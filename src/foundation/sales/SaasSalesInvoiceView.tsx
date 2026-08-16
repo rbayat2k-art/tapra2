@@ -429,7 +429,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
         </button>)}
       </aside>
 
-      <main>
+      <div>
         {!selected && <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-400">یک فاکتور را انتخاب کنید.</div>}
         {selected && <div className="space-y-5">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -497,7 +497,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
             <div className="mt-3 space-y-2">{selected.history.map((event) => <div key={event.id} className="flex items-start gap-2 border-r-2 border-indigo-200 pr-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><div className="text-slate-700">{eventTypeLabel(event.type)}</div><div className="text-xs text-slate-400">{event.actorName} · {formatSalesDate(event.occurredAt)}</div>{event.reason && <div className="mt-1 text-xs text-slate-500">{event.reason}</div>}</div></div>)}</div>
           </section>
         </div>}
-      </main>
+      </div>
     </div>
   </div>;
 }

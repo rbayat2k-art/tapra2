@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Building2, LogOut } from 'lucide-react';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
+import { organizationScopeLabels } from '../localization/foundationLabels';
 
 export function ContextSelector() {
   const { session, selectContext, logout } = useFoundationSession();
@@ -26,8 +27,8 @@ export function ContextSelector() {
             <button key={membership.contextKey} onClick={() => void selectContext(membership)} className="text-right rounded-2xl border border-slate-700 bg-slate-950 p-4 hover:border-emerald-500 transition">
               <Building2 className="text-emerald-400 mb-3" />
               <strong className="block">{membership.workspace.name}</strong>
-              <span className="text-xs text-slate-400">{membership.company?.name ?? 'سطح Workspace'} · {membership.organizationUnit?.name ?? membership.scope.type}</span>
-              <span className="mt-1 block text-[10px] text-indigo-300">{membership.roles.map((role) => role.name).join('، ') || 'بدون Role'}</span>
+              <span className="text-xs text-slate-400">{membership.company?.name ?? 'کل مجموعه'} · {membership.organizationUnit?.name ?? organizationScopeLabels[membership.scope.type]}</span>
+              <span className="mt-1 block text-[10px] text-indigo-300">{membership.roles.map((role) => role.name).join('، ') || 'بدون نقش تخصیص‌یافته'}</span>
             </button>
           ))}
         </div>
