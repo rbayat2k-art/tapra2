@@ -1,12 +1,33 @@
 import { config as loadDotEnv } from 'dotenv';
 import { Client } from 'pg';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runMigrations } from '../scripts/migrate.js';
 import { seedDatabase } from '../scripts/seed.js';
 
 loadDotEnv({ path: '.env.local', quiet: true });
 const migrationUrl = process.env.TEST_DATABASE_MIGRATION_URL;
-if (!migrationUrl) throw new Error('TEST_DATABASE_MIGRATION_URL is required.');
+const runtimeUrl = process.env.TEST_DATABASE_URL;
+if (!migrationUrl || !runtimeUrl) throw new Error('TEST_DATABASE_MIGRATION_URL and TEST_DATABASE_URL are required.');
+
+let previousEnvironment: Record<'NODE_ENV' | 'DATABASE_MIGRATION_URL' | 'DATABASE_URL', string | undefined>;
+
+beforeEach(() => {
+  previousEnvironment = {
+    NODE_ENV: process.env.NODE_ENV,
+    DATABASE_MIGRATION_URL: process.env.DATABASE_MIGRATION_URL,
+    DATABASE_URL: process.env.DATABASE_URL,
+  };
+  process.env.NODE_ENV = 'test';
+  process.env.DATABASE_MIGRATION_URL = migrationUrl;
+  process.env.DATABASE_URL = runtimeUrl;
+});
+
+afterEach(() => {
+  for (const [key, value] of Object.entries(previousEnvironment)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 function assertDedicatedTestDatabase(connectionString: string): void {
   const parsed = new URL(connectionString);
@@ -28,9 +49,6 @@ async function reset(): Promise<void> {
 
 describe('Warehouse migration compatibility', () => {
   it('upgrades current stable data through 0019-0022, preserves it, and reruns safely', async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.DATABASE_MIGRATION_URL = migrationUrl;
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
     await reset();
     await runMigrations(migrationUrl!, { through: '0018_payment_lineage_status_cleanup.sql' });
     await seedDatabase(migrationUrl!);
