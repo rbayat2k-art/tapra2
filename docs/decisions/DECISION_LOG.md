@@ -491,3 +491,66 @@ migrationهای Sales به `0013` و `0014` منتقل شدند. Lead، Call Log
 
 **Impact:**
 دانش کسب‌وکار در source of truth ثبت شد، ولی هیچ application code، migration، API، database یا runtime behavior تغییر نکرد. Sale entry و Invoice/Payment تا زمان implementation و validation با وضعیت `APPROVED-FUTURE` باقی می‌مانند.
+
+---
+
+### Date: 2026-08-15
+
+**Title:** Invoice release, fulfillment, cancellation and payment exception policies approved
+
+**Context:**
+پیش از Backend کردن Invoice و Fulfillment لازم بود مرز پرداخت کامل، Inventory reservation، اجرای مستقل Lineها، Warehouse چندشرکتی، Shipment جزئی، Service completion، لغو و exceptionهای مالی بدون اتکا به Prototype مشخص شود.
+
+**Decision:**
+
+1. تا مجموع Paymentهای `APPROVED` دقیقاً با مبلغ Invoice برابر نباشد هیچ Line وارد اجرا و هیچ Inventory رزرو نمی‌شود. اضافه‌پرداخت و Chargeback پرونده exception مستقل می‌سازند و تاریخچه را بازنویسی نمی‌کنند.
+2. پس از Financial Approval، Lineهای کالا و خدمت مستقل اجرا می‌شوند؛ نبود موجودی فقط Line کالا را در انتظار نگه می‌دارد. ارسال جزئی پشتیبانی می‌شود ولی پیش‌فرض ارسال کامل است و ارسال جزئی Permission و تأیید Customer می‌خواهد.
+3. Warehouse location، مالک اقتصادی، seller، fulfillment company و operator unit مستقل‌اند. در Single-company این پیچیدگی پشت‌صحنه به همان Company resolve می‌شود؛ در Multi-company، Contract و permission مرجع‌اند و Shared Service شرکت مصنوعی نیست.
+4. `COD` در مدل حفظ ولی در Flow عادی غیرفعال است. Payment method، Financial Account و Payment Gateway قابل مدیریت Company-scoped هستند و UI همه statusها را فارسی نمایش می‌دهد.
+5. روش Service از گزینه‌های مجاز Catalog/Contract هنگام Sale انتخاب و snapshot می‌شود. Evidence، manager review، Customer Confirmation و نقطه `BILLABLE` از policy همان Service به دست می‌آیند.
+6. درخواست لغو در تمام مراحل ممکن است، ولی بعد از Financial Approval یا شروع اجرا از Support Case و تصمیم Line-level عبور می‌کند. Shipment/Service تکمیل‌شده حذف یا جعل معکوس نمی‌شود.
+7. Invoice با تغییر مهم revision تازه و re-approval می‌گیرد؛ تغییر کم‌خطر فقط Audit می‌شود. Permissionهای edit/correct/amend مستقل و server-side هستند.
+
+**Affected authority documents:**
+
+- `docs/domains/sales/fulfillment-policy.md` برای قواعد تفصیلی پذیرفته‌شده؛
+- `docs/domains/sales/approved-design.md` برای جهت کلی Sales؛
+- `docs/domains/sales/open-questions.md` برای جزئیات واقعاً حل‌نشده implementation.
+
+**Impact:**
+این تصمیم‌ها `APPROVED-FUTURE` هستند. Implementation باید از vertical slice `Sale → Invoice → Payment → Financial Review` آغاز شود و قبل از code معتبر، هیچ قابلیت Invoice/Fulfillment به‌عنوان CURRENT معرفی نشود.
+
+---
+
+### Date: 2026-08-16
+
+**Title:** Payment review safety and Company-scoped Sales configuration implemented
+
+**Context:**
+بازبینی پیش از merge PR #15 چهار gap اجرایی را نشان داد: استفاده از `JavaScript number` برای Rial، state مستقل و تصویب‌نشده `rejected`، نبود maker-checker کامل در Impersonation و وابستگی تنظیمات حساب وصول/تأیید سرپرست به seed. همچنین upgrade تاریخچه دقیق migrationهای قدیمی Sales باید به‌صورت خودکار اثبات می‌شد.
+
+**Decision:**
+مبلغ‌های API به رشته decimal صحیح Rial، محاسبه Backend به `bigint` و ذخیره PostgreSQL به `bigint` محدود شد. Payment پس از ثبت `submitted` است و review فقط `approved` یا `needs_correction` دارد؛ برگشت reason می‌خواهد و correction رکورد قبلی را `superseded` می‌کند. Financial Review در Impersonation ممنوع است و actor واقعی و user مؤثر سازنده Payment هیچ‌کدام reviewer همان Payment نمی‌شوند. overpayment هنگام approval fail-closed است.
+
+الزام تأیید سرپرست policy قابل‌مدیریت Company است که پیش‌فرض روشن دارد و هنگام ساخت روی Invoice snapshot می‌شود. حساب وصول با reference پوشیده و Permission مستقل ایجاد/ویرایش/فعال‌غیرفعال می‌شود. Company تازه تمام policyهای لازم Sales را اتمیک دریافت می‌کند. Gateway اجرایی در این Slice ساخته نشد. Scopeهای `BRANCH`، `DEPARTMENT` و `TEAM` برای Sale/Invoice تا attribution صریح Line همچنان fail-closed هستند.
+
+**Evidence:**
+`server/migrations/0016_payment_review_safety.sql`، `server/migrations/0017_sales_collection_policy.sql`، `server/tests/sales.integration.test.ts` و `server/tests/sales-migration-compatibility.test.ts`.
+
+**Impact:**
+authority CURRENT این رفتار [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) است. migrationهای `0015` و تاریخچه قبلی بازنویسی نشدند؛ اصلاح‌ها فقط با migrationهای افزایشی اعمال شدند. Warehouse، Shipment، Service Fulfillment، Refund، accounting ledger و Payment Gateway اجرایی همچنان خارج از محدوده CURRENT هستند.
+
+---
+
+### Date: 2026-08-16
+
+**Title:** Payment correction lineage separated from business status
+
+**Context:**
+بازبینی نهایی PR #15 نشان داد `superseded` نباید status چهارم Payment باشد. lifecycle مصوب Payment فقط `submitted`، `approved` و `needs_correction` است و در عین حال تاریخچه correction باید بدون حذف یا overwrite باقی بماند.
+
+**Decision:**
+Payment برگشتی پس از ساخته‌شدن correction همچنان `needs_correction` می‌ماند. رکورد جدید `submitted` است؛ `corrects_payment_id` روی revision جدید و `superseded_by_payment_id` روی رکورد قبلی lineage دوطرفه و current revision را مشخص می‌کنند. queryهای عملیاتی فقط revision فاقد `superseded_by_payment_id` را actionable می‌دانند. migration افزایشی `0018` داده‌های معتبر قبلی را تبدیل، constraint سه‌حالته را enforce و description مجوز `sales.payment.review` را با wording «Approve or return ... for correction» همسان می‌کند.
+
+**Impact:**
+هیچ history، review reason یا Audit حذف نمی‌شود؛ migrationهای `0015`، `0016` و `0017` بازنویسی نمی‌شوند. هر lineage ناقص در زمان migration fail-safe متوقف می‌شود تا تبدیل مبهم یا مخرب انجام نشود.

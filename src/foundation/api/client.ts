@@ -9,13 +9,17 @@ import type {
   CustomerImportJob,
   CustomerIdentityMergeOperation,
   FoundationMembership,
+  FoundationSalesInvoice,
   OrganizationScopeType,
   OrganizationSnapshot,
   SalesAssignee,
   SalesCallOutcome,
   SalesLead,
   SalesLeadDetail,
+  SalesInvoiceLineInput,
   SalesMarketingLinkType,
+  SalesPaymentInfrastructure,
+  SalesPaymentMethod,
 } from './contracts';
 
 export class FoundationApiError extends Error {
@@ -162,5 +166,58 @@ export const foundationApi = {
     outcome: SalesCallOutcome; startedAt: string; note?: string; callbackAt?: string; context?: Record<string, unknown>;
   }, csrfToken: string) => request<{ lead: SalesLeadDetail }>(`/sales/leads/${leadId}/calls`, {
     method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  listSalesInvoices: () => request<{ invoices: FoundationSalesInvoice[] }>('/sales/invoices'),
+  readSalesInvoice: (invoiceId: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}`),
+  getSalesPaymentInfrastructure: () => request<SalesPaymentInfrastructure>('/sales/payment-infrastructure'),
+  createSalesCollectionAccount: (input: {
+    displayName: string; bankName: string; maskedReference: string; isActive?: boolean;
+  }, csrfToken: string) => request<{ account: SalesPaymentInfrastructure['accounts'][number] }>('/sales/collection-accounts', {
+    method: 'POST', body: JSON.stringify(input),
+  }, csrfToken),
+  updateSalesCollectionAccount: (accountId: string, input: {
+    displayName: string; bankName: string; maskedReference: string; isActive?: boolean;
+  }, csrfToken: string) => request<{ account: SalesPaymentInfrastructure['accounts'][number] }>(`/sales/collection-accounts/${accountId}`, {
+    method: 'PUT', body: JSON.stringify(input),
+  }, csrfToken),
+  updateSalesApprovalPolicy: (required: boolean, csrfToken: string) => request<{
+    policy: SalesPaymentInfrastructure['salesApprovalPolicy'];
+  }>('/sales/settings/supervisor-approval', {
+    method: 'PUT', body: JSON.stringify({ required }),
+  }, csrfToken),
+  createSaleAndInvoice: (input: {
+    customerId: string;
+    leadId?: string;
+    entryMode: 'direct' | 'paper_entry';
+    sellerMembershipId?: string;
+    source?: Record<string, unknown>;
+    lines: SalesInvoiceLineInput[];
+  }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>('/sales/sales', {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  reviseSalesInvoice: (invoiceId: string, input: {
+    lines: SalesInvoiceLineInput[]; reason?: string;
+  }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}`, {
+    method: 'PUT', body: JSON.stringify(input),
+  }, csrfToken),
+  approveSalesInvoice: (invoiceId: string, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}/supervisor-approval`, {
+    method: 'POST', body: JSON.stringify({}),
+  }, csrfToken),
+  recordSalesPayment: (invoiceId: string, input: {
+    amount: string;
+    paymentMethod: Exclude<SalesPaymentMethod, 'payment_gateway'>;
+    occurredAt: string;
+    lastFourDigits?: string;
+    destinationAccountId: string;
+    trackingNumber: string;
+    receiptReference?: string;
+    correctsPaymentId?: string;
+  }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}/payments`, {
+    method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(input),
+  }, csrfToken),
+  reviewSalesPayment: (invoiceId: string, paymentId: string, input: {
+    decision: 'approved' | 'needs_correction'; reason?: string;
+  }, csrfToken: string) => request<{ invoice: FoundationSalesInvoice }>(`/sales/invoices/${invoiceId}/payments/${paymentId}/review`, {
+    method: 'POST', body: JSON.stringify(input),
   }, csrfToken),
 };

@@ -111,7 +111,7 @@ describe('sales financial review vertical slice', () => {
     }
   });
 
-  it('corrects payment through append-only supersession instead of deletion', () => {
+  it('corrects payment through append-only lineage instead of deletion', () => {
     const old = payment('p1', 900, 'needs_correction');
     const returned = { ...invoice([old], 1000), status: 'returned_for_correction' as const };
     const replacement = payment('p2', 1000);
@@ -119,7 +119,8 @@ describe('sales financial review vertical slice', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.invoice.declaredPayments).toHaveLength(2);
-      expect(result.invoice.declaredPayments[0].status).toBe('superseded');
+      expect(result.invoice.declaredPayments[0].status).toBe('needs_correction');
+      expect(result.invoice.declaredPayments[0].supersededByPaymentId).toBe('p2');
       expect(result.invoice.declaredPayments[1].correctsPaymentId).toBe('p1');
       expect(result.invoice.paidAmount).toBe(1000);
     }

@@ -11,7 +11,7 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 
 ## PostgreSQL
 
-- session، Organization/Access foundation، Customer 360/Import، عملیات فعلی Sales Lead و AuditEntry در PostgreSQL ذخیره می‌شوند.
+- session، Organization/Access foundation، Customer 360/Import، Lead و مسیر فعلی Sale/Invoice/Payment و AuditEntry در PostgreSQL ذخیره می‌شوند.
 - migrationها checksum، ترتیب نام و advisory lock دارند و تکرار اجرای آن‌ها idempotent است.
 - service runtime با نقش محدود `tapra2_app` و migration با `tapra2_owner` اجرا می‌شود.
 - تمام relationهای Customer 360، Sales فعلی و AuditEntry در transaction دارای tenant context اجرا و با RLS محدود می‌شوند.
@@ -22,11 +22,13 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 - migrationهای `0011` و `0012` reconciliation مرکزی Identity، lineage/recovery و eventهای timeline را بدون یکی‌کردن relationshipهای Company اضافه می‌کنند.
 - migration `0013_sales_lead_queue.sql` policy، Lead، assignment، Call Log، relationship و history فروش را Company-scoped اضافه می‌کند؛ assignment/call/relationship/audit در transaction واحد به‌روزرسانی می‌شوند.
 - migration `0014_sales_marketing_context_links.sql` Campaign/Promotion reference و snapshot تماس را بدون ساخت موتور Campaign یا pricing اضافه می‌کند؛ link، relationship history، Customer timeline و Audit در transaction tenant-scoped ثبت می‌شوند.
+- migration `0012z_legacy_sales_renumber_bridge.sql` فقط installationهای دارای نام‌های قدیمی `0009_sales_*`/`0010_sales_*` و checksum شناخته‌شده را بدون اجرای دوباره جدول‌سازها به نام‌های canonical `0013`/`0014` ارتقا می‌دهد؛ روی نصب تازه no-op است.
+- migration `0015_sale_invoice_payment.sql` Sale، Invoice revision، Line، Payment مستقل، حساب مقصد، method policy، history، RLS و Audit foundation را اضافه می‌کند.
 - Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
 ## localStorage
 
-سایر قابلیت‌های Prototype همچنان از `src/utils/storage.ts` و کلیدهای موجود مرورگر استفاده می‌کنند. هیچ پاک‌سازی، تبدیل یا انتقال خودکار داده قدیمی اجرا نشده است. مسیر عادی Customer و صفحه‌های جدید Lead/Queue فقط PostgreSQL را استفاده می‌کنند؛ storage قدیمی Customer/Sales صرفاً برای compatibility، قابلیت‌های migrateنشده و migration evidence در code باقی است.
+سایر قابلیت‌های Prototype همچنان از `src/utils/storage.ts` و کلیدهای موجود مرورگر استفاده می‌کنند. هیچ پاک‌سازی، تبدیل یا انتقال خودکار داده قدیمی اجرا نشده است. مسیر عادی Customer، Lead/Queue و صفحه‌های «فاکتور فروش»/«تأیید مالی فروش» فقط PostgreSQL را استفاده می‌کنند؛ storage قدیمی Customer/Sales صرفاً برای compatibility، قابلیت‌های migrateنشده و migration evidence در code باقی است.
 
 ## محدودیت‌ها
 

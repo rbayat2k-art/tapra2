@@ -37,14 +37,13 @@ import { RawContactRepositoryView } from './components/RawContactRepositoryView'
 import { CampaignsView } from './components/CampaignsView';
 import { SaasLeadAssignmentView } from './foundation/sales/SaasLeadAssignmentView';
 import { SaasSalesQueueView } from './foundation/sales/SaasSalesQueueView';
+import { SaasSalesInvoiceView } from './foundation/sales/SaasSalesInvoiceView';
 import { ProductsView } from './components/ProductsView';
 import { ServicesView } from './components/ServicesView';
 import { PromotionsView } from './components/PromotionsView';
-import { SalesInvoiceView } from './components/SalesInvoiceView';
 import { BatchInvoiceImportView } from './components/BatchInvoiceImportView';
 import { SalesPersonnelLifecycleView } from './components/SalesPersonnelLifecycleView';
 import { SalesOrganizationView } from './components/SalesOrganizationView';
-import { SalesFinancialConfirmationView } from './components/SalesFinancialConfirmationView';
 import { CoordinationInboxView } from './components/CoordinationInboxView';
 import { FulfillmentCasesView } from './components/FulfillmentCasesView';
 import { ColleaguesView } from './components/ColleaguesView';
@@ -1402,22 +1401,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'sales_invoices' && (
-                    <SalesInvoiceView
-                      salesInvoices={salesInvoices}
-                      onUpdateSalesInvoices={setSalesInvoices}
-                      coordinationCases={coordinationCases}
-                      onUpdateCoordinationCases={setCoordinationCases}
-                      customers={customers}
-                      leads={leads}
-                      products={products}
-                      services={services}
-                      promotions={promotions}
-                      users={users}
-                      currentUser={currentUser}
-                      roles={roles}
-                      effectivePermissions={effectivePermissions}
-                      impersonatorAdmin={impersonatorAdmin}
-                    />
+                    <SaasSalesInvoiceView mode="sales" />
                   )}
 
                   {tab.id === 'batch_invoice_import' && (
@@ -1474,28 +1458,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'sales_financial_confirmation' && (
-                    <SalesFinancialConfirmationView
-                      salesInvoices={salesInvoices}
-                      onUpdateSalesInvoices={setSalesInvoices}
-                      productFulfillmentCases={productFulfillmentCases}
-                      onUpdateProductFulfillmentCases={setProductFulfillmentCases}
-                      serviceFulfillmentCases={serviceFulfillmentCases}
-                      onUpdateServiceFulfillmentCases={setServiceFulfillmentCases}
-                      customers={customers}
-                      users={users}
-                      financialCases={salesFinancialReviewCases}
-                      onUpdateFinancialCases={setSalesFinancialReviewCases}
-                      financialEvents={salesFinancialReviewEvents}
-                      onUpdateFinancialEvents={setSalesFinancialReviewEvents}
-                      financialSettings={salesFinancialSettings}
-                      onUpdateFinancialSettings={setSalesFinancialSettings}
-                      overpaymentCases={salesOverpaymentCases}
-                      onUpdateOverpaymentCases={setSalesOverpaymentCases}
-                      currentUser={currentUser}
-                      roles={roles}
-                      effectivePermissions={effectivePermissions}
-                      impersonatorAdmin={impersonatorAdmin}
-                    />
+                    <SaasSalesInvoiceView mode="financial_review" />
                   )}
 
                   {tab.id === 'fulfillment_cases' && (

@@ -231,3 +231,89 @@ export interface SalesAssignee {
   userAccountId: string;
   fullName: string;
 }
+
+export type SaleEntryMode = 'direct' | 'paper_entry';
+export type InvoiceItemType = 'goods' | 'service';
+export type InvoiceLineSourceType = 'promotion_core' | 'cross_sell' | 'upsell' | 'manual_addition';
+export type SalesPaymentMethod = 'card_to_card' | 'bank_transfer' | 'payment_gateway' | 'cash' | 'cheque' | 'cod';
+export type SalesInvoiceStatus =
+  | 'awaiting_supervisor_approval' | 'awaiting_payment' | 'awaiting_financial_review'
+  | 'partially_paid' | 'payment_correction_required' | 'overpayment_hold'
+  | 'financially_approved' | 'cancellation_requested' | 'cancelled';
+export type SalesPaymentStatus = 'submitted' | 'approved' | 'needs_correction';
+
+export interface SalesInvoiceLineInput {
+  itemType: InvoiceItemType;
+  catalogReference?: string;
+  itemName: string;
+  quantity: number;
+  unitPrice: string;
+  discountAmount?: string;
+  sourceType?: InvoiceLineSourceType;
+  snapshot?: Record<string, unknown>;
+}
+
+export interface FoundationSalesInvoice {
+  id: string;
+  code: string;
+  revision: number;
+  status: SalesInvoiceStatus;
+  paymentStatus: 'unpaid' | 'submitted' | 'partial' | 'paid' | 'overpaid' | 'correction_required';
+  currency: 'IRR';
+  subtotalAmount: string;
+  discountAmount: string;
+  finalAmount: string;
+  approvedPaymentAmount: string;
+  salesApprovalRequired: boolean;
+  supervisorApproval: null | { userAccountId: string; at: string };
+  sale: {
+    id: string;
+    entryMode: SaleEntryMode;
+    seller: { membershipId: string; name: string };
+    actor: { userAccountId: string; name: string };
+    customer: { id: string; canonicalIdentityId: string; name: string };
+    leadId: string | null;
+  };
+  lines: Array<{
+    id: string;
+    lineNumber: number;
+    itemType: InvoiceItemType;
+    catalogReference: string | null;
+    itemName: string;
+    quantity: number;
+    unitPrice: string;
+    discountAmount: string;
+    lineTotal: string;
+    sourceType: InvoiceLineSourceType;
+    fulfillmentStatus: string;
+    snapshot: Record<string, unknown>;
+  }>;
+  payments: Array<{
+    id: string;
+    amount: string;
+    method: SalesPaymentMethod;
+    occurredAt: string;
+    lastFourDigits: string | null;
+    destinationAccountId: string | null;
+    destinationAccountName: string | null;
+    trackingNumber: string | null;
+    receiptReference: string | null;
+    status: SalesPaymentStatus;
+    recorderName: string;
+    reviewerName: string | null;
+    reviewedAt: string | null;
+    reviewReason: string | null;
+    correctsPaymentId: string | null;
+    supersededByPaymentId: string | null;
+  }>;
+  history: Array<{ id: string; type: string; reason: string | null; actorName: string; occurredAt: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalesPaymentInfrastructure {
+  accounts: Array<{ id: string; name: string; bankName: string; maskedReference: string | null; active: boolean }>;
+  gateways: Array<{ id: string; name: string; providerCode: string; settlementAccountId: string }>;
+  policies: Array<{ method: SalesPaymentMethod; enabled: boolean; manualReviewRequired: boolean }>;
+  salesApprovalPolicy: { supervisorApprovalRequired: boolean };
+}

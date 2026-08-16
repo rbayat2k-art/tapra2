@@ -672,7 +672,7 @@ export const SalesInvoiceView: React.FC<SalesInvoiceViewProps> = ({
                             <div key={p.id} className="text-slate-600 dark:text-slate-300">
                               {formatPortalMoney(p.amount)} — تاریخ: {paymentStamp.date} — ساعت: {paymentStamp.time} — روش: {p.method}
                               {p.status !== 'declared' && (
-                                <span> — تصمیم: {p.status === 'approved' ? `تأیید (${formatPortalMoney(p.approvedAmount)})` : p.status === 'rejected' ? 'رد' : p.status === 'needs_correction' ? 'نیاز به اصلاح' : p.status === 'suspicious' ? 'مشکوک' : 'جایگزین‌شده'} توسط {p.financialApproverUserName}{p.financialDecisionReason ? ` — ${p.financialDecisionReason}` : ''}</span>
+                                <span> — تصمیم: {p.status === 'approved' ? `تأیید (${formatPortalMoney(p.approvedAmount)})` : p.status === 'rejected' ? 'رد' : p.status === 'needs_correction' ? 'نیاز به اصلاح' : p.status === 'suspicious' ? 'مشکوک' : 'در انتظار بررسی'} توسط {p.financialApproverUserName}{p.financialDecisionReason ? ` — ${p.financialDecisionReason}` : ''}{p.supersededByPaymentId ? ' — دارای نسخه اصلاحی' : ''}</span>
                               )}
                               {inv.status === 'returned_for_correction' && ['needs_correction', 'suspicious', 'rejected'].includes(p.status) && !p.supersededByPaymentId && <button onClick={() => { setCorrectingPaymentIds({ ...correctingPaymentIds, [inv.id]: p.id }); setPaymentForms({ ...paymentForms, [inv.id]: { amount: String(p.amount), method: p.method, trackingNumber: p.trackingNumber || '' } }); }} className="mr-2 text-indigo-600 dark:text-indigo-300 underline">اصلاح این ردیف</button>}
                             </div>

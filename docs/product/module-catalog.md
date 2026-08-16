@@ -23,9 +23,10 @@
 | پشتیبانی | `SupportView`, `SupportCaseFormModal`, `SupportCaseDetailModal` | پرونده شکایت/عودت و ارسال ردیف تأییدشده به خزانه | [support business rules](../domains/support/business-rules.md) |
 | مشتریان | `SaasCustomerWorkspace`, `SaasCustomersView`, `CustomerImportView` | نمای جامع مشتری و Import سروری؛ relationship شرکتی مستقل و آشتی هویت مرکزی Workspace | [current customer](../domains/sales/current-customer.md)، [Customer Import](../domains/sales/customer-import.md) |
 | Sales Lead/queue | `SaasSalesQueueView`, `SaasLeadAssignmentView` | Lead، صف شخصی، assignment/reassignment، Call Log و Campaign/Promotion context متصل به PostgreSQL | [current lead operations](../domains/sales/current-lead-operations.md) |
+| Sales invoice/payment | `SaasSalesInvoiceView` | ثبت مستقیم/کاغذی Sale، ساخت و revision فاکتور، Payment مستقل و بررسی مالی متصل به PostgreSQL | [current invoice/payment](../domains/sales/current-invoice-payment.md) |
 | Sales campaign | `CampaignsView` | Campaign UI و منطق prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Sales catalog | `ProductsView`, `ServicesView`, `PromotionsView` | catalog و promotion prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
-| Sales invoice/coordination | `SalesInvoiceView`, `BatchInvoiceImportView`, `CoordinationInboxView`, `SalesFinancialConfirmationView` | workflow prototype ثبت، هماهنگی و بررسی مالی Sales | [integration status](../engineering/canonical-product-integration.md) |
+| Sales coordination/batch | `BatchInvoiceImportView`, `CoordinationInboxView` | ثبت گروهی و هماهنگی legacy همچنان prototype-backed؛ Viewهای قدیمی Invoice/Financial فقط برای بازیابی source باقی‌اند | [integration status](../engineering/canonical-product-integration.md) |
 | Sales organization | `SalesOrganizationView`, `SalesPersonnelLifecycleView` | hierarchy و چرخه عمر نیروی فروش prototype-backed | [integration status](../engineering/canonical-product-integration.md) |
 | Fulfillment | `FulfillmentCasesView` | assignment، اجرا، evidence، customer confirmation و review در prototype | [integration status](../engineering/canonical-product-integration.md) |
 | نامه‌نگاری | `LettersView` و modalهای مرتبط | ثبت، نسخه‌بندی، ارجاع و پیگیری نامه | مدل‌های `Letter` در `src/types.ts` |
@@ -46,4 +47,4 @@
 
 ## خارج از وضعیت فعلی
 
-Backend و API Foundation، Customer 360/Import و برش محدود Sales Lead/Queue/Assignment/Call/Marketing Context اکنون CURRENT هستند. UI و منطق مدیریت کامل Campaign/Promotion، فاکتور فروش، Catalog، Coordination و Fulfillment همچنان prototype-backed هستند؛ linkage فعلی فقط reference و snapshot تاریخی را ثبت می‌کند. Inventory واقعی، Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.
+Backend و API Foundation، Customer 360/Import، Sales Lead/Queue/Assignment/Call/Marketing Context و Sale/Invoice/Payment/Financial Review اکنون CURRENT هستند. UI و منطق مدیریت کامل Campaign/Promotion، Catalog، Batch Invoice، Coordination و Fulfillment همچنان prototype-backed هستند؛ linkage فعلی فقط reference و snapshot تاریخی را ثبت می‌کند. Inventory واقعی، Outbox و integrationهای بیرونی در [future platform](../architecture/future-platform.md) و اسناد future فروش باقی می‌مانند.

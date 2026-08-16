@@ -1386,7 +1386,7 @@ export type DeclaredPaymentMethod = 'card_to_card' | 'cash' | 'gateway' | 'other
 // declared: تازه اعلام شده — تصمیم مالی هنوز نیامده. approved: مبلغ تأییدشده در مبلغ قطعی فاکتور
 // محاسبه می‌شود. rejected: به‌کلی رد شده، هرگز در مبلغ قطعی نمی‌آید. needs_correction: نیازمند
 // اصلاح فروشنده/واحد ثبت است، هنوز نه تأیید نه رد قطعی.
-export type DeclaredPaymentStatus = 'declared' | 'approved' | 'rejected' | 'needs_correction' | 'suspicious' | 'superseded';
+export type DeclaredPaymentStatus = 'declared' | 'approved' | 'rejected' | 'needs_correction' | 'suspicious';
 export interface DeclaredPaymentHistoryEntry {
   id: string;
   status: DeclaredPaymentStatus;
@@ -1416,7 +1416,7 @@ export interface DeclaredPayment {
   financialDecisionAt?: string;
   financialDecisionReason?: string; // برای rejected/needs_correction الزامی
   financialHistory?: DeclaredPaymentHistoryEntry[];
-  // اصلاح هرگز ردیف قبلی را حذف/بازنویسی نمی‌کند؛ ردیف تازه به قبلی متصل و قبلی superseded می‌شود.
+  // اصلاح هرگز ردیف قبلی را حذف/بازنویسی نمی‌کند؛ ردیف تازه به قبلی متصل می‌شود و lineage، نسخه جاری را مشخص می‌کند.
   correctsPaymentId?: string;
   supersededByPaymentId?: string;
   // تطبیق بانک در این فاز «پیشنهاد» است، نه اتصال واقعی بانک. تصمیم نهایی همیشه انسانی است.
