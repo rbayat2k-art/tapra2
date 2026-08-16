@@ -51,7 +51,10 @@ export interface NavVisibilityContext {
   effectivePermissions: SystemPermission[] | null;
   isAdmin: boolean;
   foundationPermissions?: string[];
+  activeCompanyId?: string | null;
 }
+
+export type NavBacking = 'CURRENT' | 'HYBRID' | 'PROTOTYPE' | 'LEGACY';
 
 export interface NavItemDefinition {
   id: string;
@@ -70,11 +73,25 @@ export interface NavItemDefinition {
   // فقط 'new_request': این id هرگز یک تب واقعی نبوده — همیشه Modal ثبت درخواست را باز می‌کرده.
   isModalAction?: boolean;
   description?: string;
+  backing?: NavBacking;
+  operationalNav?: boolean;
+  serverPermissions?: string[];
+  serverPermissionGroups?: string[][];
+  requiresCompanyContext?: boolean;
 }
 
 export function isNavItemVisible(item: NavItemDefinition, ctx: NavVisibilityContext): boolean {
-  if (item.isVisible) return item.isVisible(ctx);
-  return canAccessNavItem(ctx.currentUser, ctx.effectivePermissions, item.requires);
+  if (!item.operationalNav || !['CURRENT', 'HYBRID'].includes(item.backing ?? 'LEGACY')) return false;
+  if (item.requiresCompanyContext && !ctx.activeCompanyId) return false;
+  if (item.serverPermissions?.length) {
+    const granted = ctx.foundationPermissions ?? [];
+    if (!item.serverPermissions.some((permission) => granted.includes(permission))) return false;
+  }
+  if (item.serverPermissionGroups?.length) {
+    const granted = ctx.foundationPermissions ?? [];
+    if (!item.serverPermissionGroups.every((group) => group.some((permission) => granted.includes(permission)))) return false;
+  }
+  return item.id === 'dashboard' || !!item.serverPermissions?.length || !!item.serverPermissionGroups?.length;
 }
 
 const adminOrCustom = (permKey: 'manage_users' | 'manage_roles') => (ctx: NavVisibilityContext) =>
@@ -82,7 +99,7 @@ const adminOrCustom = (permKey: 'manage_users' | 'manage_roles') => (ctx: NavVis
 
 export const NAV_ITEMS: NavItemDefinition[] = [
   // ۱. خانه
-  { id: 'dashboard', label: 'داشبورد و خلاصه آمار', shortLabel: 'داشبورد', icon: LayoutDashboard, group: 'home', order: 10 },
+  { id: 'dashboard', label: 'داشبورد عملیاتی', shortLabel: 'داشبورد', icon: LayoutDashboard, group: 'home', order: 10, backing: 'HYBRID', operationalNav: true },
 
   // ۲. کارتابل من
   { id: 'my_requests', label: 'درخواست‌های من', shortLabel: 'درخواست‌های من', icon: FileText, group: 'inbox', order: 10, requires: ['create_request'], badgeKey: 'myRequests' },
@@ -90,11 +107,11 @@ export const NAV_ITEMS: NavItemDefinition[] = [
   { id: 'approval_inbox', label: 'کارتابل تایید و پرداخت', shortLabel: 'تایید و پرداخت', icon: Inbox, group: 'inbox', order: 30, requires: ['approve_branch_request', 'approve_treasury', 'execute_payment'], badgeKey: 'pendingApproval' },
 
   // ۳. فروش و CRM
-  { id: 'my_sales_queue', label: 'صف فروش من', shortLabel: 'صف فروش', icon: PhoneCall, group: 'sales_crm', order: 10, requires: ['view_sales_queue'] },
-  { id: 'customers', label: 'مشتریان', shortLabel: 'مشتریان', icon: Contact, group: 'sales_crm', order: 20, requires: ['sales_access', 'view_customer_profile'] },
+  { id: 'my_sales_queue', label: 'صف فروش من', shortLabel: 'صف فروش', icon: PhoneCall, group: 'sales_crm', order: 10, requires: ['view_sales_queue'], backing: 'CURRENT', operationalNav: true, serverPermissions: ['sales.queue.read'], requiresCompanyContext: true },
+  { id: 'customers', label: 'مشتریان', shortLabel: 'مشتریان', icon: Contact, group: 'sales_crm', order: 20, requires: ['sales_access', 'view_customer_profile'], backing: 'CURRENT', operationalNav: true, serverPermissions: ['customer.read'], requiresCompanyContext: true },
   { id: 'sales_organization', label: 'سازمان فروش و سلسله‌مراتب', shortLabel: 'سازمان فروش', icon: GitBranch, group: 'sales_crm', order: 25, requires: ['sales_access', 'manage_sales_hierarchy', 'manage_sales_users'] },
-  { id: 'lead_assignment', label: 'تخصیص و انتقال Lead', shortLabel: 'تخصیص Lead', icon: Users2, group: 'sales_crm', order: 30, requires: ['assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'configure_lead_assignment'] },
-  { id: 'sales_invoices', label: 'فاکتور فروش', shortLabel: 'فاکتور فروش', icon: FileSpreadsheet, group: 'sales_crm', order: 40, requires: ['create_sales_invoice', 'view_own_invoices', 'view_team_invoices'] },
+  { id: 'lead_assignment', label: 'مدیریت سرنخ‌های فروش', shortLabel: 'سرنخ‌های فروش', icon: Users2, group: 'sales_crm', order: 30, requires: ['assign_sales_lead', 'reassign_sales_lead', 'drain_salesperson_queue', 'configure_lead_assignment'], backing: 'CURRENT', operationalNav: true, serverPermissionGroups: [['sales.lead.read_all'], ['sales.lead.create', 'sales.lead.assign', 'sales.lead.reassign', 'sales.marketing.link']], requiresCompanyContext: true },
+  { id: 'sales_invoices', label: 'فروش و فاکتور', shortLabel: 'فاکتور فروش', icon: FileSpreadsheet, group: 'sales_crm', order: 40, requires: ['create_sales_invoice', 'view_own_invoices', 'view_team_invoices'], backing: 'CURRENT', operationalNav: true, serverPermissionGroups: [['sales.invoice.read_own', 'sales.invoice.read_all']], requiresCompanyContext: true },
   { id: 'batch_invoice_import', label: 'ثبت گروهی فاکتور', shortLabel: 'ثبت گروهی', icon: Upload, group: 'sales_crm', order: 50, requires: ['bulk_import_invoices'] },
   { id: 'sales_personnel_lifecycle', label: 'چرخهٔ عمر نیروی فروش', shortLabel: 'چرخهٔ عمر نیرو', icon: UserCog, group: 'sales_crm', order: 60, requires: ['sales_access', 'request_salesperson_transfer', 'review_salesperson_transfer', 'manage_sales_users', 'view_archived_sales_workspace'] },
 
@@ -115,8 +132,8 @@ export const NAV_ITEMS: NavItemDefinition[] = [
 
   // ۶. عملیات سفارش و خدمت
   { id: 'coordination_inbox', label: 'کارتابل هماهنگی فاکتور', shortLabel: 'هماهنگی فاکتور', icon: Headset, group: 'order_ops', order: 5, requires: ['view_coordination_queue'] },
-  { id: 'sales_financial_confirmation', label: 'تأیید مالی فروش', shortLabel: 'تأیید مالی فروش', icon: BadgeCheck, group: 'order_ops', order: 10, requires: ['view_sales_financial_queue', 'review_invoice_financial_confirmation'] },
-  { id: 'warehouse_foundation', label: 'عملیات انبار', shortLabel: 'انبار', icon: Warehouse, group: 'order_ops', order: 15, isVisible: (ctx) => !!ctx.foundationPermissions?.includes('warehouse.read') },
+  { id: 'sales_financial_confirmation', label: 'بررسی مالی پرداخت‌ها', shortLabel: 'بررسی مالی', icon: BadgeCheck, group: 'order_ops', order: 10, requires: ['view_sales_financial_queue', 'review_invoice_financial_confirmation'], backing: 'CURRENT', operationalNav: true, serverPermissionGroups: [['sales.payment.review'], ['sales.invoice.read_own', 'sales.invoice.read_all']], requiresCompanyContext: true },
+  { id: 'warehouse_foundation', label: 'عملیات انبار', shortLabel: 'انبار', icon: Warehouse, group: 'order_ops', order: 15, backing: 'CURRENT', operationalNav: true, serverPermissions: ['warehouse.read'] },
   { id: 'fulfillment_cases', label: 'اجرای کالا و خدمت', shortLabel: 'اجرای کالا/خدمت', icon: Truck, group: 'order_ops', order: 20, requires: ['dispatch_product_case', 'deliver_product_case', 'manage_service_fulfillment_assignment', 'execute_service_fulfillment_case'] },
   { id: 'support', label: 'خدمات پس از فروش و شکایات', shortLabel: 'پس از فروش', icon: LifeBuoy, group: 'order_ops', order: 30, requires: ['manage_support_cases', 'financial_approve_support', 'view_support_reports'] },
 
@@ -134,7 +151,7 @@ export const NAV_ITEMS: NavItemDefinition[] = [
   { id: 'all_communications', label: 'کلیه مکاتبات و چت‌های همکاران', shortLabel: 'کلیه مکاتبات', icon: ShieldAlert, group: 'communications', order: 40, isVisible: adminOrCustom('manage_users') },
 
   // ۹. سازمان و مدیریت
-  { id: 'companies', label: 'شرکت‌های tapra', shortLabel: 'شرکت‌ها', icon: Building, group: 'org_admin', order: 10, requires: ['manage_companies'] },
+  { id: 'companies', label: 'سازمان و مدیریت', shortLabel: 'سازمان', icon: Building, group: 'org_admin', order: 10, requires: ['manage_companies'], backing: 'CURRENT', operationalNav: true, serverPermissions: ['organization.read'] },
   { id: 'admin', label: 'مدیریت کاربران سیستمی', shortLabel: 'کاربران', icon: Users, group: 'org_admin', order: 20, isVisible: adminOrCustom('manage_users') },
   { id: 'roles_permissions', label: 'نقش‌ها و دسترسی‌ها (RBAC)', shortLabel: 'نقش‌ها', icon: KeyRound, group: 'org_admin', order: 30, isVisible: adminOrCustom('manage_roles') },
   { id: 'workflow', label: 'چارت گردش کار (فلو)', shortLabel: 'گردش کار', icon: GitFork, group: 'org_admin', order: 40, requires: ['view_analytics'] },
@@ -169,10 +186,11 @@ export interface PrimaryActionDefinition {
   icon: LucideIcon;
   navId: string; // به همان NavItemDefinition.id ارجاع می‌دهد (تب یا Modal Action)
   requires: SystemPermission[];
+  serverPermissions?: string[];
 }
 
 export const PRIMARY_ACTIONS: PrimaryActionDefinition[] = [
-  { id: 'create_sales_invoice', label: 'ثبت فاکتور فروش', icon: FileSpreadsheet, navId: 'sales_invoices', requires: ['create_sales_invoice'] },
+  { id: 'create_sales_invoice', label: 'ثبت فروش و فاکتور', icon: FileSpreadsheet, navId: 'sales_invoices', requires: ['create_sales_invoice'], serverPermissions: ['sales.sale.create'] },
   { id: 'bulk_import_invoices', label: 'ثبت گروهی فاکتور', icon: Upload, navId: 'batch_invoice_import', requires: ['bulk_import_invoices'] },
   { id: 'import_raw_contacts', label: 'ورود داده خام', icon: Database, navId: 'raw_contact_repository', requires: ['import_raw_contacts'] },
   { id: 'approval_inbox', label: 'کارتابل تایید و پرداخت', icon: Inbox, navId: 'approval_inbox', requires: ['approve_branch_request', 'approve_treasury', 'execute_payment'] },
@@ -183,6 +201,10 @@ export const PRIMARY_ACTIONS: PrimaryActionDefinition[] = [
 // معمولاً چند Action واجد شرایط دارد؛ فراخوانی‌کننده (Sidebar) از eligibleActions برای منوی
 // «ایجاد / اقدام سریع» استفاده می‌کند، از primaryAction برای دکمهٔ تکی حالت تک‌نقشی.
 export function getEligiblePrimaryActions(ctx: NavVisibilityContext): PrimaryActionDefinition[] {
-  if (!ctx.currentUser) return [];
-  return PRIMARY_ACTIONS.filter((action) => canAccessNavItem(ctx.currentUser, ctx.effectivePermissions, action.requires));
+  return PRIMARY_ACTIONS.filter((action) => {
+    const navItem = NAV_ITEM_BY_ID[action.navId];
+    if (!navItem || !isNavItemVisible(navItem, ctx)) return false;
+    if (!action.serverPermissions?.length) return false;
+    return action.serverPermissions.some((permission) => ctx.foundationPermissions?.includes(permission));
+  });
 }

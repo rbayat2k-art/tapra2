@@ -38,6 +38,40 @@ export class FoundationApiError extends Error {
   }
 }
 
+const exactErrorMessages: Record<string, string> = {
+  invalid_credentials: 'ایمیل یا رمز عبور نادرست است.',
+  invalid_current_password: 'رمز عبور فعلی نادرست است.',
+  password_change_required: 'پیش از ادامه، رمز عبور موقت را تغییر دهید.',
+  authentication_required: 'نشست شما پایان یافته است؛ دوباره وارد شوید.',
+  active_context_required: 'ابتدا محیط کاری موردنظر را انتخاب کنید.',
+  company_context_required: 'برای ورود به این بخش، ابتدا یک شرکت را انتخاب کنید.',
+  warehouse_company_context_required: 'برای این عملیات، محیط شرکت یا نمای کل مجموعه را انتخاب کنید.',
+  validation_failed: 'اطلاعات واردشده معتبر نیست؛ موارد فرم را بررسی کنید.',
+  permission_denied: 'برای انجام این عملیات دسترسی لازم را ندارید.',
+  organization_conflict: 'اطلاعات واردشده با یک رکورد موجود تداخل دارد.',
+  customer_phone_conflict: 'این شماره تلفن با اطلاعات مشتری دیگری تداخل دارد.',
+  customer_identity_conflict: 'اطلاعات هویتی مشتری با داده موجود تداخل دارد.',
+  customer_not_found: 'مشتری موردنظر در محیط فعال یافت نشد.',
+  sales_lead_not_found: 'سرنخ فروش موردنظر در محیط فعال یافت نشد.',
+  sales_invoice_not_found: 'فاکتور موردنظر در محیط فعال یافت نشد.',
+};
+
+export function localizedFoundationError(status: number, code: string): string {
+  if (exactErrorMessages[code]) return exactErrorMessages[code];
+  if (code.includes('context_required')) return 'ابتدا محیط کاری مناسب را انتخاب کنید.';
+  if (code.includes('scope_') || code.includes('_scope')) return 'این عملیات در محدوده دسترسی فعال مجاز نیست.';
+  if (code.includes('permission') || code.includes('forbidden') || status === 403) return 'برای انجام این عملیات دسترسی لازم را ندارید.';
+  if (code.includes('not_found') || status === 404) return 'مورد درخواستی در محیط فعال یافت نشد.';
+  if (code.includes('duplicate') || code.includes('idempotency')) return 'این درخواست قبلاً ثبت شده یا با درخواست دیگری تداخل دارد.';
+  if (code.includes('conflict') || code.includes('already_') || status === 409) return 'وضعیت فعلی با این عملیات سازگار نیست؛ اطلاعات را بازخوانی و دوباره بررسی کنید.';
+  if (code.includes('invalid') || code.includes('required') || status === 400 || status === 415 || status === 413) {
+    return 'اطلاعات واردشده معتبر یا کامل نیست؛ موارد فرم را بررسی کنید.';
+  }
+  if (status === 401) return 'نشست شما معتبر نیست؛ دوباره وارد شوید.';
+  if (status >= 500) return 'سرویس در حال حاضر پاسخ‌گو نیست؛ کمی بعد دوباره تلاش کنید.';
+  return 'درخواست انجام نشد؛ دوباره تلاش کنید.';
+}
+
 async function request<T>(path: string, init: RequestInit = {}, csrfToken?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('accept', 'application/json');
@@ -50,7 +84,7 @@ async function request<T>(path: string, init: RequestInit = {}, csrfToken?: stri
     throw new FoundationApiError(
       response.status,
       payload.error?.code ?? 'request_failed',
-      payload.error?.message ?? 'درخواست با خطا مواجه شد.',
+      localizedFoundationError(response.status, payload.error?.code ?? 'request_failed'),
       payload.correlationId ?? payload.error?.correlationId,
     );
   }

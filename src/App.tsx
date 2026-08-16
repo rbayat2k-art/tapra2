@@ -15,7 +15,6 @@ import { logAudit } from './utils/auditLog';
 import { Navbar } from './components/Navbar';
 import { StatusBadge, DangerButton } from './components/ui/primitives';
 import { Sidebar } from './components/Sidebar';
-import { DashboardView } from './components/DashboardView';
 import { NewRequestModal } from './components/NewRequestModal';
 import { RequestTableView } from './components/RequestTableView';
 import { RequestDetailModal } from './components/RequestDetailModal';
@@ -56,7 +55,7 @@ import { AssignedTasksView } from './components/AssignedTasksView';
 import { AllCommunicationsAuditView } from './components/AllCommunicationsAuditView';
 import { StyleSettingsView, AVAILABLE_FONTS } from './components/StyleSettingsView';
 import { TabBar, TAB_DEFINITIONS, OpenTab } from './components/TabBar';
-import { NAV_ITEMS, isNavItemVisible } from './config/navigationRegistry';
+import { NAV_ITEMS, NAV_ITEM_BY_ID, isNavItemVisible } from './config/navigationRegistry';
 import { useFoundationSession } from './foundation/auth/FoundationSessionContext';
 import { FoundationLogin } from './foundation/auth/FoundationLogin';
 import { FoundationPasswordChange } from './foundation/auth/FoundationPasswordChange';
@@ -65,6 +64,8 @@ import { FoundationContextBar } from './foundation/organization/FoundationContex
 import { OrganizationAdminView } from './foundation/organization/OrganizationAdminView';
 import { SaasCustomerWorkspace } from './foundation/customers/SaasCustomerWorkspace';
 import { WarehouseFoundationView } from './foundation/warehouse/WarehouseFoundationView';
+import { OperationalDashboardView } from './foundation/shell/OperationalDashboardView';
+import { CompanyContextGuard } from './foundation/shell/CompanyContextGuard';
 import { resolveLegacyShellUser } from './integration/legacyShellIdentity';
 
 export default function App() {
@@ -80,17 +81,21 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string>('dashboard');
 
   const openTab = (tabId: string, label?: string) => {
+    const item = NAV_ITEM_BY_ID[tabId];
+    const activeContext = foundation.session?.activeContext;
+    if (!item || !isNavItemVisible(item, {
+      currentUser,
+      effectivePermissions: [],
+      isAdmin: false,
+      foundationPermissions: activeContext?.permissions ?? [],
+      activeCompanyId: activeContext?.company?.id ?? null,
+    })) return;
     setOpenTabs(prev => {
       if (prev.some(t => t.id === tabId)) return prev;
       const finalLabel = label || TAB_DEFINITIONS[tabId]?.label || tabId;
       return [...prev, { id: tabId, label: finalLabel }];
     });
     setActiveTabId(tabId);
-    // Usage telemetry for the "پرکاربردترین منوهای شما" dashboard widget — counts every
-    // open/switch-to, per logged-in user, independent of the openTabs/activeTabId state above.
-    if (currentUser) {
-      storage.recordTabUsage(currentUser.id, tabId);
-    }
   };
 
   const closeTab = (tabId: string) => {
@@ -296,7 +301,7 @@ export default function App() {
     if (!returnToAdminRequested || !session || session.impersonation
       || currentUser?.email.trim().toLowerCase() !== session.user.email.trim().toLowerCase()) return;
     resetTabsToDashboard();
-    openTab('admin');
+    openTab('companies');
     setReturnToAdminRequested(false);
   }, [returnToAdminRequested, foundation.session?.impersonation?.id, foundation.session?.user.id, currentUser?.id]);
 
@@ -370,7 +375,6 @@ export default function App() {
   // Sidebar would already hide its menu item.
   useEffect(() => {
     if (!currentUser) return;
-    const isAdminUser = currentUser.role === 'admin';
     for (const tab of openTabs) {
       if (tab.id === 'dashboard') continue;
       const navItem = NAV_ITEMS.find((i) => i.id === tab.id);
@@ -379,9 +383,10 @@ export default function App() {
       if (!navItem) continue;
       const allowed = isNavItemVisible(navItem, {
         currentUser,
-        effectivePermissions,
-        isAdmin: isAdminUser,
+        effectivePermissions: [],
+        isAdmin: false,
         foundationPermissions: foundation.session?.activeContext?.permissions ?? [],
+        activeCompanyId: foundation.session?.activeContext?.company?.id ?? null,
       });
       if (!allowed) {
         closeTab(tab.id);
@@ -1087,7 +1092,7 @@ export default function App() {
               <ShieldAlert className="w-4 h-4" />
             </span>
             <span>
-              در حال مشاهده سیستم به‌جای کاربر <strong className="underline">{currentUser.fullName} ({currentUser.roleTitle})</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
+              در حال مشاهده سامانه از نمای <strong className="underline">{currentUser.fullName}</strong> — هویت واقعی شما: {impersonatorAdmin.fullName}.
               {foundation.session?.impersonation && <small className="mt-1 block font-medium opacity-90">دلیل: {foundation.session.impersonation.reason} · پایان خودکار: {new Date(foundation.session.impersonation.expiresAt).toLocaleString('fa-IR')}</small>}
             </span>
           </div>
@@ -1096,7 +1101,7 @@ export default function App() {
             className="px-3 py-1.5 bg-black/20 hover:bg-black/30 text-white font-black rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer"
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>خروج و بازگشت به حساب ادمین ارشد ({impersonatorAdmin.fullName})</span>
+            <span>پایان مشاهده و بازگشت به حساب مدیر ({impersonatorAdmin.fullName})</span>
           </button>
         </div>
       )}
@@ -1132,7 +1137,7 @@ export default function App() {
         />
 
         {/* Main Content View - Full Screen */}
-        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-5 lg:p-6">
           
           {currentUser && currentUser.isActive === false ? (
             <div className="max-w-2xl mx-auto my-8 p-8 bg-[var(--surface)] border border-[var(--border)] rounded-[14px] shadow-sm text-center space-y-6 dir-rtl">
@@ -1175,25 +1180,7 @@ export default function App() {
               {openTabs.map((tab) => (
                 <div key={tab.id} style={{ display: activeTabId === tab.id ? 'block' : 'none' }}>
                   {tab.id === 'dashboard' && (
-                    <DashboardView
-                      requests={requests}
-                      currentUser={currentUser}
-                      companies={companies}
-                      costCenters={costCenters}
-                      roles={roles}
-                      effectivePermissions={effectivePermissions}
-                      leads={leads}
-                      salesInvoices={salesInvoices}
-                      coordinationCases={coordinationCases}
-                      financialCases={salesFinancialReviewCases}
-                      overpaymentCases={salesOverpaymentCases}
-                      onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
-                      onNavigateTab={openTab}
-                      onSelectRequest={(req) => {
-                        setSelectedDetailRequest(req);
-                        setIsDetailModalOpen(true);
-                      }}
-                    />
+                    <OperationalDashboardView onNavigate={openTab} />
                   )}
 
                   {tab.id === 'my_requests' && (
@@ -1282,7 +1269,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'customers' && (
-                    <SaasCustomerWorkspace />
+                    <CompanyContextGuard><SaasCustomerWorkspace /></CompanyContextGuard>
                   )}
 
                   {tab.id === 'customer_merge_candidates' && (
@@ -1364,11 +1351,11 @@ export default function App() {
                   )}
 
                   {tab.id === 'lead_assignment' && (
-                    <SaasLeadAssignmentView />
+                    <CompanyContextGuard><SaasLeadAssignmentView /></CompanyContextGuard>
                   )}
 
                   {tab.id === 'my_sales_queue' && (
-                    <SaasSalesQueueView />
+                    <CompanyContextGuard><SaasSalesQueueView /></CompanyContextGuard>
                   )}
 
                   {tab.id === 'products' && (
@@ -1407,7 +1394,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'sales_invoices' && (
-                    <SaasSalesInvoiceView mode="sales" />
+                    <CompanyContextGuard><SaasSalesInvoiceView mode="sales" /></CompanyContextGuard>
                   )}
 
                   {tab.id === 'batch_invoice_import' && (
@@ -1464,7 +1451,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'sales_financial_confirmation' && (
-                    <SaasSalesInvoiceView mode="financial_review" />
+                    <CompanyContextGuard><SaasSalesInvoiceView mode="financial_review" /></CompanyContextGuard>
                   )}
 
                   {tab.id === 'warehouse_foundation' && (
@@ -1526,17 +1513,7 @@ export default function App() {
                   )}
 
                   {tab.id === 'companies' && (
-                    <div className="space-y-8">
-                      <OrganizationAdminView initialTab="companies" />
-                      <CompaniesView
-                        companies={companies}
-                        companyBankAccounts={companyBankAccounts}
-                        currentUser={currentUser}
-                        onUpdateCompanies={setCompanies}
-                        onUpdateCompanyBankAccounts={setCompanyBankAccounts}
-                        serverManagedCompanies
-                      />
-                    </div>
+                    <OrganizationAdminView initialTab="companies" />
                   )}
 
                   {tab.id === 'archive' && (

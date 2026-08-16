@@ -1,8 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, DirectMessage, SystemRole, Letter } from '../types';
-import { useEffectivePermissions, getAssignedRoleIds } from '../utils/permissions';
-import { storage } from '../utils/storage';
-import { getActiveSalesAssignment } from '../utils/salesOrgStructure';
 import {
   NAV_GROUP_LABELS, getVisibleGroupedNavItems, getEligiblePrimaryActions,
   type NavGroupId, type NavItemDefinition, type NavVisibilityContext
@@ -51,15 +48,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile
 }) => {
   const foundation = useFoundationSession();
-  // بند «مأموریت بازطراحی UI»: هیچ Permission را تغییر نده — دقیقاً همان چک preexisting
-  // (role==='admin' خام، نه isSystemAdmin) که Sidebar/App.tsx's tabAccessMap قبلاً برای سه آیتم
-  // admin/roles_permissions/all_communications استفاده می‌کردند، حفظ شده.
-  const isAdmin = currentUser?.role === 'admin';
-  const effectivePermissions = useEffectivePermissions(currentUser, roles);
-
   const foundationPermissions = foundation.session?.activeContext?.permissions ?? [];
-  const visibilityCtx: NavVisibilityContext = { currentUser, effectivePermissions, isAdmin, foundationPermissions };
-  const groupedNavItems = useMemo(() => getVisibleGroupedNavItems(visibilityCtx), [currentUser, effectivePermissions, isAdmin, foundationPermissions]);
+  const activeCompanyId = foundation.session?.activeContext?.company?.id ?? null;
+  const visibilityCtx: NavVisibilityContext = {
+    currentUser,
+    effectivePermissions: [],
+    isAdmin: false,
+    foundationPermissions,
+    activeCompanyId,
+  };
+  const groupedNavItems = useMemo(() => getVisibleGroupedNavItems(visibilityCtx), [currentUser, foundationPermissions, activeCompanyId]);
   const activeGroup: NavGroupId | undefined = groupedNavItems.find((g) => g.items.some((i) => i.id === activeTab))?.group;
 
   // باز/بسته بودن هر گروه فقط برای همین کاربر، در localStorage — پیش‌فرض: فقط گروه فعال باز است.
@@ -128,23 +126,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       .slice(0, 3);
   }, [users, directMessages, currentUser]);
 
-  // هویت کاربر: دامنهٔ نقش اصلی + (فقط برای نقش‌های فروش) شعبهٔ فعال — صرفاً نمایشی، از
-  // storage خوانده می‌شود (بدون تغییر مدل داده/Permission)، تا Sidebar شلوغ نشود.
+  // کارت هویت فقط context قابل اعتماد نشست سروری را نمایش می‌دهد و از نقش legacy اختیار نمی‌سازد.
   const identityMeta = useMemo(() => {
-    if (!currentUser) return null;
-    const primaryRoleId = getAssignedRoleIds(currentUser)[0];
-    const primaryRole = roles.find((r) => r.id === primaryRoleId);
-    let branchName: string | null = null;
-    if (primaryRole?.domain === 'sales') {
-      const assignment = getActiveSalesAssignment(currentUser.id, storage.getSalesOrgAssignments());
-      if (assignment?.salesBranchIds?.[0]) {
-        branchName = storage.getSalesBranches().find((b) => b.id === assignment.salesBranchIds[0])?.name || null;
-      }
-    }
-    return { domainLabel: DOMAIN_LABELS[primaryRole?.domain || 'general'], branchName };
-  }, [currentUser, roles]);
+    const active = foundation.session?.activeContext;
+    if (!active) return null;
+    return {
+      domainLabel: active.company?.name ?? 'کل مجموعه',
+      branchName: active.organizationUnit?.name ?? null,
+    };
+  }, [foundation.session?.activeContext]);
 
-  const eligiblePrimaryActions = useMemo(() => getEligiblePrimaryActions(visibilityCtx), [currentUser, effectivePermissions]);
+  const eligiblePrimaryActions = useMemo(() => getEligiblePrimaryActions(visibilityCtx), [currentUser, foundationPermissions, activeCompanyId]);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   const handleNavigate = (item: NavItemDefinition) => {
@@ -219,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="p-1.5 rounded-lg bg-[var(--surface-muted)] hover:bg-[var(--border)] text-[var(--text-secondary)] transition cursor-pointer"
+              className="hidden md:flex p-1.5 rounded-lg bg-[var(--surface-muted)] hover:bg-[var(--border)] text-[var(--text-secondary)] transition cursor-pointer"
               title={isCollapsed ? 'باز کردن منو' : 'بستن (جمع کردن) منو'}
               aria-label={isCollapsed ? 'باز کردن منو' : 'جمع کردن منو'}
             >
@@ -380,7 +372,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && (
                 <div className="overflow-hidden min-w-0">
                   <p className="text-[12.5px] font-bold text-[var(--text-primary)] truncate">{currentUser.fullName}</p>
-                  <p className="text-[11px] text-[var(--text-muted)] truncate">{currentUser.roleTitle}</p>
+                  <p className="text-[11px] text-[var(--text-muted)] truncate">دسترسی عملیاتی فعال</p>
                   {identityMeta && (
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] rounded-full px-1.5 py-0.5">
@@ -403,10 +395,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </aside>
     </>
   );
-};
-
-const DOMAIN_LABELS: Record<string, string> = {
-  system: 'سیستم', treasury: 'خزانه‌داری', sales: 'فروش', sales_finance: 'مالی فروش',
-  data: 'مدیریت داده', advertising: 'تبلیغات', registration: 'واحد ثبت', monitoring: 'واحد شنود',
-  after_sales: 'خدمات پس از فروش', fulfillment: 'اجرا و لجستیک', general: 'عمومی'
 };
