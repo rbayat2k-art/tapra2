@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این فایل فقط مرجع ناوبری و فهرست مستندات است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-15 against `agent/sale-invoice-payment-foundation`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -44,6 +44,7 @@
 | قواعد مالی و دسترسی | [finance rules](domains/finance/business-rules.md)، [roles](domains/finance/roles-and-permissions.md) |
 | قواعد پشتیبانی | [domains/support/business-rules.md](domains/support/business-rules.md) |
 | فروش فعلی و آینده | [current customer](domains/sales/current-customer.md)، [current lead operations](domains/sales/current-lead-operations.md)، [current invoice/payment](domains/sales/current-invoice-payment.md)، [approved design](domains/sales/approved-design.md)، [fulfillment policy](domains/sales/fulfillment-policy.md)، [open questions](domains/sales/open-questions.md) |
+| بنیاد فعلی انبار و موجودی | [domains/warehouse/current-foundation.md](domains/warehouse/current-foundation.md) |
 | ورود کنترل‌شده Customer | [domains/sales/customer-import.md](domains/sales/customer-import.md) |
 | امنیت و حریم خصوصی | [engineering/security-and-privacy.md](engineering/security-and-privacy.md) |
 | معماری و API آینده | [future platform](architecture/future-platform.md)، [API draft](future/api-contract-draft.md) |
@@ -70,6 +71,7 @@
 | Customer Import و reconciliation | [domains/sales/customer-import.md](domains/sales/customer-import.md) | `CURRENT` |
 | Lead، صف، تخصیص و تماس فروش | [domains/sales/current-lead-operations.md](domains/sales/current-lead-operations.md) | `CURRENT` |
 | Sale، Invoice، Payment و Financial Review | [domains/sales/current-invoice-payment.md](domains/sales/current-invoice-payment.md) | `CURRENT` |
+| Warehouse Foundation و Inventory | [domains/warehouse/current-foundation.md](domains/warehouse/current-foundation.md) | `CURRENT` |
 | Development workflow | [engineering/development.md](engineering/development.md) | `CURRENT` |
 | GitHub source of truth | [engineering/source-of-truth.md](engineering/source-of-truth.md) | `CURRENT` |
 | Quality status | [engineering/quality.md](engineering/quality.md) | `CURRENT` |
@@ -173,6 +175,7 @@ Snapshot فقط برای بازیابی و تاریخچه است و نباید �
 | Customer Import، staging و reconciliation فعلی | `docs/domains/sales/customer-import.md` با شواهد code | `docs/domains/sales/customer-import.md` | Sales Domain Owner | `ACTIVE` | current customer, data model, API status, security |
 | عملیات فعلی Lead، Sales Queue، Assignment، Call Log و Marketing Context | `docs/domains/sales/current-lead-operations.md` با شواهد migration/service/test | `docs/domains/sales/current-lead-operations.md` | Sales Domain Owner | `ACTIVE` | module catalog, current system, data model, API status, security |
 | عملیات فعلی Sale، Invoice، revision، Payment و Financial Review | `docs/domains/sales/current-invoice-payment.md` با شواهد migration/service/test/UI | `docs/domains/sales/current-invoice-payment.md` | Sales Domain Owner | `ACTIVE` | module catalog, current system, data model, API status, security, fulfillment policy |
+| عملیات فعلی Warehouse، Inventory ledger، Receiving، Reservation، Transfer، Control و Return | `docs/domains/warehouse/current-foundation.md` با شواهد migration/service/test/UI | `docs/domains/warehouse/current-foundation.md` | Warehouse Domain Owner | `ACTIVE` | module catalog, data model, persistence, API status, security, fulfillment policy |
 | طراحی پذیرفته‌شده آینده sales | `docs/domains/sales/approved-design.md` | `docs/domains/sales/approved-design.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | future platform, decisions |
 | سیاست پذیرفته‌شده Invoice release، Warehouse، Logistics، Service execution و cancellation | `docs/domains/sales/fulfillment-policy.md` | `docs/domains/sales/fulfillment-policy.md` | Sales Domain Owner | `ACTIVE (APPROVED-FUTURE)` | approved sales design, open questions, future platform, decisions |
 | پرسش‌های حل‌نشده sales | `docs/domains/sales/open-questions.md` | `docs/domains/sales/open-questions.md` | Sales Domain Owner | `ACTIVE (DRAFT)` | approved sales design |

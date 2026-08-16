@@ -3,7 +3,7 @@ import {
   GitFork, MessageSquare, ShieldCheck, Building, MapPin, KeyRound, Users, CheckSquare,
   UsersRound, BookUser, Tags, LifeBuoy, Mail, ShieldAlert, Palette,
   Contact, GitMerge, GitBranch, Receipt, Database, Megaphone, Users2, PhoneCall,
-  Package, Wrench, Tag, FileSpreadsheet, Upload, BadgeCheck, Truck, UserCog, Headset, type LucideIcon
+  Package, Wrench, Tag, FileSpreadsheet, Upload, BadgeCheck, Truck, UserCog, Headset, Warehouse, type LucideIcon
 } from 'lucide-react';
 import { User, SystemPermission } from '../types';
 import { canAccessNavItem } from '../utils/permissions';
@@ -50,6 +50,7 @@ export interface NavVisibilityContext {
   currentUser: User | null;
   effectivePermissions: SystemPermission[] | null;
   isAdmin: boolean;
+  foundationPermissions?: string[];
 }
 
 export interface NavItemDefinition {
@@ -115,6 +116,7 @@ export const NAV_ITEMS: NavItemDefinition[] = [
   // ۶. عملیات سفارش و خدمت
   { id: 'coordination_inbox', label: 'کارتابل هماهنگی فاکتور', shortLabel: 'هماهنگی فاکتور', icon: Headset, group: 'order_ops', order: 5, requires: ['view_coordination_queue'] },
   { id: 'sales_financial_confirmation', label: 'تأیید مالی فروش', shortLabel: 'تأیید مالی فروش', icon: BadgeCheck, group: 'order_ops', order: 10, requires: ['view_sales_financial_queue', 'review_invoice_financial_confirmation'] },
+  { id: 'warehouse_foundation', label: 'عملیات انبار', shortLabel: 'انبار', icon: Warehouse, group: 'order_ops', order: 15, isVisible: (ctx) => !!ctx.foundationPermissions?.includes('warehouse.read') },
   { id: 'fulfillment_cases', label: 'اجرای کالا و خدمت', shortLabel: 'اجرای کالا/خدمت', icon: Truck, group: 'order_ops', order: 20, requires: ['dispatch_product_case', 'deliver_product_case', 'manage_service_fulfillment_assignment', 'execute_service_fulfillment_case'] },
   { id: 'support', label: 'خدمات پس از فروش و شکایات', shortLabel: 'پس از فروش', icon: LifeBuoy, group: 'order_ops', order: 30, requires: ['manage_support_cases', 'financial_approve_support', 'view_support_reports'] },
 

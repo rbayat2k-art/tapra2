@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند فقط برای مسیریابی task-based عامل‌های AI است.
 > Owner: Documentation Architecture
-> Last validated: 2026-08-15 against `agent/sale-invoice-payment-foundation`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -23,6 +23,7 @@
 | Customer Import | [customer import](../domains/sales/customer-import.md) |
 | Lead، Sales Queue، Assignment یا Call Log فعلی | [current lead operations](../domains/sales/current-lead-operations.md) |
 | Sale، Invoice، Payment یا Financial Review فعلی | [current invoice/payment](../domains/sales/current-invoice-payment.md) |
+| Warehouse، Inventory، Receiving، Reservation یا Return | [current Warehouse foundation](../domains/warehouse/current-foundation.md) |
 | shell، navigation یا backing ماژول‌ها | [canonical integration](../engineering/canonical-product-integration.md)، [module catalog](../product/module-catalog.md) |
 | CI، migration یا seed safety | [Engineering Gate A](../engineering/engineering-gate-a.md)، [quality](../engineering/quality.md) |
 | Foundation Backend/Auth/tenant | [current system](../architecture/current-system.md)، [API status](../architecture/api-status.md)، [security](../engineering/security-and-privacy.md) |

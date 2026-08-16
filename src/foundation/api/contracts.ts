@@ -317,3 +317,23 @@ export interface SalesPaymentInfrastructure {
   policies: Array<{ method: SalesPaymentMethod; enabled: boolean; manualReviewRequired: boolean }>;
   salesApprovalPolicy: { supervisorApprovalRequired: boolean };
 }
+
+export type InventoryTrackingMode = 'NONE' | 'LOT' | 'SERIAL';
+export type WarehouseLocationType = 'RECEIVING' | 'SELLABLE' | 'PICKING' | 'PACKING' | 'RETURNS' | 'QUARANTINE' | 'DAMAGED' | 'TRANSIT';
+export type InventoryReturnDisposition = 'SELLABLE' | 'QUARANTINE' | 'DAMAGED' | 'RETURN_TO_SUPPLIER' | 'SCRAP';
+
+export interface WarehouseOverview {
+  warehouses: Array<{ id: string; operatorCompanyId: string | null; operatorUnitId: string | null; code: string; name: string; description: string | null; isActive: boolean; createdAt: string }>;
+  locations: Array<{ id: string; warehouseId: string; code: string; name: string; locationType: WarehouseLocationType; isActive: boolean }>;
+  items: Array<{ id: string; sku: string; name: string; catalogReference: string; trackingMode: InventoryTrackingMode; uom: string; isActive: boolean }>;
+  balances: Array<{ warehouseId: string; locationId: string; stockIdentityId: string; ownerCompanyId: string; onHandQuantity: string; inventoryItemId: string; lotId: string | null; serialId: string | null; sku: string; name: string; uom: string }>;
+  movements: Array<{ id: string; ownerCompanyId: string; stockIdentityId: string; movementType: string; fromWarehouseId: string | null; fromLocationId: string | null; toWarehouseId: string | null; toLocationId: string | null; quantity: string; sourceType: string; sourceId: string; sourceLineId: string | null; reversesMovementId: string | null; reason: string | null; occurredAt: string }>;
+  receipts: Array<{ id: string; ownerCompanyId: string; warehouseId: string; receivingLocationId: string; receiptType: 'PURCHASE' | 'MANUAL'; status: 'DRAFT' | 'POSTED' | 'CANCELLED'; sourceNote: string; reason: string | null; createdAt: string; postedAt: string | null }>;
+  reservations: Array<{ id: string; ownerCompanyId: string; invoiceId: string; invoiceLineId: string; invoiceRevision: number; inventoryItemId: string; requestedQuantity: string; reservedQuantity: string; shortageQuantity: string; status: 'PARTIALLY_RESERVED' | 'RESERVED' | 'RELEASED'; createdAt: string; releasedAt: string | null; releaseReason: string | null }>;
+  allocations: Array<{ id: string; reservationId: string; warehouseId: string; locationId: string; stockIdentityId: string; quantity: string; status: 'ACTIVE' | 'RELEASED'; createdAt: string; releasedAt: string | null }>;
+  transfers: Array<{ id: string; ownerCompanyId: string; sourceWarehouseId: string; destinationWarehouseId: string; sourceLocationId: string; destinationLocationId: string; status: 'DRAFT' | 'IN_TRANSIT' | 'RECEIVED' | 'CANCELLED'; reason: string; createdAt: string; dispatchedAt: string | null; receivedAt: string | null }>;
+  adjustments: Array<{ id: string; ownerCompanyId: string; warehouseId: string; locationId: string; status: 'DRAFT' | 'SUBMITTED' | 'POSTED' | 'CANCELLED'; reason: string; evidenceNote: string; createdAt: string; submittedAt: string | null; postedAt: string | null }>;
+  counts: Array<{ id: string; ownerCompanyId: string; warehouseId: string; locationId: string; status: 'OPEN' | 'SUBMITTED' | 'POSTED' | 'CANCELLED'; reason: string; createdAt: string; submittedAt: string | null; postedAt: string | null }>;
+  returns: Array<{ id: string; ownerCompanyId: string; warehouseId: string; returnsLocationId: string; customerId: string | null; invoiceId: string | null; status: 'DRAFT' | 'RECEIVED' | 'INSPECTED' | 'CANCELLED'; reason: string; evidenceNote: string; createdAt: string; receivedAt: string | null }>;
+  returnLines: Array<{ id: string; returnId: string; inventoryItemId: string; quantity: string; lotCode: string | null; serialCode: string | null; stockIdentityId: string | null }>;
+}

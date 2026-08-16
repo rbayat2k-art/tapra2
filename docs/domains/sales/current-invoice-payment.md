@@ -3,13 +3,13 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده `Sale → Invoice → Payment → Financial Review` است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-16 against migrations `0015`–`0018`, Backend tests and browser validation
+> Last validated: 2026-08-16 against migrations `0015`–`0022` and Backend tests
 > Supersedes: بخش اجراشده Invoice/Payment در اسناد آینده Sales
 > Superseded by: none
 
 ## مرز اجراشده
 
-مسیر عملیاتی `Sale → Invoice → Payment → Financial Review` اکنون در Backend و PostgreSQL اجرا شده است. Warehouse، Shipment، Service execution، Cancellation orchestration، Refund، Commission و accounting ledger هنوز در این سند CURRENT نیستند و در [Fulfillment Policy](fulfillment-policy.md) آینده باقی می‌مانند.
+مسیر عملیاتی `Sale → Invoice → Payment → Financial Review` اکنون در Backend و PostgreSQL اجرا شده است. handoff از Line کالایی واجد شرایط مالی به Reservation نیز در [Warehouse Foundation](../warehouse/current-foundation.md) CURRENT است. Shipment، Delivery، Service execution، Cancellation orchestration، Refund، Commission و accounting ledger هنوز اجرا نشده‌اند و در [Fulfillment Policy](fulfillment-policy.md) آینده باقی می‌مانند.
 
 ## Sale و Invoice
 
@@ -46,6 +46,7 @@
 - status Invoice از Paymentهای واقعی derive می‌شود: `unpaid`، `submitted`، `partial`، `paid` یا `correction_required`.
 - Payment جزئی هیچ Line را آزاد نمی‌کند.
 - فقط وقتی مجموع Paymentهای `approved` دقیقاً برابر مبلغ نهایی Invoice و مورد unresolved وجود نداشته باشد، Invoice `financially_approved` و Lineهای revision فعلی `eligible` می‌شوند.
+- Line کالایی `eligible` فقط وقتی `inventory_item_id` پایدار داشته باشد قابل Reservation است؛ Warehouse وضعیت Payment یا Invoice را تغییر نمی‌دهد.
 - تأیید Payment که مجموع تأییدشده را از مبلغ Invoice بیشتر کند fail-closed است؛ Payment در انتظار review می‌ماند و Lineها `blocked_by_payment` باقی می‌مانند.
 - Chargeback، Refund و رفع overpayment هنوز اجرا نشده‌اند و نباید از status فعلی استنباط شوند.
 

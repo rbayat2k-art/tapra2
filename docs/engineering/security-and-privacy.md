@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-16 against `agent/sale-invoice-payment-foundation`
+> Last validated: 2026-08-16 against `agent/warehouse-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -35,6 +35,9 @@
 - فروشنده عادی فقط صف membership خود را می‌بیند، endpoint self-claim ندارد و نمی‌تواند روی Lead فروشنده دیگر تماس ثبت کند. manager برای reassignment به permission و reason نیاز دارد و تغییر در history/Audit ثبت می‌شود.
 - تماس ناموفق relationship/lock نمی‌سازد؛ تماس مؤثر فقط طبق `sales_policies` قابل‌تنظیم relationship/lock می‌سازد. پایان شیفت نیز در policy فعلی باعث انتقال خودکار assignment نمی‌شود.
 - اتصال Campaign/Promotion فقط توسط manager مجاز است، زیر RLS همان Company اجرا می‌شود و نمی‌تواند Lead شرکت دیگر را آشکار یا تغییر دهد. این اتصال هیچ pricing/eligibility ضمنی ایجاد نمی‌کند.
+- Warehouse Foundation با Permissionهای مستقل server-side و `ENABLE/FORCE RLS` اجرا می‌شود. Scopeهای واحد سازمانی که attribution صریح Warehouse ندارند fail-closed هستند و Company context نمی‌تواند مالک یا موجودی Company دیگر را جعل کند.
+- ledger موجودی append-only است؛ Update/Delete movement ممنوع و correction فقط با reversal ممیزی‌شده انجام می‌شود. balanceها با lock قطعی و `FOR UPDATE` تغییر می‌کنند تا رزرو همزمان oversell یا موجودی منفی نسازد.
+- Manual Receiving به Permission مستقل، reason و evidence نیاز دارد. Adjustment و Count maker-checker هستند؛ creator/effective user و نشست Impersonation نمی‌توانند approval همان رکورد را انجام دهند.
 
 ## ریسک باقی‌مانده Prototype
 
@@ -66,3 +69,5 @@ dependency قدیمی `xlsx@0.18.5` هنوز برای export در `src/component
 جزئیات در [Customer Import](../domains/sales/customer-import.md) است.
 
 مرز امنیتی Sales در [عملیات فعلی Lead](../domains/sales/current-lead-operations.md) ثبت شده است.
+
+مرز امنیتی Warehouse در [بنیاد فعلی انبار](../domains/warehouse/current-foundation.md) ثبت شده است.
