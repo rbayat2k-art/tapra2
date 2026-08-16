@@ -63,11 +63,12 @@ Foundation API با prefix `/api/v1` اجرا شده است. فقط endpointها
 | `GET` | `/api/v1/warehouse` | overview مجاز Warehouse، Location، Item، Balance، Movement و عملیات context فعال |
 | `POST` | `/api/v1/warehouse/warehouses`, `/locations`, `/items` | ایجاد Warehouse master data با Permission، Scope و Audit |
 | `POST` | `/api/v1/warehouse/receipts[/:receiptId/post]` | ثبت و post دریافت؛ Manual Receiving به Permission/reason/evidence مستقل نیاز دارد |
-| `POST` | `/api/v1/warehouse/reservations[/:reservationId/release]` | رزرو Line واجد شرایط مالی، allocation چندانباره و آزادسازی بدون تغییر موجودی فیزیکی |
-| `POST` | `/api/v1/warehouse/transfers[/:transferId/dispatch|receive]` | انتقال کامل داخلی بین Warehouseها؛ partial receipt workflow در v1 فعال نیست |
+| `POST` | `/api/v1/warehouse/reservations[/:reservationId/release]` | رزرو Line واجد شرایط مالی فقط از location فعال `SELLABLE`، allocation چندانباره و آزادسازی بدون تغییر موجودی فیزیکی |
+| `POST` | `/api/v1/warehouse/transfers[/:transferId/dispatch|receive|reverse]` | انتقال کامل داخلی بین Warehouseها و reversal اتمی کل سند؛ partial receipt workflow در v1 فعال نیست |
 | `POST` | `/api/v1/warehouse/adjustments`, `/counts` و actionهای submit/approve | کنترل maker-checker و ثبت اختلاف در ledger |
 | `POST` | `/api/v1/warehouse/returns[/:returnId/receive]` و inspection Line | دریافت و disposition مستقل برگشتی |
-| `POST` | `/api/v1/warehouse/movements/:movementId/reverse` | reversal ممیزی‌شده بدون Update/Delete تاریخچه |
+| `POST` | `/api/v1/warehouse/movements/:movementId/reverse` | reversal ممیزی‌شده بدون Update/Delete تاریخچه؛ movement منفرد Transfer از این مسیر قابل برگشت نیست |
+| `GET` | `/api/v1/warehouse/projection/verify` | بازسازی Balance از Movement ledger و fail کردن mismatch احتمالی projection |
 
 قرارداد دامنه‌ای endpointهای CURRENT در [Customer Import](../domains/sales/customer-import.md)، [عملیات فعلی Lead](../domains/sales/current-lead-operations.md)، [فروش، فاکتور و پرداخت فعلی](../domains/sales/current-invoice-payment.md) و [Warehouse Foundation](../domains/warehouse/current-foundation.md) توضیح داده شده است.
 

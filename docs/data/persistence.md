@@ -29,6 +29,7 @@ Tapra2 اکنون persistence دوگانه و صریح دارد.
 - migration `0020_warehouse_operations.sql` Receiving، Reservation/Allocation و Transfer را اضافه می‌کند.
 - migration `0021_warehouse_controls_and_returns.sql` Adjustment، Count و Return/Inspection را با maker-checker اضافه می‌کند.
 - migration `0022_invoice_inventory_item_handoff.sql` اتصال nullable و non-destructive ردیف Invoice به Inventory Item پایدار را ایجاد می‌کند.
+- migration `0023_warehouse_integrity_remediation.sql` به‌صورت forward-only محل قابل‌فروش، یکتایی فیزیکی Serial، reversal اتمی Transfer و کنترل consistency projection را enforce می‌کند و در داده Serial مبهم fail-closed است.
 - Docker Compose روش reproducible رسمی development است؛ native PostgreSQL فقط fallback محلی از طریق environment است.
 
 ## localStorage

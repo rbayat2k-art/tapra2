@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current conceptual data model
 > Owner: Data Owner
-> Last validated: 2026-08-16 against migrations `0001`–`0022`
+> Last validated: 2026-08-16 against migrations `0001`–`0023`
 > Supersedes: none
 > Superseded by: none
 
@@ -31,7 +31,7 @@
 | Sale/Invoice | `sales_transactions` برای seller/actor/entry mode و Identity/relationship؛ `sales_invoices`، `sales_invoice_lines` و `sales_invoice_revisions` برای یک Invoice در هر Sale و revisionهای غیرمخرب |
 | Payment review | `financial_accounts`، `sales_payment_method_policies`، `sales_invoice_policies`، `sales_payments` و `sales_payment_review_events` برای پرداخت‌های مستقل، حساب وصول و approval policy در Company؛ `payment_gateways` فقط foundation رزروشده و بدون endpoint اجرایی است |
 | Invoice history | `sales_invoice_events` و Customer timeline برای transitionهای Invoice/Payment و Audit قابل‌ردیابی |
-| Warehouse master | `warehouses`, `warehouse_locations`, `inventory_items`, `inventory_lots`, `inventory_serials` و `stock_identities` با مالک Company مستقل از operator |
+| Warehouse master | `warehouses`, `warehouse_locations`, `inventory_items`, `inventory_lots`, `inventory_serials` و `stock_identities`؛ Serial فیزیکی در Workspace/Item یکتا و مالک Company روی StockIdentity مستقل از operator است |
 | Inventory ledger/projection | `inventory_movements` به‌عنوان ledger تغییرناپذیر و `inventory_balances` به‌عنوان projection قابل بازسازی با quantity دقیق `numeric(20,6)` |
 | Warehouse operation | receipt/line، reservation/allocation، transfer/line، adjustment/line، count/line و return/inspection برای عملیات CURRENT انبار |
 | Impersonation | `session_impersonations` برای نمای زمان‌دار، دلیل، actor/target context و پایان نشست |
@@ -51,7 +51,7 @@
 
 ## مدل Prototype
 
-مبلغ‌های Invoice/Payment در PostgreSQL `bigint` و در API رشته decimal Rial هستند. quantity موجودی در PostgreSQL `numeric(20,6)`، در API رشته decimal و در Backend arithmetic دقیق مبتنی بر `bigint` مقیاس‌دار است. `sales_payments` actor واقعی و user مؤثر سازنده را جدا نگه می‌دارد تا maker-checker حتی در Impersonation enforce شود. lifecycle تجاری Payment فقط `submitted`، `approved` و `needs_correction` است و revision اصلاحی با `corrects_payment_id` و `superseded_by_payment_id` مدل می‌شود، نه status چهارم. مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قرارداد Warehouse اجراشده در migrationهای `0019` تا `0022` است؛ Shipment، Delivery، Service Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند. جزئیات در [Warehouse Foundation](../domains/warehouse/current-foundation.md) است.
+مبلغ‌های Invoice/Payment در PostgreSQL `bigint` و در API رشته decimal Rial هستند. quantity موجودی در PostgreSQL `numeric(20,6)`، در API رشته decimal و در Backend arithmetic دقیق مبتنی بر `bigint` مقیاس‌دار است. `sales_payments` actor واقعی و user مؤثر سازنده را جدا نگه می‌دارد تا maker-checker حتی در Impersonation enforce شود. lifecycle تجاری Payment فقط `submitted`، `approved` و `needs_correction` است و revision اصلاحی با `corrects_payment_id` و `superseded_by_payment_id` مدل می‌شود، نه status چهارم. مدل‌های قدیمی مالی، Support، Letters، Chat، Task، Vendor و بخش‌های migrateنشده چرخه فروش در `src/types.ts` باقی مانده و با string ID در مرورگر مرتبط می‌شوند. وجود این typeها به معنی server persistence یا database constraint نیست. قرارداد Warehouse اجراشده در migrationهای `0019` تا `0023` است؛ Shipment، Delivery، Service Fulfillment، Refund و Finance عمومی همچنان Prototype/Future باقی‌اند. جزئیات در [Warehouse Foundation](../domains/warehouse/current-foundation.md) است.
 
 ## قواعد تغییر
 
