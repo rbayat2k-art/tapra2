@@ -27,6 +27,13 @@ const statusLabels: Record<string, string> = {
   IN_TRANSIT: 'در مسیر', RECEIVED: 'دریافت‌شده', INSPECTED: 'بازرسی‌شده',
   PURCHASE: 'دریافت خرید', MANUAL: 'دریافت دستی',
   NONE: 'بدون رهگیری', LOT: 'بچ/سری ساخت', SERIAL: 'سریال',
+  RECEIVING: 'دریافت', STORAGE: 'نگهداری', PICKING: 'برداشت', PACKING: 'بسته‌بندی',
+  RETURNS: 'ورودی برگشتی', TRANSIT: 'در حال انتقال',
+  RECEIPT: 'ورود کالا', INTERNAL_MOVE: 'جابجایی داخلی', TRANSFER_OUT: 'خروج انتقالی',
+  TRANSFER_IN: 'ورود انتقالی', DISPATCH: 'خروج قطعی', RETURN_RECEIPT: 'دریافت برگشتی',
+  ADJUSTMENT_IN: 'افزایش اصلاحی', ADJUSTMENT_OUT: 'کاهش اصلاحی',
+  COUNT_RECONCILIATION_IN: 'افزایش ناشی از شمارش', COUNT_RECONCILIATION_OUT: 'کاهش ناشی از شمارش',
+  REVERSAL: 'ثبت معکوس',
   SELLABLE: 'قابل فروش', QUARANTINE: 'قرنطینه', DAMAGED: 'آسیب‌دیده',
   RETURN_TO_SUPPLIER: 'بازگشت به تأمین‌کننده', SCRAP: 'اسقاط',
 };
