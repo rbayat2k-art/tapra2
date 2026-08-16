@@ -80,7 +80,7 @@ export function computePaymentSummary(finalAmount: number, declaredPayments: Dec
   // ردیف ردشده یا جایگزین‌شده دیگر ادعای فعال فاکتور نیست؛ تاریخچه‌اش حفظ می‌شود اما در
   // آمادگی ارسال مجدد/مبلغ اعلامی جاری محاسبه نمی‌شود.
   const paidAmount = declaredPayments
-    .filter((p) => p.status !== 'rejected' && p.status !== 'superseded')
+    .filter((p) => p.status !== 'rejected' && !p.supersededByPaymentId)
     .reduce((sum, p) => sum + p.amount, 0);
   return { paidAmount, remainingAmount: Math.max(0, finalAmount - paidAmount) };
 }
@@ -429,8 +429,8 @@ export function editInvoiceLineItems(
 export function computeApprovedPaymentSummary(
   finalAmount: number, declaredPayments: DeclaredPayment[]
 ): { declaredTotal: number; approvedTotal: number; remainingAmount: number; hasDiscrepancy: boolean } {
-  const declaredTotal = declaredPayments.filter((p) => p.status !== 'superseded').reduce((sum, p) => sum + p.amount, 0);
-  const approvedTotal = declaredPayments.filter((p) => p.status === 'approved').reduce((sum, p) => sum + (p.approvedAmount ?? 0), 0);
+  const declaredTotal = declaredPayments.filter((p) => !p.supersededByPaymentId).reduce((sum, p) => sum + p.amount, 0);
+  const approvedTotal = declaredPayments.filter((p) => p.status === 'approved' && !p.supersededByPaymentId).reduce((sum, p) => sum + (p.approvedAmount ?? 0), 0);
   return { declaredTotal, approvedTotal, remainingAmount: Math.max(0, finalAmount - approvedTotal), hasDiscrepancy: approvedTotal > finalAmount };
 }
 
@@ -457,8 +457,6 @@ export function decideDeclaredPayment(
   if ((decision === 'rejected' || decision === 'needs_correction' || decision === 'suspicious') && !reason?.trim()) {
     return { ok: false, reason: 'برای رد، نیاز به اصلاح یا علامت‌گذاری مشکوک، ثبت دلیل الزامی است.' };
   }
-  if (decision === 'superseded') return { ok: false, reason: 'وضعیت جایگزین‌شده فقط از مسیر اصلاح ردیف ساخته می‌شود.' };
-
   const finalApprovedAmount = decision === 'approved' ? approvedAmount! : undefined;
   const histEntry: DeclaredPaymentHistoryEntry = {
     id: `${payment.id}_fh${(payment.financialHistory || []).length}`, status: decision,
@@ -474,7 +472,7 @@ export function decideDeclaredPayment(
   const declaredPayments = invoice.declaredPayments.map((p) => (p.id === paymentId ? updatedPayment : p));
 
   const summary = computeApprovedPaymentSummary(invoice.finalAmount, declaredPayments);
-  const everyRowDecided = declaredPayments.every((p) => ['approved', 'rejected', 'superseded'].includes(p.status));
+  const everyRowDecided = declaredPayments.every((p) => Boolean(p.supersededByPaymentId) || ['approved', 'rejected'].includes(p.status));
   const nextStatus: SalesInvoiceStatus = decision === 'suspicious'
     ? 'financial_suspicious_hold'
     : (everyRowDecided && summary.approvedTotal === invoice.finalAmount ? 'financial_confirmed' : 'awaiting_financial_confirmation');
@@ -500,7 +498,7 @@ export function decideDeclaredPayment(
   };
 }
 
-// اصلاح ردیف پرداخت به‌صورت جبرانی: ردیف قبلی حذف/بازنویسی نمی‌شود و فقط superseded می‌شود.
+// اصلاح ردیف پرداخت به‌صورت جبرانی: ردیف قبلی حذف/بازنویسی نمی‌شود و lineage نسخه جاری را مشخص می‌کند.
 // عامل مؤثر باید همان مالک مسیر اصلاح باشد؛ کنترل Permission در Handler صفحه مستقل باقی می‌ماند.
 export function replaceDeclaredPaymentForCorrection(
   invoice: SalesInvoice, oldPaymentId: string, replacement: DeclaredPayment,
@@ -515,11 +513,11 @@ export function replaceDeclaredPaymentForCorrection(
   if (invoice.declaredPayments.some((p) => p.id === replacement.id)) return { ok: false, reason: 'شناسهٔ ردیف جایگزین تکراری است.' };
 
   const oldHistory: DeclaredPaymentHistoryEntry = {
-    id: `${oldPayment.id}_fh${(oldPayment.financialHistory || []).length}`, status: 'superseded', amount: oldPayment.amount,
+    id: `${oldPayment.id}_fh${(oldPayment.financialHistory || []).length}`, status: oldPayment.status, amount: oldPayment.amount,
     byUserId: actor.effective.id, byUserName: actor.effective.fullName, at: nowIso, note: `جایگزین با ${replacement.id}`
   };
-  const superseded: DeclaredPayment = {
-    ...oldPayment, status: 'superseded', supersededByPaymentId: replacement.id,
+  const previousRevision: DeclaredPayment = {
+    ...oldPayment, supersededByPaymentId: replacement.id,
     financialHistory: [...(oldPayment.financialHistory || []), oldHistory]
   };
   const fresh: DeclaredPayment = {
@@ -527,7 +525,7 @@ export function replaceDeclaredPaymentForCorrection(
     approvedAmount: undefined, financialApproverUserId: undefined, financialApproverUserName: undefined,
     financialDecisionAt: undefined, financialDecisionReason: undefined
   };
-  const declaredPayments = [...invoice.declaredPayments.map((p) => p.id === oldPayment.id ? superseded : p), fresh];
+  const declaredPayments = [...invoice.declaredPayments.map((p) => p.id === oldPayment.id ? previousRevision : p), fresh];
   const summary = computePaymentSummary(invoice.finalAmount, declaredPayments);
   const audit = makeCorrectionAuditFields(invoice, actor, nowIso);
   const entry: SalesInvoiceHistoryEntry = {

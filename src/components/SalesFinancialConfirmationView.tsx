@@ -196,7 +196,7 @@ export const SalesFinancialConfirmationView: React.FC<Props> = (props) => {
             {canClaim && ((kase.status === 'assigned' && kase.assignedReviewerUserId === currentUser.id) || (kase.status === 'pending_assignment' && kase.distributionMode === 'shared_claim')) && <button onClick={() => handleClaim(kase)} className="min-h-11 rounded-lg bg-[var(--success)] px-3 py-2 text-xs font-bold text-white"><LockKeyhole className="ml-1 inline h-4 w-4" />دریافت پرونده</button>}
           </div>
         </div>
-        {invoice.declaredPayments.filter((p) => p.status !== 'superseded').map((payment) => {
+        {invoice.declaredPayments.filter((p) => !p.supersededByPaymentId).map((payment) => {
           const form = forms[payment.id] || { approvedAmount: String(payment.amount), reason: '', description: '' };
           const editable = kase.status === 'in_progress' && kase.assignedReviewerUserId === currentUser.id && canDecide && ['declared', 'needs_correction'].includes(payment.status);
           const paymentStamp = combinePortalDateTime(payment.date, payment.time, payment.recordedAt);
