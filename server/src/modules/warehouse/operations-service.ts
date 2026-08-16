@@ -166,6 +166,7 @@ export async function createReservation(
     if (line.item_type !== 'goods' || !line.inventory_item_id) {
       throw new AppError(409, 'inventory_item_unresolved', 'A stable InventoryItem is required before goods can be reserved.');
     }
+    await lockWarehouseIdempotency(client, 'inventory-reservation-item', `${companyId}:${line.inventory_item_id}`);
     const requested = BigInt(line.quantity) * 1_000_000n;
     const candidates = await client.query<{
       warehouse_id: string; location_id: string; stock_identity_id: string; on_hand_quantity: string; allocated_quantity: string;
