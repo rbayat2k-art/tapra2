@@ -131,6 +131,12 @@ export interface SalesInvoiceView {
   updatedAt: string;
 }
 
+export interface SaleSeller {
+  membershipId: string;
+  userAccountId: string;
+  fullName: string;
+}
+
 function companyFrom(context: MembershipContext) {
   if (!context.company) throw new AppError(409, 'company_context_required', 'A Company context is required for Sales Invoices.');
   if (!['COMPANY', 'SELF'].includes(context.scope.type)) {
@@ -145,6 +151,12 @@ function hasPermission(context: MembershipContext, permission: string): boolean 
 
 function requirePermission(context: MembershipContext, permission: string): void {
   if (!hasPermission(context, permission)) throw new AppError(403, 'permission_denied', `Permission ${permission} is required.`);
+}
+
+function requireAnyPermission(context: MembershipContext, permissions: string[]): void {
+  if (!permissions.some((permission) => hasPermission(context, permission))) {
+    throw new AppError(403, 'permission_denied', 'Required Sales permission is missing.');
+  }
 }
 
 function iso(value: Date | string | null): string | null {
@@ -395,6 +407,39 @@ export async function listSalesInvoices(context: MembershipContext): Promise<Sal
     const invoices: SalesInvoiceView[] = [];
     for (const row of result.rows) invoices.push(await loadInvoice(client, row));
     return invoices;
+  });
+}
+
+export async function listSaleSellers(context: MembershipContext): Promise<SaleSeller[]> {
+  requireAnyPermission(context, ['sales.sale.create', 'sales.sale.create_on_behalf']);
+  const company = companyFrom(context);
+  return withTenantTransaction({ workspaceId: context.workspace.id, companyId: company.id }, async (client) => {
+    const result = await client.query<{
+      membership_id: string; user_account_id: string; full_name: string;
+    }>(`
+      SELECT DISTINCT membership.id AS membership_id, account.id AS user_account_id, person.full_name
+      FROM memberships membership
+      JOIN persons person ON person.id = membership.person_id
+      JOIN user_accounts account ON account.person_id = person.id AND account.is_active = true
+      JOIN role_assignments assignment ON assignment.membership_id = membership.id
+        AND assignment.workspace_id = membership.workspace_id
+        AND assignment.scope_type IN ('COMPANY', 'SELF')
+        AND assignment.company_id = $2
+        AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+      JOIN roles role ON role.id = assignment.role_id
+        AND role.workspace_id = assignment.workspace_id AND role.is_active = true
+      JOIN role_permissions permission ON permission.role_id = assignment.role_id
+      WHERE membership.workspace_id = $1
+        AND membership.company_id = $2
+        AND membership.status = 'active'
+        AND membership.valid_from <= now()
+        AND (membership.valid_until IS NULL OR membership.valid_until > now())
+        AND permission.permission_code = 'sales.sale.create'
+      ORDER BY person.full_name
+    `, [context.workspace.id, company.id]);
+    return result.rows.map((row) => ({
+      membershipId: row.membership_id, userAccountId: row.user_account_id, fullName: row.full_name,
+    }));
   });
 }
 

@@ -35,8 +35,10 @@ const ids = {
   companyAlpha: '20000000-0000-4000-8000-000000000001',
   companyBeta: '20000000-0000-4000-8000-000000000002',
   customerAlpha: '70000000-0000-4000-8000-000000000001',
+  membershipAlphaOnly: '50000000-0000-4000-8000-000000000003',
   membershipSalesOne: '50000000-0000-4000-8000-000000000004',
   membershipSalesTwo: '50000000-0000-4000-8000-000000000005',
+  accountAlphaOnly: '40000000-0000-4000-8000-000000000002',
   accountSalesOne: '40000000-0000-4000-8000-000000000003',
   accountSalesTwo: '40000000-0000-4000-8000-000000000004',
   financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
@@ -753,6 +755,86 @@ describe('Sales Backend Vertical Slice 1', () => {
         'sales.collection_account.created', 'sales.collection_account.updated', 'sales.invoice_approval_policy.updated',
       ]);
     });
+  });
+
+  it('lets an on-behalf workspace admin select valid sellers without Lead assignment authority', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_sale_seller_lookup_test' });
+    const onBehalfRoleId = randomUUID();
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO roles(id, workspace_id, code, name)
+        VALUES ($1, $2, 'workspace_admin_on_behalf_test', 'مدیر فضای کاری ثبت کاغذی')
+      `, [onBehalfRoleId, ids.workspaceAlpha]);
+      await owner.query(`
+        INSERT INTO role_permissions(role_id, permission_code)
+        VALUES ($1, 'sales.sale.create_on_behalf')
+      `, [onBehalfRoleId]);
+      await owner.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        VALUES ($1, $2, $3, 'COMPANY', $4)
+      `, [ids.workspaceAlpha, ids.membershipAlphaOnly, onBehalfRoleId, ids.companyAlpha]);
+    } finally {
+      await owner.end();
+    }
+
+    const workspaceAdmin = request.agent(createApp());
+    const workspaceAdminSession = await selectContext(
+      workspaceAdmin,
+      await login(workspaceAdmin, 'alpha-only@tapra.local', 'TapraAlpha!2026'),
+      'tapra-alpha',
+      'sales.sale.create_on_behalf',
+    );
+    expect(workspaceAdminSession.activeContext?.permissions).toContain('sales.sale.create_on_behalf');
+    expect(workspaceAdminSession.activeContext?.permissions).not.toContain('sales.lead.assign');
+    expect(workspaceAdminSession.activeContext?.permissions).not.toContain('sales.lead.reassign');
+    expect(workspaceAdminSession.activeContext?.permissions).not.toContain('sales.sale.create');
+
+    const sellers = await workspaceAdmin.get('/api/v1/sales/sellers').expect(200);
+    const sellerMembershipIds = sellers.body.sellers.map((seller: { membershipId: string }) => seller.membershipId);
+    expect(sellerMembershipIds).toEqual(expect.arrayContaining([ids.membershipSalesOne, ids.membershipSalesTwo]));
+    expect(sellerMembershipIds).not.toContain(ids.membershipAlphaOnly);
+    await workspaceAdmin.get('/api/v1/sales/assignees').expect(403);
+
+    await workspaceAdmin.post('/api/v1/sales/sales')
+      .set('x-csrf-token', workspaceAdminSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'direct', sellerMembershipId: ids.membershipSalesOne,
+        lines: [{ itemType: 'service', itemName: 'فروش مستقیم مدیر فضای کاری', quantity: 1, unitPrice: '100000' }],
+      }).expect(403);
+
+    const paperEntry = await workspaceAdmin.post('/api/v1/sales/sales')
+      .set('x-csrf-token', workspaceAdminSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'paper_entry', sellerMembershipId: ids.membershipSalesOne,
+        lines: [{ itemType: 'service', itemName: 'ثبت کاغذی مدیر فضای کاری', quantity: 1, unitPrice: '100000' }],
+      }).expect(201);
+    expect(paperEntry.body.invoice.sale).toMatchObject({
+      entryMode: 'paper_entry', seller: { membershipId: ids.membershipSalesOne },
+      actor: { userAccountId: ids.accountAlphaOnly },
+    });
+
+    await sellerOne.post('/api/v1/sales/sales')
+      .set('x-csrf-token', sellerOneSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        customerId: ids.customerAlpha, entryMode: 'direct', sellerMembershipId: ids.membershipSalesTwo,
+        lines: [{ itemType: 'service', itemName: 'جعل فروشنده مستقیم', quantity: 1, unitPrice: '100000' }],
+      }).expect(400).expect(({ body }) => expect(body.error.code).toBe('seller_mismatch'));
+
+    await manager.post(`/api/v1/sales/invoices/${paperEntry.body.invoice.id}/supervisor-approval`)
+      .set('x-csrf-token', managerSession.csrfToken).expect(200);
+    const payment = await sellerOne.post(`/api/v1/sales/invoices/${paperEntry.body.invoice.id}/payments`)
+      .set('x-csrf-token', sellerOneSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({
+        amount: '100000', paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 10_000).toISOString(),
+        lastFourDigits: '1234', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'WORKSPACE-ADMIN-REVIEW-001',
+      }).expect(201);
+    const paymentId = payment.body.invoice.payments[0].id as string;
+    await workspaceAdmin.post(`/api/v1/sales/invoices/${paperEntry.body.invoice.id}/payments/${paymentId}/review`)
+      .set('x-csrf-token', workspaceAdminSession.csrfToken).send({ decision: 'approved' }).expect(403);
+    await manager.get('/api/v1/sales/invoices').expect(200);
+    await manager.post(`/api/v1/sales/invoices/${paperEntry.body.invoice.id}/payments/${paymentId}/review`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ decision: 'approved' }).expect(200);
   });
 
   it('fails closed for PAPER_ENTRY in Branch, Department, and Team scopes', async () => {
