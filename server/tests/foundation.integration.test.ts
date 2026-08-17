@@ -8,6 +8,7 @@ import { resetEnvironmentForTests } from '../src/config/env.js';
 import { closePool, withTenantTransaction } from '../src/infrastructure/database/pool.js';
 import { runMigrations } from '../scripts/migrate.js';
 import { assertSafeSeedTarget, seedDatabase } from '../scripts/seed.js';
+import { CURRENT_ROLE_BUNDLES } from '../src/modules/access/current-role-bundles.js';
 import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '../src/modules/customer-imports/csv-parser.js';
 
 interface SessionResponse {
@@ -149,7 +150,11 @@ async function selectContext(
   session: SessionResponse,
   workspaceSlug: string,
 ): Promise<SessionResponse> {
-  const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug);
+  const candidates = session.memberships.filter((item) => item.workspace.slug === workspaceSlug);
+  const membership = candidates.find((item) => item.company !== null
+    && item.scope.type === 'COMPANY' && item.permissions.includes('customer.create'))
+    ?? candidates.find((item) => item.company !== null && item.scope.type === 'COMPANY')
+    ?? candidates[0];
   if (!membership) throw new Error(`Seed membership ${workspaceSlug} was not found.`);
   const response = await agent
     .post('/api/v1/session/context')
@@ -196,6 +201,42 @@ describe('Foundation Sprint 1 vertical slice', () => {
     expect(() => assertSafeSeedTarget('postgresql://postgres:placeholder@localhost:5432/tapra2_dev', 'tapra2_owner', 'development')).toThrow(/tapra2_owner/);
     expect(assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'development')).toEqual({ database: 'tapra2_dev' });
     expect(assertSafeSeedTarget(appTest, 'tapra2_app', 'test')).toEqual({ database: 'tapra2_test' });
+  });
+
+  it('synchronizes least-privilege CURRENT bundles without seed overgrant', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_role_bundle_seed_test' });
+    await owner.connect();
+    try {
+      const result = await owner.query<{ workspace_id: string; code: string; permissions: string[] }>(`
+        SELECT role.workspace_id, role.code,
+               coalesce(array_agg(role_permission.permission_code ORDER BY role_permission.permission_code)
+                 FILTER (WHERE role_permission.permission_code IS NOT NULL), ARRAY[]::text[]) AS permissions
+        FROM roles role
+        LEFT JOIN role_permissions role_permission ON role_permission.role_id = role.id
+        WHERE role.code = ANY($1::text[])
+        GROUP BY role.workspace_id, role.code
+        ORDER BY role.workspace_id, role.code
+      `, [CURRENT_ROLE_BUNDLES.map((bundle) => bundle.code)]);
+
+      expect(result.rows).toHaveLength(CURRENT_ROLE_BUNDLES.length * 2);
+      for (const row of result.rows) {
+        const bundle = CURRENT_ROLE_BUNDLES.find((candidate) => candidate.code === row.code);
+        expect(bundle, row.code).toBeDefined();
+        expect(row.permissions, row.code).toEqual([...bundle!.permissions].sort());
+      }
+
+      const workspaceAdmin = result.rows.find((row) => row.code === 'workspace_admin');
+      expect(workspaceAdmin?.permissions).toHaveLength(7);
+      expect(workspaceAdmin?.permissions.every((permission) => permission.startsWith('organization.'))).toBe(true);
+      for (const row of result.rows) {
+        const granted = new Set(row.permissions);
+        expect(granted.has('sales.payment.record') && granted.has('sales.payment.review'), row.code).toBe(false);
+        expect(granted.has('warehouse.adjustment.create') && granted.has('warehouse.adjustment.approve'), row.code).toBe(false);
+        expect(granted.has('warehouse.count.create') && granted.has('warehouse.count.approve'), row.code).toBe(false);
+      }
+    } finally {
+      await owner.end();
+    }
   });
 
   it('rejects unauthenticated customer reads', async () => {
@@ -743,7 +784,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
     const selectCompany = async (companyId: string) => {
-      const membership = session.memberships.find((item) => item.company?.id === companyId);
+      const membership = session.memberships.find((item) => item.company?.id === companyId
+        && item.permissions.includes('customer.create'));
       if (!membership) throw new Error(`Membership for Company ${companyId} was not found.`);
       const response = await agent
         .post('/api/v1/session/context')
@@ -822,10 +864,29 @@ describe('Foundation Sprint 1 vertical slice', () => {
   });
 
   it('reconciles central identities separately from Company relationships with reversible lineage', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_identity_scope_guard_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        SELECT $1, $2, role.id, 'COMPANY', $3
+        FROM roles role
+        WHERE role.workspace_id = $1 AND role.code = 'data_steward'
+        ON CONFLICT DO NOTHING
+      `, [
+        '10000000-0000-4000-8000-000000000001',
+        '50000000-0000-4000-8000-000000000001',
+        '20000000-0000-4000-8000-000000000001',
+      ]);
+    } finally {
+      await owner.end();
+    }
+
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
     const alphaCompanyContext = session.memberships.find((item) =>
-      item.company?.id === '20000000-0000-4000-8000-000000000001');
+      item.company?.id === '20000000-0000-4000-8000-000000000001'
+      && item.permissions.includes('customer.create'));
     const alphaWorkspaceContext = session.memberships.find((item) =>
       item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
     if (!alphaCompanyContext || !alphaWorkspaceContext) throw new Error('Required Alpha contexts were not found.');

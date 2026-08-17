@@ -36,7 +36,6 @@ const ids = {
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   membershipSalesOne: '50000000-0000-4000-8000-000000000004',
   membershipSalesTwo: '50000000-0000-4000-8000-000000000005',
-  roleAlphaSeller: '60000000-0000-4000-8000-000000000005',
   financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
 } as const;
 
@@ -64,11 +63,14 @@ async function login(agent: ReturnType<typeof request.agent>, email: string, pas
 }
 
 async function selectContext(
-  agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string, permission: string,
+  agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string,
+  requiredPermissions: string | readonly string[],
 ): Promise<SessionResponse> {
+  const permissions = typeof requiredPermissions === 'string' ? [requiredPermissions] : requiredPermissions;
   const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug
-    && item.company !== null && item.scope.type === 'COMPANY' && item.permissions.includes(permission));
-  if (!membership) throw new Error(`Context ${workspaceSlug}/${permission} was not found.`);
+    && item.company !== null && item.scope.type === 'COMPANY'
+    && permissions.every((permission) => item.permissions.includes(permission)));
+  if (!membership) throw new Error(`Context ${workspaceSlug}/${permissions.join(',')} was not found.`);
   return (await agent.post('/api/v1/session/context').set('x-csrf-token', session.csrfToken)
     .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
     .expect(200)).body as SessionResponse;
@@ -124,18 +126,24 @@ describe('Warehouse Foundation', () => {
     await owner.connect();
     try {
       await owner.query(`
-        INSERT INTO role_permissions(role_id, permission_code)
-        SELECT $1, code FROM permissions WHERE code IN (
-          'warehouse.read', 'warehouse.adjustment.create', 'warehouse.adjustment.approve',
-          'warehouse.count.create', 'warehouse.count.approve'
-        ) ON CONFLICT DO NOTHING
-      `, [ids.roleAlphaSeller]);
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        SELECT $1, $2, role.id, 'COMPANY', $3
+        FROM roles role
+        WHERE role.workspace_id = $1
+          AND role.code IN ('inventory_maker', 'inventory_approver')
+        ON CONFLICT DO NOTHING
+      `, [ids.workspaceAlpha, ids.membershipSalesOne, ids.companyAlpha]);
     } finally {
       await owner.end();
     }
 
     manager = request.agent(createApp());
-    managerSession = await selectContext(manager, await login(manager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-alpha', 'warehouse.manage');
+    managerSession = await selectContext(
+      manager,
+      await login(manager, 'demo@tapra.local', 'TapraDemo!2026'),
+      'tapra-alpha',
+      ['warehouse.manage', 'sales.sale.create_on_behalf', 'sales.payment.review'],
+    );
     maker = request.agent(createApp());
     makerSession = await selectContext(maker, await login(maker, 'sales-one@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'warehouse.adjustment.create');
     paymentMaker = request.agent(createApp());

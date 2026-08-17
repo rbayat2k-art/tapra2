@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای مدل نقش، permission و محدودیت‌های دسترسی فعلی است.
 > Owner: Access Control Owner
-> Last validated: 2026-08-16 against `agent/admin-organization-completion`
+> Last validated: 2026-08-17 against `agent/role-permission-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -20,6 +20,45 @@
 - Permissionهای Organization فعلی: `organization.read`، `organization.company.manage`، `organization.unit.manage`، `organization.user.manage`، `organization.membership.manage`، `organization.role.manage` و `organization.impersonate`.
 - نقش‌های legacy حذف یا به‌صورت حدسی تبدیل نشده‌اند. `legacy_role_mappings` وضعیت `UNMAPPED/PARTIAL/MAPPED/REVIEW_REQUIRED` را برای migration تدریجی نگه می‌دارد؛ تا ثبت mapping، نقش legacy فقط در Prototype معتبر است.
 
+## اصول مصوب authority
+
+- تنها `Permission + Scope + Resource Policy` اختیار اجرایی می‌سازد. نام Role صرفاً بستهٔ قابل‌استفاده برای تخصیص permissionهاست و هیچ bypass یا اختیار ضمنی ندارد.
+- `workspace_admin` فقط مدیر سامانه و سازمان Workspace است. این bundle هیچ permission فروش، مالی، انبار، خزانه‌داری یا دامنهٔ کسب‌وکار دیگری ندارد؛ دسترسی کسب‌وکار فقط با bundle جدا تخصیص می‌یابد.
+- فروشنده، سرپرست فروش، مدیر فروش و اپراتور `PAPER_ENTRY` bundleهای مستقل‌اند. «سرپرست ارشد فروش» و «معاون فروش» تا زمان تصویب مسئولیت متمایز Role امنیتی جدا ندارند و با bundle مدیریتی به‌همراه Scope گسترده‌تر مدل می‌شوند.
+- ثبت‌کننده واریزی از بازبین مالی مستقل است. ثبت‌کننده کنترل موجودی نیز از تأییدکننده مستقل است؛ Resource Policy سمت server خودتأییدی را حتی در صورت جمع‌شدن دو bundle روی یک Membership رد می‌کند.
+- approval/review حساس در Impersonation ممنوع است. Permission مؤثر Impersonation نیز اشتراک permissionهای مدیر و کاربر هدف است، نه اجتماع آن‌ها.
+- Scope پشتیبانی‌نشده fail-closed است. وجود Role یا Permission بدون Scope و attribution معتبر، دسترسی به resource نمی‌دهد.
+- Treasury، Support، Chat، Letters، Communications، Catalog، Campaign، Coordination، Fulfillment و دیگر ماژول‌های Legacy/Prototype به‌عنوان دانش حفظ می‌شوند، اما تا vertical slice مصوب و اثبات‌شده، Role یا authority تولیدی CURRENT ایجاد نمی‌کنند.
+
+## bundleهای CURRENT سمت Server
+
+فهرست اجرایی و seed-authoritative در `server/src/modules/access/current-role-bundles.ts` قرار دارد. seed هر بار permissionهای این Roleها را دقیقاً با همین catalog همگام می‌کند؛ دادهٔ توسعه ممکن است برای پوشش integration چند bundle مستقل را به یک Membership بدهد، اما هیچ Role منفردی دامنه‌ها یا دو سوی maker-checker را با هم ترکیب نمی‌کند.
+
+| کد bundle | Scope پیش‌فرض | Permissionهای صریح |
+|---|---|---|
+| `workspace_admin` | `WORKSPACE` | هفت permission خانواده `organization.*` |
+| `customer_manager` | `COMPANY` | `customer.read/create/identity.manage/merge` و `customer.import.read/create/review/approve` |
+| `customer_reader` | `COMPANY` | `customer.read` |
+| `data_steward` | `WORKSPACE` | `customer.read`, `customer.merge`, `customer.identity.reconcile` |
+| `sales_seller` | `SELF` | `customer.read`, `sales.queue.read`, `sales.call.create`, `sales.lead.create`, `sales.sale.create`, `sales.invoice.read_own/edit_draft`, `sales.payment.record` |
+| `sales_supervisor` | `COMPANY` | `customer.read`, `sales.lead.read_all/assign/reassign`, `sales.invoice.read_all/supervisor_approve` |
+| `sales_manager` | `COMPANY` | `customer.read`, `sales.lead.create/read_all/assign/reassign`, `sales.marketing.link`, `sales.invoice.read_all/amend` |
+| `paper_entry_operator` | `COMPANY` | `customer.read`, `sales.sale.create_on_behalf`, `sales.invoice.read_all/edit_draft` |
+| `payment_recorder` | `COMPANY` | `sales.invoice.read_all`, `sales.payment.record` |
+| `financial_reviewer` | `COMPANY` | `sales.invoice.read_all`, `sales.payment.review` |
+| `collection_manager` | `COMPANY` | `sales.invoice.read_all`, `sales.payment.infrastructure.manage` |
+| `warehouse_manager` | `COMPANY` | `warehouse.read/manage/item.manage` |
+| `receiving_operator` | `COMPANY` | `warehouse.read`, `warehouse.receiving.create/post` |
+| `manual_receiving_operator` | `COMPANY` | `warehouse.read`, `warehouse.receiving.create/manual` |
+| `reservation_operator` | `COMPANY` | `warehouse.read`, `warehouse.reservation.manage` |
+| `transfer_operator` | `COMPANY` | `warehouse.read`, `warehouse.transfer.manage` |
+| `inventory_maker` | `COMPANY` | `warehouse.read`, `warehouse.adjustment.create`, `warehouse.count.create` |
+| `inventory_approver` | `COMPANY` | `warehouse.read`, `warehouse.adjustment.approve`, `warehouse.count.approve` |
+| `return_inspector` | `COMPANY` | `warehouse.read`, `warehouse.return.manage` |
+| `movement_reversal_officer` | `COMPANY` | `warehouse.read`, `warehouse.movement.reverse` |
+
+این foundation permission code تازه‌ای ایجاد یا حذف نمی‌کند؛ ۴۸ permission Server موجود حفظ شده‌اند و فقط packaging و seed overgrant اصلاح شده است.
+
 ## ماتریس واقعی Role/Permission/Scope
 
 این جدول وضعیت enforcement فعلی را نشان می‌دهد، نه Role bundle پیشنهادی. Roleهای Server سفارشی‌اند و فقط Permission/Scope صریح اختیار می‌دهد؛ نام‌هایی مانند Data Manager، MIS یا Supervisor به‌تنهایی Permission ایجاد نمی‌کنند.
@@ -28,8 +67,8 @@
 |---|---|---|---|
 | Super Admin | Organization و contextهای Company همان Workspace مطابق Permissionهای صریح | Workspace مستقل دیگر؛ Permission اضافه target در Impersonation | Server؛ `WORKSPACE` و permission intersection |
 | Workspace Manager | Companyها و Shared Serviceهای همان Workspace طبق `organization.*` | mutation فاقد Permission؛ Tenant دیگر | Server؛ `WORKSPACE` |
-| Data Manager | Customer/Import چندCompany فقط با `customer.*` و `customer.import.*` صریح | Sales assignment یا Organization mutation ضمنی؛ داده Workspace دیگر | Server؛ معمولاً `WORKSPACE`، exact bundle هنوز policy جدا می‌خواهد |
-| MIS | نمای مجاز سازمانی/تجمیعی فقط با Permission صریح | Customer mutation یا دسترسی business ضمنی | Server foundation می‌تواند `WORKSPACE` را enforce کند؛ Role bundle نهایی تعریف نشده است |
+| Data Manager | Customer/Import فقط با bundleهای `customer_manager` یا `data_steward` و Scope صریح | Sales assignment یا Organization mutation ضمنی؛ داده Workspace دیگر | Server؛ `COMPANY` یا `WORKSPACE` مطابق bundle و assignment |
+| MIS | نمای مجاز سازمانی/تجمیعی فقط با Permission صریح | Customer mutation یا دسترسی business ضمنی | Role تولیدی مستقلی ندارد؛ نیاز جدید باید bundle و Scope مصوب بگیرد |
 | Sales Manager | Leadهای Company، assignment/reassignment و marketing linkage با Permissionهای Sales | Lead Company دیگر؛ Permission Organization ضمنی | Server؛ `COMPANY`؛ Audit و RLS فعال |
 | Supervisor | context دقیق Branch/Department/Team در access engine | گسترش Scope واحد به کل Company یا واحد هم‌سطح دیگر | Server scope engine؛ Sales Lead فعلی تا attribution صریح واحد fail-closed است |
 | Salesperson | Customer مجاز، صف خود و Call Log Lead تخصیص‌یافته | self-claim، صف فروشنده دیگر، reassignment و Cross-Company | Server؛ `COMPANY` یا `SELF` دارای Company |
@@ -38,7 +77,7 @@
 
 فایل `server/tests/access-matrix.test.ts` سی سناریوی صریح `A01` تا `A30` را روی projection واقعی Scope و Permission در `limitContextToActor` اجرا می‌کند. سناریوها Alpha/Beta، Workspace، Shared Services، Company، Branch، Department، Team، SELF، permission intersection، Customer/Import privacy و جلوگیری از نشت Roleهای Finance/Support Prototype به Backend را پوشش می‌دهند. تست‌های PostgreSQL در `server/tests/foundation.integration.test.ts` نیز Unauthorized mutation، Impersonation ممیزی‌شده، RLS، Customer privacy و Import privacy را در سطح HTTP/database بررسی می‌کنند.
 
-این validation به معنی نهایی‌شدن mapping کسب‌وکار Roleهای Data/MIS/Supervisor/Finance/Support نیست. mappingهای حل‌نشده باید در `legacy_role_mappings` باقی بمانند و بدون تصمیم دامنه به `MAPPED` تغییر نکنند.
+این validation به معنی ارتقای mapping نقش‌های Legacy/Prototype نیست. mappingهای حل‌نشده باید در `legacy_role_mappings` باقی بمانند و بدون تصمیم دامنه به `MAPPED` تغییر نکنند.
 
 ## مدل مؤثر دسترسی Prototype
 

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current product purpose and scope
 > Owner: Product Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-17 against the Product Owner `SINGLE-COMPANY-FIRST` scope decision
 > Supersedes: none
 > Superseded by: none
 
@@ -34,6 +34,18 @@ Tapra2 یک برنامه تحت وب برای مدیریت فرایندهای م
 - داده legacy حذف یا به‌طور خودکار به PostgreSQL منتقل نمی‌شود.
 - این سند ادعای `Production-Ready` بودن، امنیت enterprise یا persistence سروری ندارد.
 - طراحی‌های آینده sales، backend و API جزو رفتار فعلی محسوب نمی‌شوند.
+
+## اولویت فعلی توسعه: `SINGLE-COMPANY-FIRST`
+
+Tapra2 فعلاً با اولویت محصول و UX به‌صورت `SINGLE-COMPANY-FIRST` توسعه می‌یابد. این تصمیم فقط ترتیب توسعه قابلیت‌ها و نحوه ارائه تجربه کاربری را تعیین می‌کند و به معنی تبدیل معماری به `single-company-only` نیست.
+
+- معماری `Workspace → Company → Membership → Permission → Scope`، مرزهای Company، RLS، company isolation و تمام آزمون‌های multi-company حفظ می‌شوند.
+- هیچ `Company ID` یا مرز امنیتی حذف نمی‌شود و multi-company از معماری کنار گذاشته نمی‌شود.
+- UI و Workflowهای جدید ابتدا برای فعالیت در یک Company فعال طراحی می‌شوند. وقتی کاربر فقط یک Company قابل‌استفاده دارد، انتخاب Company باید تا حد ممکن خودکار باشد و پیچیدگی فنی Workspace/Company از کاربر عملیاتی پنهان بماند.
+- توسعه قابلیت‌های cross-company فعلاً `DEFERRED` است؛ از جمله cross-company sales، inter-company settlement، Contract responsibility routing و multi-company operational workflows.
+- آغاز دوباره توسعه قابلیت‌های multi-company به تصمیم صریح آینده Product Owner نیاز دارد.
+
+این اولویت هیچ تغییری در authorization، Scope، tenancy enforcement، schema یا migration فعلی ایجاد نمی‌کند.
 
 ## مخاطبان فعلی
 

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده Warehouse Foundation و مرزهای آن است.
 > Owner: Warehouse Domain Owner
-> Last validated: 2026-08-16 against migrations `0019`–`0023`, Backend tests and production build
+> Last validated: 2026-08-17 against `agent/role-permission-foundation`
 > Supersedes: بخش Warehouse در `docs/domains/sales/fulfillment-policy.md` فقط در محدوده رفتارهای اجراشده این سند
 > Superseded by: none
 
@@ -44,6 +44,10 @@ Warehouse Foundation اکنون server-authoritative و PostgreSQL-backed است
 Permissionهای `warehouse.read/manage`, `warehouse.item.manage`, receiving، reservation، transfer، adjustment، count، return و movement reversal سمت server enforce می‌شوند. جدول‌های دامنه `ENABLE RLS` و `FORCE RLS` دارند. Scopeهای `BRANCH`, `DEPARTMENT`, `TEAM` و `SELF` تا زمان attribution صریح Warehouse به آن Scopeها fail-closed هستند؛ Scopeهای CURRENT فقط `WORKSPACE` و `COMPANY` هستند.
 
 Audit با `auditIdentity(session)` هویت actor واقعی، effective user و Impersonation را حفظ می‌کند. approvalهای maker-checker در Impersonation ممنوع‌اند. UI فقط presentation boundary است و مرجع امنیت نیست.
+
+bundleهای `inventory_maker` و `inventory_approver` مستقل‌اند و seed هیچ Role منفردی را به هر دو سوی create/approve مجهز نمی‌کند. حتی اگر هر دو bundle جداگانه به یک Membership برسند، Resource Policy تأیید Adjustment/Count ساخته‌شده توسط همان actor را رد می‌کند.
+
+UI هر mutation را با permission جزئی همان operation نمایش می‌دهد. mutation فاقد permission مخفی است؛ mutation مجاز با ورودی یا پیش‌شرط ناقص غیرفعال می‌ماند و دلیل فارسی قابل‌مشاهده دارد. این رفتار presentation-level است و enforcement مستقل Backend، Scope، RLS و maker-checker را جایگزین نمی‌کند.
 
 ## شواهد پیاده‌سازی
 

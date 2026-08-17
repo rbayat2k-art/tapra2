@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { config as loadDotEnv } from 'dotenv';
 import { Client } from 'pg';
 import { hashPassword } from '../src/modules/identity/password.js';
+import {
+  CURRENT_ROLE_BUNDLES,
+  type CurrentRoleBundleCode,
+} from '../src/modules/access/current-role-bundles.js';
 
 loadDotEnv({ path: '.env.local', quiet: true });
 loadDotEnv({ quiet: true });
@@ -201,93 +205,106 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($5, $2, 'customer_reader', 'مشاهده‌گر مشتریان'),
         ($6, $2, 'workspace_admin', 'مدیر فضای کاری'),
         ($7, $2, 'sales_seller', 'فروشنده')
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (id) DO UPDATE SET code = EXCLUDED.code, name = EXCLUDED.name
     `, [
       ids.roleAlphaManager, ids.workspaceAlpha, ids.roleBetaManager, ids.workspaceBeta,
       ids.roleAlphaReader, ids.roleWorkspaceAdmin, ids.roleAlphaSeller,
     ]);
-    const seededRoles = await client.query<{ id: string; workspace_id: string; code: string }>(`
-      SELECT id, workspace_id, code FROM roles
-      WHERE (workspace_id = $1 AND code IN ('customer_manager', 'customer_reader', 'workspace_admin', 'sales_seller'))
-        OR (workspace_id = $2 AND code = 'customer_manager')
-    `, [ids.workspaceAlpha, ids.workspaceBeta]);
-    const seededRoleId = (workspaceId: string, code: string): string => {
-      const role = seededRoles.rows.find((row) => row.workspace_id === workspaceId && row.code === code);
-      if (!role) throw new Error(`Seed role ${workspaceId}/${code} was not resolved.`);
-      return role.id;
-    };
-    const roleAlphaManager = seededRoleId(ids.workspaceAlpha, 'customer_manager');
-    const roleBetaManager = seededRoleId(ids.workspaceBeta, 'customer_manager');
-    const roleAlphaReader = seededRoleId(ids.workspaceAlpha, 'customer_reader');
-    const roleWorkspaceAdmin = seededRoleId(ids.workspaceAlpha, 'workspace_admin');
-    const roleAlphaSeller = seededRoleId(ids.workspaceAlpha, 'sales_seller');
-    await client.query(`
-      INSERT INTO role_permissions(role_id, permission_code) VALUES
-        ($1, 'customer.read'), ($1, 'customer.create'),
-        ($1, 'customer.identity.manage'), ($1, 'customer.merge'),
-        ($1, 'customer.import.read'), ($1, 'customer.import.create'), ($1, 'customer.import.review'), ($1, 'customer.import.approve'),
-        ($1, 'sales.queue.read'), ($1, 'sales.lead.create'), ($1, 'sales.lead.read_all'),
-        ($1, 'sales.lead.assign'), ($1, 'sales.lead.reassign'), ($1, 'sales.call.create'), ($1, 'sales.marketing.link'),
-        ($1, 'sales.sale.create'), ($1, 'sales.sale.create_on_behalf'), ($1, 'sales.invoice.read_all'),
-        ($1, 'sales.invoice.supervisor_approve'), ($1, 'sales.payment.record'), ($1, 'sales.payment.review'),
-        ($1, 'sales.invoice.edit_draft'), ($1, 'sales.invoice.correct_returned'), ($1, 'sales.invoice.amend'),
-        ($1, 'sales.payment.infrastructure.manage'),
-        ($2, 'customer.read'), ($2, 'customer.create'),
-        ($2, 'customer.identity.manage'), ($2, 'customer.merge'),
-        ($2, 'customer.import.read'), ($2, 'customer.import.create'), ($2, 'customer.import.review'), ($2, 'customer.import.approve'),
-        ($2, 'sales.queue.read'), ($2, 'sales.lead.create'), ($2, 'sales.lead.read_all'),
-        ($2, 'sales.lead.assign'), ($2, 'sales.lead.reassign'), ($2, 'sales.call.create'), ($2, 'sales.marketing.link'),
-        ($2, 'sales.sale.create'), ($2, 'sales.sale.create_on_behalf'), ($2, 'sales.invoice.read_all'),
-        ($2, 'sales.invoice.supervisor_approve'), ($2, 'sales.payment.record'), ($2, 'sales.payment.review'),
-        ($2, 'sales.invoice.edit_draft'), ($2, 'sales.invoice.correct_returned'), ($2, 'sales.invoice.amend'),
-        ($2, 'sales.payment.infrastructure.manage'),
-        ($3, 'customer.read'),
-        ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'), ($4, 'customer.merge'), ($4, 'customer.identity.reconcile'),
-        ($4, 'customer.import.read'), ($4, 'customer.import.create'), ($4, 'customer.import.review'), ($4, 'customer.import.approve'),
-        ($4, 'organization.read'), ($4, 'organization.company.manage'), ($4, 'organization.unit.manage'),
-        ($4, 'organization.user.manage'), ($4, 'organization.membership.manage'),
-        ($4, 'organization.role.manage'), ($4, 'organization.impersonate'),
-        ($4, 'sales.sale.create'), ($4, 'sales.sale.create_on_behalf'), ($4, 'sales.invoice.read_all'),
-        ($4, 'sales.invoice.supervisor_approve'), ($4, 'sales.payment.record'), ($4, 'sales.payment.review'),
-        ($4, 'sales.invoice.edit_draft'), ($4, 'sales.invoice.correct_returned'), ($4, 'sales.invoice.amend'),
-        ($4, 'sales.payment.infrastructure.manage'),
-        ($5, 'customer.read'), ($5, 'sales.queue.read'), ($5, 'sales.call.create'),
-        ($5, 'sales.sale.create'), ($5, 'sales.invoice.read_own'), ($5, 'sales.payment.record'),
-        ($5, 'sales.invoice.edit_draft')
-      ON CONFLICT DO NOTHING
-    `, [roleAlphaManager, roleBetaManager, roleAlphaReader, roleWorkspaceAdmin, roleAlphaSeller]);
-    await client.query(`
-      INSERT INTO role_permissions(role_id, permission_code)
-      SELECT role_id, permission.code
-      FROM unnest($1::uuid[]) AS role_id
-      CROSS JOIN permissions permission
-      WHERE permission.code LIKE 'warehouse.%'
-      ON CONFLICT DO NOTHING
-    `, [[roleAlphaManager, roleBetaManager, roleWorkspaceAdmin]]);
-    await client.query(`
-      INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
-        ($1, $2, $3, 'COMPANY', $4),
-        ($5, $6, $7, 'COMPANY', $8),
-        ($1, $9, $10, 'COMPANY', $4),
-        ($1, $11, $12, 'COMPANY', $4),
-        ($1, $13, $12, 'COMPANY', $4)
-      ON CONFLICT DO NOTHING
-    `, [
-      ids.workspaceAlpha, ids.membershipDemoAlpha, roleAlphaManager, ids.companyAlpha,
-      ids.workspaceBeta, ids.membershipDemoBeta, roleBetaManager, ids.companyBeta,
-      ids.membershipAlphaOnly, roleAlphaReader,
-      ids.membershipSalesOne, roleAlphaSeller,
-      ids.membershipSalesTwo,
+
+    const fixedRoleIds = new Map<string, string>([
+      [`${ids.workspaceAlpha}:customer_manager`, ids.roleAlphaManager],
+      [`${ids.workspaceBeta}:customer_manager`, ids.roleBetaManager],
+      [`${ids.workspaceAlpha}:customer_reader`, ids.roleAlphaReader],
+      [`${ids.workspaceAlpha}:workspace_admin`, ids.roleWorkspaceAdmin],
+      [`${ids.workspaceAlpha}:sales_seller`, ids.roleAlphaSeller],
     ]);
-    await client.query(`
-      INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
-      SELECT $1, membership.id, $3, 'WORKSPACE', NULL
-      FROM memberships membership
-      WHERE membership.workspace_id = $1
-        AND membership.company_id IS NULL
-        AND membership.person_id = $2
-      ON CONFLICT DO NOTHING
-    `, [ids.workspaceAlpha, ids.personDemo, roleWorkspaceAdmin]);
+    const roleIds = new Map<string, string>();
+    for (const workspaceId of [ids.workspaceAlpha, ids.workspaceBeta]) {
+      for (const bundle of CURRENT_ROLE_BUNDLES) {
+        const key = `${workspaceId}:${bundle.code}`;
+        const fixedId = fixedRoleIds.get(key);
+        let roleId = fixedId;
+        if (!roleId) {
+          const existing = await client.query<{ id: string }>(`
+            SELECT id FROM roles WHERE workspace_id = $1 AND code = $2 ORDER BY created_at, id LIMIT 1
+          `, [workspaceId, bundle.code]);
+          roleId = existing.rows[0]?.id;
+        }
+        if (!roleId) {
+          const created = await client.query<{ id: string }>(`
+            INSERT INTO roles(workspace_id, code, name, description)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id
+          `, [workspaceId, bundle.code, bundle.name, bundle.description]);
+          roleId = created.rows[0]?.id;
+        }
+        if (!roleId) throw new Error(`Seed role ${key} was not resolved.`);
+        await client.query(`
+          UPDATE roles SET name = $2, description = $3, is_active = true WHERE id = $1
+        `, [roleId, bundle.name, bundle.description]);
+        await client.query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+        await client.query(`
+          INSERT INTO role_permissions(role_id, permission_code)
+          SELECT $1, permission_code FROM unnest($2::text[]) AS permission_code
+        `, [roleId, [...bundle.permissions]]);
+        roleIds.set(key, roleId);
+      }
+    }
+
+    const roleId = (workspaceId: string, code: CurrentRoleBundleCode): string => {
+      const resolved = roleIds.get(`${workspaceId}:${code}`);
+      if (!resolved) throw new Error(`Seed role ${workspaceId}/${code} was not resolved.`);
+      return resolved;
+    };
+    const assignRole = async (
+      workspaceId: string,
+      membershipId: string,
+      code: CurrentRoleBundleCode,
+      scopeType: 'WORKSPACE' | 'COMPANY',
+      companyId: string | null,
+    ): Promise<void> => {
+      await client.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT DO NOTHING
+      `, [workspaceId, membershipId, roleId(workspaceId, code), scopeType, companyId]);
+    };
+
+    await assignRole(ids.workspaceAlpha, ids.membershipDemoAlpha, 'customer_manager', 'COMPANY', ids.companyAlpha);
+    await assignRole(ids.workspaceBeta, ids.membershipDemoBeta, 'customer_manager', 'COMPANY', ids.companyBeta);
+    await assignRole(ids.workspaceAlpha, ids.membershipAlphaOnly, 'customer_reader', 'COMPANY', ids.companyAlpha);
+    await assignRole(ids.workspaceAlpha, ids.membershipSalesOne, 'sales_seller', 'COMPANY', ids.companyAlpha);
+    await assignRole(ids.workspaceAlpha, ids.membershipSalesTwo, 'sales_seller', 'COMPANY', ids.companyAlpha);
+
+    // The broad demo account intentionally combines separate CURRENT bundles for integration
+    // coverage. No individual role below crosses domains or combines maker and approver rights.
+    const companyFixtureBundles: CurrentRoleBundleCode[] = [
+      'sales_seller', 'sales_supervisor', 'sales_manager', 'paper_entry_operator', 'payment_recorder',
+      'financial_reviewer', 'collection_manager', 'warehouse_manager', 'receiving_operator',
+      'manual_receiving_operator', 'reservation_operator', 'transfer_operator', 'inventory_maker',
+      'inventory_approver', 'return_inspector', 'movement_reversal_officer',
+    ];
+    for (const code of companyFixtureBundles) {
+      await assignRole(ids.workspaceAlpha, ids.membershipDemoAlpha, code, 'COMPANY', ids.companyAlpha);
+      await assignRole(ids.workspaceBeta, ids.membershipDemoBeta, code, 'COMPANY', ids.companyBeta);
+    }
+
+    const workspaceMembership = await client.query<{ id: string }>(`
+      SELECT id FROM memberships
+      WHERE workspace_id = $1 AND company_id IS NULL AND person_id = $2
+      ORDER BY created_at, id LIMIT 1
+    `, [ids.workspaceAlpha, ids.personDemo]);
+    const workspaceMembershipId = workspaceMembership.rows[0]?.id;
+    if (!workspaceMembershipId) throw new Error('Workspace demo membership was not resolved.');
+    const workspaceFixtureBundles: CurrentRoleBundleCode[] = [
+      'workspace_admin', 'data_steward', 'payment_recorder', 'financial_reviewer',
+      'collection_manager', 'warehouse_manager',
+      'receiving_operator', 'manual_receiving_operator', 'reservation_operator', 'transfer_operator',
+      'inventory_maker', 'inventory_approver', 'return_inspector', 'movement_reversal_officer',
+    ];
+    for (const code of workspaceFixtureBundles) {
+      await assignRole(ids.workspaceAlpha, workspaceMembershipId, code, 'WORKSPACE', null);
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
