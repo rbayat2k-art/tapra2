@@ -571,3 +571,20 @@ UI action فاقد permission را مخفی می‌کند؛ action مجاز با
 
 **Impact:**
 هیچ permission code یا migration تازه‌ای ساخته نشد. overgrant Roleهای seed حذف، bundleهای CURRENT قابل‌تست و actionهای Warehouse permission-aware شدند. maker-checker Backend و ممنوعیت Impersonation بدون تضعیف باقی ماندند؛ Treasury، Support، Chat، Letters، Communications، Catalog، Campaign، Coordination و Fulfillment ارتقا نیافتند.
+
+---
+
+### Date: 2026-08-17
+
+**Title:** Product delivery is SINGLE-COMPANY-FIRST while multi-company architecture remains preserved
+
+**Context:**
+معماری Foundation از `Workspace → Company → Membership → Permission → Scope`، RLS و Company isolation پشتیبانی می‌کند، اما اولویت کوتاه‌مدت محصول باید تجربه عملیاتی ساده برای استقرار با یک Company فعال باشد. لازم بود این اولویت UX از حذف معماری یا تضعیف مرزهای امنیتی multi-company به‌روشنی تفکیک شود.
+
+**Decision:**
+Tapra2 فعلاً `SINGLE-COMPANY-FIRST` است. UI و Workflowهای جدید ابتدا برای یک Company فعال طراحی می‌شوند؛ در حالت تک‌شرکتی، Company تا حد ممکن خودکار انتخاب و پیچیدگی Workspace/Company از کاربر عملیاتی پنهان می‌شود. توسعه cross-company sales، inter-company settlement، Contract responsibility routing و multi-company operational workflows تا تصمیم صریح آینده Product Owner `DEFERRED` است.
+
+این تصمیم فقط Product Scope و UX priority است. مدل Workspace/Company/Membership/Permission/Scope، تمام Company IDها، RLS، company isolation، تست‌های multi-company و مرزهای امنیتی بدون تغییر حفظ می‌شوند و multi-company از معماری حذف نمی‌شود.
+
+**Impact:**
+هیچ تغییر Backend، schema، migration یا authorization در این تصمیم انجام نمی‌شود. authority فعال این اولویت [Product Overview](../product/overview.md) است. توسعه‌دهندگان نباید قابلیت cross-company جدید بسازند مگر آن‌که Product Owner در تصمیمی صریح توسعه multi-company را دوباره فعال کند.
