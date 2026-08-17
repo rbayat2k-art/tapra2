@@ -42,7 +42,7 @@
 | `data_steward` | `WORKSPACE` | `customer.read`, `customer.merge`, `customer.identity.reconcile` |
 | `sales_seller` | `SELF` | `customer.read`, `sales.queue.read`, `sales.call.create`, `sales.lead.create`, `sales.sale.create`, `sales.invoice.read_own/edit_draft`, `sales.payment.record` |
 | `sales_supervisor` | `COMPANY` | `customer.read`, `sales.lead.read_all/assign/reassign`, `sales.invoice.read_all/supervisor_approve` |
-| `sales_manager` | `COMPANY` | `customer.read`, `sales.lead.create/read_all/assign/reassign`, `sales.marketing.link`, `sales.invoice.read_all` |
+| `sales_manager` | `COMPANY` | `customer.read`, `sales.lead.create/read_all/assign/reassign`, `sales.marketing.link`, `sales.invoice.read_all/amend` |
 | `paper_entry_operator` | `COMPANY` | `customer.read`, `sales.sale.create_on_behalf`, `sales.invoice.read_all/edit_draft` |
 | `payment_recorder` | `COMPANY` | `sales.invoice.read_all`, `sales.payment.record` |
 | `financial_reviewer` | `COMPANY` | `sales.invoice.read_all`, `sales.payment.review` |

@@ -77,7 +77,7 @@ export const CURRENT_ROLE_BUNDLES = [
     defaultScope: 'COMPANY',
     permissions: [
       'customer.read', 'sales.lead.create', 'sales.lead.read_all', 'sales.lead.assign',
-      'sales.lead.reassign', 'sales.marketing.link', 'sales.invoice.read_all',
+      'sales.lead.reassign', 'sales.marketing.link', 'sales.invoice.read_all', 'sales.invoice.amend',
     ],
   },
   {

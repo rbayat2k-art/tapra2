@@ -279,7 +279,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
     // The broad demo account intentionally combines separate CURRENT bundles for integration
     // coverage. No individual role below crosses domains or combines maker and approver rights.
     const companyFixtureBundles: CurrentRoleBundleCode[] = [
-      'sales_supervisor', 'sales_manager', 'paper_entry_operator', 'payment_recorder',
+      'sales_seller', 'sales_supervisor', 'sales_manager', 'paper_entry_operator', 'payment_recorder',
       'financial_reviewer', 'collection_manager', 'warehouse_manager', 'receiving_operator',
       'manual_receiving_operator', 'reservation_operator', 'transfer_operator', 'inventory_maker',
       'inventory_approver', 'return_inspector', 'movement_reversal_officer',
@@ -297,7 +297,8 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
     const workspaceMembershipId = workspaceMembership.rows[0]?.id;
     if (!workspaceMembershipId) throw new Error('Workspace demo membership was not resolved.');
     const workspaceFixtureBundles: CurrentRoleBundleCode[] = [
-      'workspace_admin', 'data_steward', 'collection_manager', 'warehouse_manager',
+      'workspace_admin', 'data_steward', 'payment_recorder', 'financial_reviewer',
+      'collection_manager', 'warehouse_manager',
       'receiving_operator', 'manual_receiving_operator', 'reservation_operator', 'transfer_operator',
       'inventory_maker', 'inventory_approver', 'return_inspector', 'movement_reversal_officer',
     ];

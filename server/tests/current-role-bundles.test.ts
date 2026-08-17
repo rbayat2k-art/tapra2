@@ -18,6 +18,7 @@ describe('CURRENT server role bundles', () => {
     expect(permissions('sales_supervisor')).toContain('sales.invoice.supervisor_approve');
     expect(permissions('sales_supervisor')).not.toContain('sales.sale.create_on_behalf');
     expect(permissions('sales_manager')).toContain('sales.marketing.link');
+    expect(permissions('sales_manager')).toContain('sales.invoice.amend');
     expect(permissions('sales_manager')).not.toContain('sales.payment.review');
     expect(permissions('paper_entry_operator')).toContain('sales.sale.create_on_behalf');
     expect(permissions('paper_entry_operator')).not.toContain('sales.sale.create');

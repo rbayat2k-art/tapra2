@@ -150,7 +150,11 @@ async function selectContext(
   session: SessionResponse,
   workspaceSlug: string,
 ): Promise<SessionResponse> {
-  const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug);
+  const candidates = session.memberships.filter((item) => item.workspace.slug === workspaceSlug);
+  const membership = candidates.find((item) => item.company !== null
+    && item.scope.type === 'COMPANY' && item.permissions.includes('customer.create'))
+    ?? candidates.find((item) => item.company !== null && item.scope.type === 'COMPANY')
+    ?? candidates[0];
   if (!membership) throw new Error(`Seed membership ${workspaceSlug} was not found.`);
   const response = await agent
     .post('/api/v1/session/context')
@@ -780,7 +784,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
     const selectCompany = async (companyId: string) => {
-      const membership = session.memberships.find((item) => item.company?.id === companyId);
+      const membership = session.memberships.find((item) => item.company?.id === companyId
+        && item.permissions.includes('customer.create'));
       if (!membership) throw new Error(`Membership for Company ${companyId} was not found.`);
       const response = await agent
         .post('/api/v1/session/context')
@@ -862,7 +867,8 @@ describe('Foundation Sprint 1 vertical slice', () => {
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
     const alphaCompanyContext = session.memberships.find((item) =>
-      item.company?.id === '20000000-0000-4000-8000-000000000001');
+      item.company?.id === '20000000-0000-4000-8000-000000000001'
+      && item.permissions.includes('customer.create'));
     const alphaWorkspaceContext = session.memberships.find((item) =>
       item.workspace.slug === 'tapra-alpha' && item.scope.type === 'WORKSPACE');
     if (!alphaCompanyContext || !alphaWorkspaceContext) throw new Error('Required Alpha contexts were not found.');

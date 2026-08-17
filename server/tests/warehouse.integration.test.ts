@@ -63,11 +63,14 @@ async function login(agent: ReturnType<typeof request.agent>, email: string, pas
 }
 
 async function selectContext(
-  agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string, permission: string,
+  agent: ReturnType<typeof request.agent>, session: SessionResponse, workspaceSlug: string,
+  requiredPermissions: string | readonly string[],
 ): Promise<SessionResponse> {
+  const permissions = typeof requiredPermissions === 'string' ? [requiredPermissions] : requiredPermissions;
   const membership = session.memberships.find((item) => item.workspace.slug === workspaceSlug
-    && item.company !== null && item.scope.type === 'COMPANY' && item.permissions.includes(permission));
-  if (!membership) throw new Error(`Context ${workspaceSlug}/${permission} was not found.`);
+    && item.company !== null && item.scope.type === 'COMPANY'
+    && permissions.every((permission) => item.permissions.includes(permission)));
+  if (!membership) throw new Error(`Context ${workspaceSlug}/${permissions.join(',')} was not found.`);
   return (await agent.post('/api/v1/session/context').set('x-csrf-token', session.csrfToken)
     .send({ membershipId: membership.membershipId, scopeType: membership.scope.type, scopeId: membership.scope.id })
     .expect(200)).body as SessionResponse;
@@ -135,7 +138,12 @@ describe('Warehouse Foundation', () => {
     }
 
     manager = request.agent(createApp());
-    managerSession = await selectContext(manager, await login(manager, 'demo@tapra.local', 'TapraDemo!2026'), 'tapra-alpha', 'warehouse.manage');
+    managerSession = await selectContext(
+      manager,
+      await login(manager, 'demo@tapra.local', 'TapraDemo!2026'),
+      'tapra-alpha',
+      ['warehouse.manage', 'sales.sale.create_on_behalf', 'sales.payment.review'],
+    );
     maker = request.agent(createApp());
     makerSession = await selectContext(maker, await login(maker, 'sales-one@tapra.local', 'TapraSales!2026'), 'tapra-alpha', 'warehouse.adjustment.create');
     paymentMaker = request.agent(createApp());
