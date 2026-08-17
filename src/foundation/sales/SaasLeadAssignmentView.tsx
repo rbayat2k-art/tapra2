@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link2, RefreshCw, Send, UserPlus, Users2 } from 'lucide-react';
-import { FoundationApiError, foundationApi } from '../api/client';
+import { FoundationApiError, foundationApi, foundationErrorMessage } from '../api/client';
 import type { FoundationCustomer, SalesAssignee, SalesLead, SalesLeadDetail, SalesMarketingLinkType } from '../api/contracts';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
 import { formatSalesDate, SALES_LEAD_STATUS_LABELS } from './labels';
 
 function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : 'عملیات فروش انجام نشد.';
+  return foundationErrorMessage(error, 'عملیات فروش انجام نشد؛ اتصال را بررسی و دوباره تلاش کنید.');
 }
 
 export function SaasLeadAssignmentView() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localizedFoundationError } from './client';
+import { FoundationApiError, foundationErrorMessage, localizedFoundationError } from './client';
 
 describe('Foundation API error localization', () => {
   it('never exposes raw validation wording', () => {
@@ -14,5 +14,13 @@ describe('Foundation API error localization', () => {
     expect(localizedFoundationError(404, 'warehouse_not_found')).toContain('یافت نشد');
     expect(localizedFoundationError(409, 'organization_conflict')).toContain('تداخل');
     expect(localizedFoundationError(409, 'idempotency_key_reused')).toContain('قبلاً');
+  });
+});
+
+describe('safe Foundation API presentation', () => {
+  it('keeps localized API messages and hides native/network error details', () => {
+    const localized = new FoundationApiError(403, 'permission_denied', 'دسترسی ندارید');
+    expect(foundationErrorMessage(localized, 'خطای امن')).toBe('دسترسی ندارید');
+    expect(foundationErrorMessage(new TypeError('Failed to fetch /api/v1/private'), 'خطای امن')).toBe('خطای امن');
   });
 });

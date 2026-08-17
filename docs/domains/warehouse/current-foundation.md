@@ -45,7 +45,7 @@ Permissionهای `warehouse.read/manage`, `warehouse.item.manage`, receiving، r
 
 Audit با `auditIdentity(session)` هویت actor واقعی، effective user و Impersonation را حفظ می‌کند. approvalهای maker-checker در Impersonation ممنوع‌اند. UI فقط presentation boundary است و مرجع امنیت نیست.
 
-در UI عملیاتی، هر فضای کاری و هر action فقط با Permission دقیق همان عملیات نمایش داده می‌شود؛ داشتن `warehouse.read` به‌تنهایی فرم یا دکمه mutation را فعال نمی‌کند. علت آزادسازی، برگشت و ثبت معکوس در فرم درون‌صفحه‌ای دریافت می‌شود و UI برای رزرو یا برگشتی UUID از کاربر نمی‌گیرد. انتخاب ردیف رزرو از فاکتورهای کالایی `financially_approved` و `eligible` انجام می‌شود؛ بنابراین نقش رزروکننده برای استفاده از این selector کسب‌وکاری باید یکی از Permissionهای مشاهده فاکتور را نیز در همان Company داشته باشد.
+در UI عملیاتی، هر فضای کاری و هر action فقط با Permission دقیق همان عملیات نمایش داده می‌شود؛ داشتن `warehouse.read` به‌تنهایی فرم یا دکمه mutation را فعال نمی‌کند. علت آزادسازی، برگشت و ثبت معکوس در فرم درون‌صفحه‌ای دریافت می‌شود و UI برای رزرو یا برگشتی UUID از کاربر نمی‌گیرد. fallback نام و وضعیت نیز برچسب فارسی امن است و UUID یا enum سرور را نشت نمی‌دهد. انتخاب ردیف رزرو از فاکتورهای کالایی `financially_approved` و `eligible` انجام می‌شود؛ بنابراین نقش رزروکننده برای استفاده از این selector کسب‌وکاری باید یکی از Permissionهای مشاهده فاکتور را نیز در همان Company داشته باشد.
 
 ## شواهد پیاده‌سازی
 

@@ -3,7 +3,7 @@ import {
   Building2, CheckCircle2, Eye, KeyRound, LogIn, Network, Pencil, Plus, RefreshCw,
   ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Users, X,
 } from 'lucide-react';
-import { foundationApi, FoundationApiError } from '../api/client';
+import { foundationApi, foundationErrorMessage } from '../api/client';
 import type { OrganizationScopeType, OrganizationSnapshot } from '../api/contracts';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
 import {
@@ -35,7 +35,7 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [userForm, setUserForm] = useState({ fullName: '', email: '', companyId: '' });
   const [membershipForm, setMembershipForm] = useState({ personId: '', companyId: '' });
-  const [roleForm, setRoleForm] = useState({ code: '', name: '', permissionCodes: [] as string[] });
+  const [roleForm, setRoleForm] = useState({ name: '', permissionCodes: [] as string[] });
   const [assignmentForm, setAssignmentForm] = useState({ membershipId: '', roleId: '', scopeType: 'COMPANY' as OrganizationScopeType, scopeId: '' });
 
   const permissions = session?.activeContext?.permissions ?? [];
@@ -49,7 +49,7 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
       setSnapshot(response.organization);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'اطلاعات سازمان دریافت نشد.');
+      setError(foundationErrorMessage(caught, 'اطلاعات سازمان دریافت نشد.'));
     } finally { setLoading(false); }
   }, []);
 
@@ -60,7 +60,7 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
     setBusy(true); setError(null); setSuccess(null);
     try { await operation(); await Promise.all([load(), refreshSession()]); setSuccess(message); }
     catch (caught) {
-      const message = caught instanceof FoundationApiError ? caught.message : caught instanceof Error ? caught.message : 'عملیات انجام نشد.';
+      const message = foundationErrorMessage(caught, 'عملیات انجام نشد؛ اتصال را بررسی کنید.');
       setError(message);
     } finally { setBusy(false); }
   };
@@ -162,7 +162,7 @@ export function OrganizationAdminView({ initialTab = 'companies' }: { initialTab
       </div>}
 
       {tab === 'roles' && <div className="space-y-4">
-        {can('organization.role.manage') && workspaceScope && <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => { await foundationApi.createRole(roleForm, session!.csrfToken); setRoleForm({ code: '', name: '', permissionCodes: [] }); }); }} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3"><div className="grid gap-2 md:grid-cols-[1fr_2fr_auto]"><input required placeholder="شناسه داخلی نقش" value={roleForm.code} onChange={(e) => setRoleForm({ ...roleForm, code: e.target.value })} className="input-shell dir-ltr" /><input required placeholder="نام نقش" value={roleForm.name} onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })} className="input-shell" /><button disabled={busy} className="rounded-xl bg-indigo-600 px-4 text-white">ایجاد نقش</button></div><div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3 max-h-40 overflow-y-auto">{snapshot.permissions.map((permission) => <label key={permission.code} className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={roleForm.permissionCodes.includes(permission.code)} onChange={(e) => setRoleForm({ ...roleForm, permissionCodes: e.target.checked ? [...roleForm.permissionCodes, permission.code] : roleForm.permissionCodes.filter((code) => code !== permission.code) })} />{permissionLabel(permission.code)}</label>)}</div></form>}
+        {can('organization.role.manage') && workspaceScope && <form onSubmit={(event) => { event.preventDefault(); void mutate(async () => { await foundationApi.createRole({ ...roleForm, code: `custom-${crypto.randomUUID()}` }, session!.csrfToken); setRoleForm({ name: '', permissionCodes: [] }); }); }} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3"><div className="grid gap-2 md:grid-cols-[2fr_auto]"><input required placeholder="نام نقش" value={roleForm.name} onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })} className="input-shell" /><button disabled={busy} className="rounded-xl bg-indigo-600 px-4 text-white">ایجاد نقش</button></div><p className="text-xs text-slate-400">شناسه سیستمی نقش به‌صورت خودکار ساخته می‌شود.</p><div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3 max-h-40 overflow-y-auto">{snapshot.permissions.map((permission) => <label key={permission.code} className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={roleForm.permissionCodes.includes(permission.code)} onChange={(e) => setRoleForm({ ...roleForm, permissionCodes: e.target.checked ? [...roleForm.permissionCodes, permission.code] : roleForm.permissionCodes.filter((code) => code !== permission.code) })} />{permissionLabel(permission.code)}</label>)}</div></form>}
         {can('organization.role.manage') && <form onSubmit={(event) => { event.preventDefault(); const scopeId = assignmentScopeId(); void mutate(async () => { await foundationApi.assignRole({ membershipId: assignmentForm.membershipId, roleId: assignmentForm.roleId, scopeType: assignmentForm.scopeType, scopeId }, session!.csrfToken); }); }} className="grid gap-2 md:grid-cols-2 xl:grid-cols-5 rounded-2xl border border-slate-800 bg-slate-900 p-4"><select required value={assignmentForm.membershipId} onChange={(e) => setAssignmentForm({ ...assignmentForm, membershipId: e.target.value })} className="input-shell"><option value="">انتخاب عضویت</option>{snapshot.memberships.filter((item) => item.status === 'active').map((membership) => { const user = snapshot.users.find((item) => item.personId === membership.personId); return <option key={membership.id} value={membership.id}>{user?.fullName} / {membership.companyId ? companiesById.get(membership.companyId)?.name : 'کل مجموعه'}</option>; })}</select><select required value={assignmentForm.roleId} onChange={(e) => setAssignmentForm({ ...assignmentForm, roleId: e.target.value })} className="input-shell"><option value="">انتخاب نقش</option>{snapshot.roles.filter((role) => role.isActive).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><select value={assignmentForm.scopeType} onChange={(e) => setAssignmentForm({ ...assignmentForm, scopeType: e.target.value as OrganizationScopeType, scopeId: '' })} className="input-shell">{Object.entries(scopeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{assignmentForm.scopeType === 'COMPANY' ? <select required value={assignmentForm.scopeId} onChange={(e) => setAssignmentForm({ ...assignmentForm, scopeId: e.target.value })} className="input-shell"><option value="">انتخاب شرکت</option>{snapshot.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select> : ['BRANCH', 'DEPARTMENT', 'TEAM'].includes(assignmentForm.scopeType) ? <select required value={assignmentForm.scopeId} onChange={(e) => setAssignmentForm({ ...assignmentForm, scopeId: e.target.value })} className="input-shell"><option value="">انتخاب واحد</option>{snapshot.units.filter((unit) => unit.type === assignmentForm.scopeType).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select> : <div className="input-shell text-slate-500">مقصد به‌صورت خودکار تعیین می‌شود</div>}<button disabled={busy} className="rounded-xl bg-emerald-600 px-4 text-white">تخصیص محدوده</button></form>}
         <div className="grid gap-3 md:grid-cols-2">{snapshot.roles.map((role) => <article key={role.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex items-center justify-between"><strong className="text-white">{role.name}</strong>{role.isSystem && <ShieldCheck size={16} className="text-amber-400" />}</div><div className="mt-2 flex flex-wrap gap-1">{role.permissions.map((permission) => <span key={permission} className="rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300">{permissionLabel(permission)}</span>)}</div></article>)}</div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h3 className="font-bold text-white flex items-center gap-2"><Eye size={16} /> وضعیت تطبیق نقش‌های قدیمی</h3>{snapshot.legacyRoleMappings.length ? snapshot.legacyRoleMappings.map((mapping, index) => <div key={mapping.legacyRoleCode} className="mt-2 text-xs text-slate-300">نقش قدیمی {index + 1} ← {legacyMappingStatusLabels[mapping.migrationStatus]}</div>) : <p className="mt-2 text-xs text-amber-300">تطبیق نقش‌های قدیمی هنوز ثبت نشده است؛ سابقه آن‌ها برای مهاجرت آینده محفوظ می‌ماند.</p>}</div>
