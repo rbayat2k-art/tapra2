@@ -399,6 +399,15 @@ describe('Warehouse Foundation', () => {
     });
     await manager.post(`/api/v1/warehouse/reservations/${reserved.body.reservation.id}/release`)
       .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'پایان آزمون رزرو چندانباری' }).expect(200);
+    const reservedAgain = await manager.post('/api/v1/warehouse/reservations')
+      .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())
+      .send({ invoiceLineId: eligible.lineId }).expect(201);
+    expect(reservedAgain.body.reservation).toMatchObject({
+      status: 'RESERVED', requestedQuantity: '16.000000', reservedQuantity: '16.000000', shortageQuantity: '0.000000',
+    });
+    expect(reservedAgain.body.reservation.id).not.toBe(reserved.body.reservation.id);
+    await manager.post(`/api/v1/warehouse/reservations/${reservedAgain.body.reservation.id}/release`)
+      .set('x-csrf-token', managerSession.csrfToken).send({ reason: 'پایان آزمون رزرو مجدد' }).expect(200);
 
     const oldInvoice = await manager.post('/api/v1/sales/sales')
       .set('x-csrf-token', managerSession.csrfToken).set('idempotency-key', randomUUID())

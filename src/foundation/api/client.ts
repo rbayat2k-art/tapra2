@@ -72,6 +72,10 @@ export function localizedFoundationError(status: number, code: string): string {
   return 'درخواست انجام نشد؛ دوباره تلاش کنید.';
 }
 
+export function foundationErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof FoundationApiError ? error.message : fallback;
+}
+
 async function request<T>(path: string, init: RequestInit = {}, csrfToken?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('accept', 'application/json');

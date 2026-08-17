@@ -49,7 +49,7 @@ async function reset(): Promise<void> {
 }
 
 describe('Warehouse migration compatibility', () => {
-  it('upgrades current stable data through 0019-0023, preserves it, and reruns safely', async () => {
+  it('upgrades current stable data through 0019-0024, preserves it, and reruns safely', async () => {
     await reset();
     await runMigrations(migrationUrl!, { through: '0018_payment_lineage_status_cleanup.sql' });
     await seedDatabase(migrationUrl!);
@@ -72,8 +72,13 @@ describe('Warehouse migration compatibility', () => {
       expect(applied.rows.map((row) => row.name)).toEqual([
         '0019_warehouse_inventory_core.sql', '0020_warehouse_operations.sql',
         '0021_warehouse_controls_and_returns.sql', '0022_invoice_inventory_item_handoff.sql',
-        '0023_warehouse_integrity_remediation.sql',
+        '0023_warehouse_integrity_remediation.sql', '0024_reservation_release_reentry.sql',
       ]);
+      const reservationIndex = await after.query<{ indexdef: string }>(`
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'inventory_reservations_active_invoice_line_idx'
+      `);
+      expect(reservationIndex.rows[0]?.indexdef).toContain("WHERE (status <> 'RELEASED'::text)");
       const serialColumns = await after.query<{ column_name: string }>(`
         SELECT column_name FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'inventory_serials' ORDER BY column_name

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { FoundationApiError, foundationApi } from '../api/client';
+import { FoundationApiError, foundationApi, foundationErrorMessage } from '../api/client';
 import type { FoundationMembership, FoundationSession } from '../api/contracts';
 
 interface FoundationSessionValue {
@@ -32,7 +32,7 @@ export function FoundationSessionProvider({ children }: { children: React.ReactN
         setSession(null);
         setError(null);
       } else {
-        setError(caught instanceof Error ? caught.message : 'اتصال به سرویس امکان‌پذیر نیست.');
+        setError(foundationErrorMessage(caught, 'اتصال به سرویس امکان‌پذیر نیست.'));
       }
     } finally {
       setLoading(false);
@@ -49,7 +49,7 @@ export function FoundationSessionProvider({ children }: { children: React.ReactN
       setError(null);
       try { setSession(await foundationApi.login(email, password)); }
       catch (caught) {
-        const message = caught instanceof Error ? caught.message : 'ورود انجام نشد.';
+        const message = foundationErrorMessage(caught, 'ورود انجام نشد؛ اتصال را بررسی کنید.');
         setError(message);
         throw caught;
       }
@@ -68,7 +68,7 @@ export function FoundationSessionProvider({ children }: { children: React.ReactN
       setError(null);
       try { setSession(await foundationApi.changePassword({ currentPassword, newPassword }, session.csrfToken)); }
       catch (caught) {
-        const message = caught instanceof Error ? caught.message : 'تغییر رمز عبور انجام نشد.';
+        const message = foundationErrorMessage(caught, 'تغییر رمز عبور انجام نشد.');
         setError(message);
         throw caught;
       }
@@ -76,7 +76,8 @@ export function FoundationSessionProvider({ children }: { children: React.ReactN
     refresh,
     async startImpersonation(input) {
       if (!session) return;
-      setSession(await foundationApi.startImpersonation(input, session.csrfToken));
+      try { setSession(await foundationApi.startImpersonation(input, session.csrfToken)); }
+      catch (caught) { throw new Error(foundationErrorMessage(caught, 'ورود به نمای کاربر انجام نشد.')); }
     },
     async stopImpersonation(reason = 'بازگشت به حساب مدیر') {
       if (!session) return;

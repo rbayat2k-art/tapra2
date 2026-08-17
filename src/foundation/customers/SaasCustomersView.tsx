@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { FoundationApiError, foundationApi } from '../api/client';
+import { foundationApi, foundationErrorMessage } from '../api/client';
 import type {
   DuplicateCheckResult,
   FoundationCustomer,
@@ -32,6 +32,13 @@ const eventLabels: Record<string, string> = {
   customer_split: 'بازگردانی ادغام',
   customer_identity_merged: 'یکپارچه‌سازی هویت مرکزی',
   customer_identity_split: 'بازگردانی هویت مرکزی',
+  sales_lead_created: 'ایجاد سرنخ فروش',
+  sales_call_logged: 'ثبت تماس فروش',
+  sales_marketing_linked: 'اتصال زمینه بازاریابی',
+  sales_sale_created: 'ثبت فروش',
+  sales_invoice_created: 'ایجاد صورتحساب فروش',
+  sales_payment_recorded: 'ثبت اعلام پرداخت',
+  sales_payment_reviewed: 'بررسی مالی پرداخت',
 };
 
 const sourceLabels: Record<string, string> = {
@@ -45,6 +52,30 @@ const sourceLabels: Record<string, string> = {
   external_company: 'شرکت بیرونی',
   api_integration: 'یکپارچه‌سازی سامانه',
 };
+
+export function customerEventLabel(eventType: string): string {
+  return eventLabels[eventType] ?? 'رویداد مشتری';
+}
+
+export function customerSourceLabel(sourceType: string): string {
+  return sourceLabels[sourceType] ?? 'منبع ثبت‌شده';
+}
+
+const eventSummaries: Record<string, string> = {
+  sales_lead_created: 'سرنخ فروش برای مشتری ایجاد شد.',
+  sales_sale_created: 'فروش در سابقه ارتباط با مشتری ثبت شد.',
+  sales_invoice_created: 'صورتحساب فروش به‌صورت خودکار ایجاد شد.',
+  sales_payment_recorded: 'پرداخت صورتحساب فروش اعلام شد.',
+  sales_payment_reviewed: 'پرداخت به‌صورت مستقل توسط واحد مالی بررسی شد.',
+};
+
+export function customerEventSummary(eventType: string, summary: string): string {
+  return eventSummaries[eventType] ?? summary;
+}
+
+export function customerSourceName(sourceName: string): string {
+  return sourceName === 'Deterministic development seed' ? 'دادهٔ پایدار محیط توسعه' : sourceName;
+}
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
@@ -78,7 +109,7 @@ export function SaasCustomersView() {
       setCustomers(response.customers);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'دریافت مشتریان انجام نشد.');
+      setError(foundationErrorMessage(caught, 'دریافت مشتریان انجام نشد.'));
     } finally {
       setLoading(false);
     }
@@ -96,7 +127,7 @@ export function SaasCustomersView() {
       setProfile((await foundationApi.readCustomer(customerId)).customer);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'دریافت پروفایل انجام نشد.');
+      setError(foundationErrorMessage(caught, 'دریافت پروفایل انجام نشد.'));
     } finally {
       setProfileLoading(false);
     }
@@ -114,7 +145,7 @@ export function SaasCustomersView() {
       setProfile(created.customer);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof FoundationApiError ? caught.message : 'ثبت مشتری انجام نشد.');
+      setError(foundationErrorMessage(caught, 'ثبت مشتری انجام نشد.'));
     } finally {
       setSaving(false);
     }
@@ -134,7 +165,7 @@ export function SaasCustomersView() {
         return;
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'بررسی تکراری بودن انجام نشد.');
+      setError(foundationErrorMessage(caught, 'بررسی تکراری بودن انجام نشد.'));
     } finally {
       setSaving(false);
     }
@@ -220,7 +251,7 @@ function CustomerProfilePanel({
   const mutate = async (operation: () => Promise<FoundationCustomerProfile>) => {
     setBusy(true);
     try { await onChanged(await operation()); onError(null); }
-    catch (caught) { onError(caught instanceof Error ? caught.message : 'تغییر پروفایل انجام نشد.'); }
+    catch (caught) { onError(foundationErrorMessage(caught, 'تغییر پروفایل انجام نشد.')); }
     finally { setBusy(false); }
   };
 
@@ -278,11 +309,11 @@ function CustomerProfilePanel({
       </ProfileCard>
 
       <ProfileCard icon={<Link2 size={18} />} title="منابع داده">
-        {profile.sources.map((source) => <div key={source.id} className="rounded-xl bg-slate-950 p-3 text-sm"><strong>{sourceLabels[source.sourceType] ?? source.sourceType}</strong><p className="mt-1 text-slate-400">{source.sourceName}</p><small className="text-slate-500">ورود: {formatDate(source.ingestedAt)}</small></div>)}
+        {profile.sources.map((source) => <div key={source.id} className="rounded-xl bg-slate-950 p-3 text-sm"><strong>{customerSourceLabel(source.sourceType)}</strong><p className="mt-1 text-slate-400">{customerSourceName(source.sourceName)}</p><small className="text-slate-500">ورود: {formatDate(source.ingestedAt)}</small></div>)}
       </ProfileCard>
 
       <ProfileCard icon={<History size={18} />} title="تاریخچه">
-        {profile.timeline.map((event) => <div key={event.id} className="border-r-2 border-emerald-800 pr-3"><strong className="text-sm">{eventLabels[event.eventType] ?? event.eventType}</strong><p className="text-xs text-slate-400">{event.summary}</p><time className="text-[11px] text-slate-500">{formatDate(event.occurredAt)}</time></div>)}
+        {profile.timeline.map((event) => <div key={event.id} className="border-r-2 border-emerald-800 pr-3"><strong className="text-sm">{customerEventLabel(event.eventType)}</strong><p className="text-xs text-slate-400">{customerEventSummary(event.eventType, event.summary)}</p><time className="text-[11px] text-slate-500">{formatDate(event.occurredAt)}</time></div>)}
       </ProfileCard>
     </div>
 

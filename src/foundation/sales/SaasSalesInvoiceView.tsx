@@ -40,8 +40,9 @@ interface Props {
   mode?: 'sales' | 'financial_review';
 }
 
-interface LineDraft {
+export interface LineDraft {
   itemType: InvoiceItemType;
+  catalogReference: string;
   itemName: string;
   quantity: string;
   unitPrice: string;
@@ -49,7 +50,7 @@ interface LineDraft {
 }
 
 const emptyLine = (): LineDraft => ({
-  itemType: 'goods', itemName: '', quantity: '1', unitPrice: '', discountAmount: '0',
+  itemType: 'goods', catalogReference: '', itemName: '', quantity: '1', unitPrice: '', discountAmount: '0',
 });
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 
@@ -73,9 +74,10 @@ function messageFrom(error: unknown): string {
   return 'ارتباط با سامانه انجام نشد. لطفاً دوباره تلاش کنید.';
 }
 
-function toLineInput(lines: LineDraft[]): SalesInvoiceLineInput[] | null {
+export function toLineInput(lines: LineDraft[]): SalesInvoiceLineInput[] | null {
   const result = lines.map((line) => ({
     itemType: line.itemType,
+    catalogReference: line.itemType === 'goods' && line.catalogReference.trim() ? line.catalogReference.trim() : undefined,
     itemName: line.itemName.trim(),
     quantity: Number(line.quantity),
     unitPrice: line.unitPrice,
@@ -243,7 +245,7 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
   const startRevision = () => {
     if (!selected) return;
     setRevisionLines(selected.lines.map((line) => ({
-      itemType: line.itemType, itemName: line.itemName, quantity: String(line.quantity),
+      itemType: line.itemType, catalogReference: line.catalogReference ?? '', itemName: line.itemName, quantity: String(line.quantity),
       unitPrice: String(line.unitPrice), discountAmount: String(line.discountAmount),
     })));
     setRevisionReason('');
@@ -462,8 +464,8 @@ export function SaasSalesInvoiceView({ mode = 'sales' }: Props) {
 
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h3 className="font-bold text-slate-800">اقلام فاکتور</h3>
-            <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[650px] text-right text-sm"><thead className="border-b text-xs text-slate-400"><tr><th className="p-2">ردیف</th><th className="p-2">نوع</th><th className="p-2">شرح</th><th className="p-2">تعداد</th><th className="p-2">مبلغ واحد</th><th className="p-2">تخفیف</th><th className="p-2">جمع</th><th className="p-2">وضعیت اجرا</th></tr></thead><tbody>
-              {selected.lines.map((line) => <tr key={line.id} className="border-b border-slate-100"><td className="p-2">{new Intl.NumberFormat('fa-IR').format(line.lineNumber)}</td><td className="p-2">{INVOICE_ITEM_TYPE_LABELS[line.itemType]}</td><td className="p-2 font-medium text-slate-700">{line.itemName}</td><td className="p-2">{new Intl.NumberFormat('fa-IR').format(line.quantity)}</td><td className="p-2">{formatRial(line.unitPrice)}</td><td className="p-2">{formatRial(line.discountAmount)}</td><td className="p-2 font-semibold">{formatRial(line.lineTotal)}</td><td className="p-2 text-xs">{FULFILLMENT_STATUS_LABELS[line.fulfillmentStatus] ?? 'در حال بررسی'}</td></tr>)}
+            <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[760px] text-right text-sm"><thead className="border-b text-xs text-slate-400"><tr><th className="p-2">ردیف</th><th className="p-2">نوع</th><th className="p-2">شرح</th><th className="p-2">کد کالای انبار</th><th className="p-2">تعداد</th><th className="p-2">مبلغ واحد</th><th className="p-2">تخفیف</th><th className="p-2">جمع</th><th className="p-2">وضعیت اجرا</th></tr></thead><tbody>
+              {selected.lines.map((line) => <tr key={line.id} className="border-b border-slate-100"><td className="p-2">{new Intl.NumberFormat('fa-IR').format(line.lineNumber)}</td><td className="p-2">{INVOICE_ITEM_TYPE_LABELS[line.itemType]}</td><td className="p-2 font-medium text-slate-700">{line.itemName}</td><td className="p-2 text-xs text-slate-500">{line.catalogReference ?? (line.itemType === 'goods' ? 'متصل نشده' : '—')}</td><td className="p-2">{new Intl.NumberFormat('fa-IR').format(line.quantity)}</td><td className="p-2">{formatRial(line.unitPrice)}</td><td className="p-2">{formatRial(line.discountAmount)}</td><td className="p-2 font-semibold">{formatRial(line.lineTotal)}</td><td className="p-2 text-xs">{FULFILLMENT_STATUS_LABELS[line.fulfillmentStatus] ?? 'در حال بررسی'}</td></tr>)}
             </tbody></table></div>
           </section>
 
@@ -516,8 +518,9 @@ function LineEditor({ lines, setLines, editLine }: {
   editLine: (setter: Dispatch<SetStateAction<LineDraft[]>>, index: number, patch: Partial<LineDraft>) => void;
 }) {
   return <div className="space-y-2">
-    {lines.map((line, index) => <div key={index} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[110px_minmax(180px,1fr)_90px_140px_140px_40px]">
+    {lines.map((line, index) => <div key={index} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-2 xl:grid-cols-[110px_150px_minmax(180px,1fr)_90px_140px_140px_40px]">
       <select aria-label="نوع قلم" value={line.itemType} onChange={(event) => editLine(setLines, index, { itemType: event.target.value as InvoiceItemType })} className={inputClass}>{(Object.keys(INVOICE_ITEM_TYPE_LABELS) as InvoiceItemType[]).map((item) => <option key={item} value={item}>{INVOICE_ITEM_TYPE_LABELS[item]}</option>)}</select>
+      <input aria-label="کد کالای انبار" value={line.catalogReference} onChange={(event) => editLine(setLines, index, { catalogReference: event.target.value })} placeholder={line.itemType === 'goods' ? 'کد کالای انبار' : 'برای خدمت لازم نیست'} disabled={line.itemType !== 'goods'} className={inputClass} />
       <input aria-label="شرح قلم" value={line.itemName} onChange={(event) => editLine(setLines, index, { itemName: event.target.value })} placeholder="شرح کالا یا خدمت" className={inputClass} />
       <input aria-label="تعداد" inputMode="numeric" value={line.quantity} onChange={(event) => editLine(setLines, index, { quantity: event.target.value })} placeholder="تعداد" className={inputClass} />
       <input aria-label="مبلغ واحد" inputMode="numeric" value={line.unitPrice} onChange={(event) => editLine(setLines, index, { unitPrice: event.target.value })} placeholder="مبلغ واحد" className={inputClass} />

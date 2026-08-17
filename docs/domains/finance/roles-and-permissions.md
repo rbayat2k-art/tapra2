@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای مدل نقش، permission و محدودیت‌های دسترسی فعلی است.
 > Owner: Access Control Owner
-> Last validated: 2026-08-16 against `agent/admin-organization-completion`
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`
 > Supersedes: none
 > Superseded by: none
 
@@ -18,6 +18,7 @@
 - یک UserAccount می‌تواند بدون ساخت account دوم، Role متفاوت در چند Company/Scope داشته باشد.
 - Permission سمت server محاسبه می‌شود؛ در Impersonation نتیجه به اشتراک Permissionهای Admin و target محدود می‌شود.
 - Permissionهای Organization فعلی: `organization.read`، `organization.company.manage`، `organization.unit.manage`، `organization.user.manage`، `organization.membership.manage`، `organization.role.manage` و `organization.impersonate`.
+- در UI ایجاد نقش، کاربر فقط نام کسب‌وکاری و permissionهای محلی‌شده را انتخاب می‌کند؛ `role.code` لازم برای قرارداد سرور، در presentation boundary به‌صورت خودکار ساخته و از کاربر پنهان می‌شود.
 - نقش‌های legacy حذف یا به‌صورت حدسی تبدیل نشده‌اند. `legacy_role_mappings` وضعیت `UNMAPPED/PARTIAL/MAPPED/REVIEW_REQUIRED` را برای migration تدریجی نگه می‌دارد؛ تا ثبت mapping، نقش legacy فقط در Prototype معتبر است.
 
 ## ماتریس واقعی Role/Permission/Scope

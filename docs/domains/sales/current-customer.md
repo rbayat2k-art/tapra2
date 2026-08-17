@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای قابلیت پیاده‌سازی‌شده Customer identity/profile و relationship شرکت است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-15 against `stable@2ca59ed5`
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`
 > Supersedes: none
 > Superseded by: none
 
@@ -19,6 +19,7 @@
 - duplicate check شماره دقیق را `EXACT_MATCH` و نام دقیق را فقط به‌عنوان `POSSIBLE_DUPLICATE` برای بررسی انسانی برمی‌گرداند؛ merge خودکار وجود ندارد.
 - merge رابطه شرکتی دارای permission، confirmation UI، transaction، AuditEntry و انتخاب deterministic canonical است. profile بازنده حذف نمی‌شود و unmerge واقعی داده و استقلال آن را بازمی‌گرداند.
 - UI فقط Customer 360 و Import طبیعی داخل همان workspace را نشان می‌دهد و هیچ انتخاب فناوری database ندارد.
+- UI برای event و source ناشناخته برچسب فارسی امن نشان می‌دهد و کد داخلی سرور را به کاربر نشت نمی‌دهد.
 
 fuzzy matching، ارتباط هویت میان Workspaceها، import انبوه، AI entity resolution و جریان کامل Prospect/Opportunity هنوز CURRENT نیستند. وجود Lead محدود فعلی به معنی پیاده‌سازی کامل موتور Campaign/Opportunity نیست.
 

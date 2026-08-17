@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, History, PhoneCall, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
-import { foundationApi } from '../api/client';
+import { foundationApi, foundationErrorMessage } from '../api/client';
 import type { SalesCallOutcome, SalesLead, SalesLeadDetail } from '../api/contracts';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
 import { formatSalesDate, SALES_CALL_OUTCOME_LABELS, SALES_LEAD_STATUS_LABELS } from './labels';
@@ -24,7 +24,7 @@ function isOverdue(lead: SalesLead): boolean {
 }
 
 function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : 'دریافت صف فروش انجام نشد.';
+  return foundationErrorMessage(error, 'دریافت صف فروش انجام نشد؛ اتصال را بررسی و دوباره تلاش کنید.');
 }
 
 export function SaasSalesQueueView() {

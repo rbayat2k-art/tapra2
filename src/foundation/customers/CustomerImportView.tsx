@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle, CheckCircle2, FileUp, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
-import { foundationApi } from '../api/client';
+import { foundationApi, foundationErrorMessage } from '../api/client';
 import type { CustomerImportAction, CustomerImportJob, CustomerImportRecord } from '../api/contracts';
 import { useFoundationSession } from '../auth/FoundationSessionContext';
 
@@ -23,6 +23,10 @@ const reasonLabels: Record<string, string> = {
   multiple_existing_phone_matches: 'چند تطبیق تلفن پیدا شد',
 };
 
+export function customerImportReasonLabel(reason: string): string {
+  return reasonLabels[reason] ?? 'نیازمند بررسی دستی';
+}
+
 function Notice({ error }: { error: string | null }) {
   return error ? <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p> : null;
 }
@@ -42,7 +46,7 @@ export function CustomerImportView() {
 
   const loadJobs = useCallback(async () => {
     try { setJobs((await foundationApi.listCustomerImports()).imports); setError(null); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'فهرست ورود فایل‌ها دریافت نشد.'); }
+    catch (caught) { setError(foundationErrorMessage(caught, 'فهرست ورود فایل‌ها دریافت نشد.')); }
   }, [session?.activeContext?.membershipId]);
 
   useEffect(() => { setActive(null); void loadJobs(); }, [loadJobs]);
@@ -50,7 +54,7 @@ export function CustomerImportView() {
   const openJob = async (jobId: string) => {
     setBusy(true);
     try { setActive((await foundationApi.readCustomerImport(jobId)).import); setError(null); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'جزئیات ورود فایل دریافت نشد.'); }
+    catch (caught) { setError(foundationErrorMessage(caught, 'جزئیات ورود فایل دریافت نشد.')); }
     finally { setBusy(false); }
   };
 
@@ -61,14 +65,14 @@ export function CustomerImportView() {
     try {
       const result = await foundationApi.stageCustomerImport(file, await file.text(), sourceName, session.csrfToken);
       setActive(result.import); setFile(null); setError(null); await loadJobs();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'فایل در بخش بررسی اولیه ثبت نشد.'); }
+    } catch (caught) { setError(foundationErrorMessage(caught, 'فایل در بخش بررسی اولیه ثبت نشد.')); }
     finally { setBusy(false); }
   };
 
   const mutate = async (operation: () => Promise<{ import: CustomerImportJob }>) => {
     setBusy(true);
     try { const result = await operation(); setActive(result.import); setError(null); await loadJobs(); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'عملیات ورود فایل انجام نشد.'); }
+    catch (caught) { setError(foundationErrorMessage(caught, 'عملیات ورود فایل انجام نشد.')); }
     finally { setBusy(false); }
   };
 
@@ -134,13 +138,13 @@ function ImportRecordCard({ record, job, disabled, onDecide }: {
   const decision = record.decidedAction ? actionLabels[record.decidedAction] : 'بدون تصمیم نهایی';
   return <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-xs text-slate-500">ردیف {record.rowNumber}</span><h4 className="font-bold">{record.fullName || 'نام ثبت نشده'}</h4><p dir="ltr" className="text-sm text-slate-400">{record.phone || '—'}</p></div><div className="text-left"><span className="rounded-full bg-slate-800 px-3 py-1 text-xs">{classificationLabels[record.classification]}</span><p className="mt-2 text-xs text-emerald-300">{decision}</p></div></div>
-    {record.reasons.length > 0 && <ul className="mt-3 flex flex-wrap gap-2">{record.reasons.map((reason) => <li key={reason} className="rounded-lg bg-amber-500/10 px-2 py-1 text-xs text-amber-200">{reasonLabels[reason] ?? reason}</li>)}</ul>}
+    {record.reasons.length > 0 && <ul className="mt-3 flex flex-wrap gap-2">{record.reasons.map((reason) => <li key={reason} className="rounded-lg bg-amber-500/10 px-2 py-1 text-xs text-amber-200">{customerImportReasonLabel(reason)}</li>)}</ul>}
     {!disabled && <div className="mt-3 flex flex-wrap gap-2">
       {record.classification !== 'INVALID' && <button type="button" onClick={() => onDecide(record, 'CREATE_NEW')} className="rounded-lg border border-slate-600 px-3 py-2 text-xs">مشتری جدید</button>}
       {candidates.map((candidate) => <button type="button" key={candidate.id} onClick={() => onDecide(record, 'LINK_TO_EXISTING', { customer: candidate.id })} className="rounded-lg border border-blue-600 px-3 py-2 text-xs text-blue-200">اتصال به {candidate.fullName}</button>)}
       {record.duplicateOfRecordId && <button type="button" onClick={() => onDecide(record, 'LINK_TO_STAGED', { record: record.duplicateOfRecordId! })} className="rounded-lg border border-violet-600 px-3 py-2 text-xs text-violet-200">اتصال به ردیف قبلی</button>}
       <button type="button" onClick={() => onDecide(record, 'REJECT')} className="rounded-lg border border-rose-700 px-3 py-2 text-xs text-rose-200">رد ردیف</button>
     </div>}
-    {record.appliedCustomerId && <p className="mt-3 text-xs text-emerald-400">به مرکز مشتریان منتقل شد · {record.appliedCustomerId}</p>}
+    {record.appliedCustomerId && <p className="mt-3 text-xs text-emerald-400">با موفقیت به مرکز مشتریان منتقل شد.</p>}
   </section>;
 }

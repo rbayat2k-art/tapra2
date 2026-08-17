@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار پیاده‌سازی‌شده Customer Import، staging و reconciliation است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-15 against `agent/customer-identity-reconciliation`
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`
 > Supersedes: none
 > Superseded by: none
 
@@ -12,6 +12,8 @@
 مسیر اجراشده چنین است:
 
 `UTF-8 CSV → Upload → Staging → Normalize/Validate → Duplicate Detection → Reconciliation → Explicit Approval → Customer 360`
+
+UI عملیاتی دلایل classification را با برچسب فارسی نشان می‌دهد؛ در حالت ناشناخته fallback امن دارد و بعد از اعمال ردیف، UUID مشتری را نمایش نمی‌دهد.
 
 ورودی حداکثر `512 KiB` و `500` ردیف داده دارد. فقط فایل `.csv` با `Content-Type` سازگار پذیرفته می‌شود. parser داخلی از quote و comma استاندارد CSV پشتیبانی می‌کند و هیچ formula یا کد داخل فایل را اجرا نمی‌کند. مسیر filesystem از کاربر دریافت نمی‌شود و قابلیت جدید از dependency قدیمی `xlsx` استفاده نمی‌کند.
 
