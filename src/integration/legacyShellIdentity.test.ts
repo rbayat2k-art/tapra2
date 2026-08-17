@@ -4,8 +4,8 @@ import type { User } from '../types';
 import { resolveLegacyShellUser } from './legacyShellIdentity';
 
 const users: User[] = [{
-  id: 'legacy-admin', username: 'admin', fullName: 'مدیر قدیمی', phone: '', email: 'legacy@example.test',
-  role: 'admin', roleTitle: 'مدیر', isActive: true,
+  id: 'legacy-admin', username: 'admin', fullName: 'مدیر قدیمی', phone: '09120000000', email: 'legacy@example.test',
+  role: 'admin', roleTitle: 'مدیر', customPermissions: ['manage_users'], isActive: true,
 }];
 
 function session(email: string, permissions: string[]): FoundationSession {
@@ -15,7 +15,7 @@ function session(email: string, permissions: string[]): FoundationSession {
     impersonation: null,
     memberships: [], csrfToken: 'csrf',
     activeContext: {
-      membershipId: 'membership', workspace: { id: 'workspace', name: 'فضای کاری', slug: 'workspace' },
+      membershipId: 'membership', workspace: { id: 'workspace', name: 'مجموعه', slug: 'workspace' },
       company: { id: 'company', name: 'شرکت', code: 'COMPANY' }, permissions,
       organizationUnit: null,
       scope: { type: 'COMPANY', id: 'company' },
@@ -26,37 +26,24 @@ function session(email: string, permissions: string[]): FoundationSession {
 }
 
 describe('legacy shell identity adapter', () => {
-  it('uses the deterministic demo account only as a presentation administrator', () => {
-    expect(resolveLegacyShellUser(session('demo@tapra.local', ['customer.read']), users).role).toBe('admin');
-  });
-
-  it('does not promote an ordinary SaaS member to the legacy administrator', () => {
-    const user = resolveLegacyShellUser(session('reader@tapra.local', ['customer.read']), users);
+  it('never promotes the deterministic demo account to a legacy administrator', () => {
+    const user = resolveLegacyShellUser(session('demo@tapra.local', ['organization.read']), users);
     expect(user.role).toBe('member');
-    expect(user.customPermissions).toContain('view_customer_profile');
-    expect(user.customPermissions).not.toContain('manage_users');
+    expect(user.customPermissions).toEqual([]);
   });
 
-  it('keeps an exact legacy profile while refreshing trusted server identity fields', () => {
-    const user = resolveLegacyShellUser(session('legacy@example.test', []), users);
-    expect(user.id).toBe('legacy-admin');
+  it('does not inherit a matching legacy role or operational permissions', () => {
+    const user = resolveLegacyShellUser(session('legacy@example.test', ['customer.read']), users);
+    expect(user.id).toBe('foundation:server-user');
+    expect(user.role).toBe('member');
+    expect(user.customPermissions).toEqual([]);
+    expect(user.phone).toBe('09120000000');
+  });
+
+  it('keeps server identity fields as the presentation identity', () => {
+    const user = resolveLegacyShellUser(session('reader@tapra.local', ['sales.queue.read']), users);
     expect(user.fullName).toBe('کاربر سرور');
-  });
-
-  it('maps server Sales permissions only to presentation navigation and actions', () => {
-    const seller = resolveLegacyShellUser(session('seller@tapra.local', ['sales.queue.read', 'sales.call.create']), users);
-    expect(seller.customPermissions).toEqual(expect.arrayContaining(['sales_access', 'view_sales_queue', 'log_call_outcome']));
-    expect(seller.customPermissions).not.toContain('assign_sales_lead');
-
-    const manager = resolveLegacyShellUser(session('manager@tapra.local', ['sales.lead.assign', 'sales.lead.reassign']), users);
-    expect(manager.customPermissions).toEqual(expect.arrayContaining(['assign_sales_lead', 'reassign_sales_lead']));
-  });
-
-  it('routes server Organization managers to the matching shell navigation only', () => {
-    const user = resolveLegacyShellUser(session('organization@tapra.local', [
-      'organization.company.manage', 'organization.user.manage', 'organization.role.manage',
-    ]), users);
-    expect(user.customPermissions).toEqual(expect.arrayContaining(['manage_companies', 'manage_users', 'manage_roles']));
-    expect(user.customPermissions).not.toContain('view_all_requests');
+    expect(user.roleTitle).toBe('کاربر سامانه');
+    expect(user.companyId).toBe('company');
   });
 });

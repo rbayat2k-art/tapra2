@@ -12,6 +12,12 @@ const categoryLabels: Record<QueueCategory, string> = {
   ready_for_invoice: 'آمادهٔ صدور فاکتور', closed: 'بسته‌شده', wrong_number: 'شماره اشتباه', complaint: 'شکایت/مسدود',
 };
 
+const relationshipProtectionLabels = {
+  none: 'بدون انحصار',
+  until_reassigned: 'تا زمان بازتخصیص',
+  duration: 'مدت‌دار',
+} as const;
+
 function isOverdue(lead: SalesLead): boolean {
   return !!lead.actionDeadline && new Date(lead.actionDeadline).getTime() < Date.now()
     && ['pending_action', 'callback_scheduled'].includes(lead.status);
@@ -95,7 +101,7 @@ export function SaasSalesQueueView() {
   const submitCall = async () => {
     if (!session || !activeCallLeadId || !callStartedAt || !canLog) return;
     if (outcome === 'callback_requested' && !callbackAt) {
-      setError('برای درخواست تماس مجدد، زمان callback را وارد کنید.');
+      setError('برای درخواست تماس مجدد، زمان تماس بعدی را وارد کنید.');
       return;
     }
     setSaving(true);
@@ -117,14 +123,14 @@ export function SaasSalesQueueView() {
     }
   };
 
-  if (!canView) return <div className="p-6 text-slate-500">دسترسی server-side لازم برای مشاهدهٔ صف فروش را ندارید.</div>;
+  if (!canView) return <div className="p-6 text-slate-500">مجوز لازم برای مشاهده صف فروش را ندارید.</div>;
 
   const list = categorized[category];
   return <div className="space-y-6 dir-rtl" dir="rtl">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800"><PhoneCall className="h-5 w-5" />صف فروش من</h2>
-        <p className="mt-1 text-sm text-slate-500">صف، تماس، تاریخچه و lock رابطه از PostgreSQL دریافت می‌شوند؛ پایان شیفت انتقال خودکار ایجاد نمی‌کند.</p>
+        <p className="mt-1 text-sm text-slate-500">صف، تماس‌ها و تاریخچه رابطه در سامانه ثبت می‌شوند؛ پایان شیفت باعث انتقال خودکار کارهای باز نمی‌شود.</p>
       </div>
       <button type="button" onClick={() => void load()} disabled={loading} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600">
         <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />بازخوانی
@@ -142,7 +148,7 @@ export function SaasSalesQueueView() {
 
     <section className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
       {loading && <div className="p-6 text-center text-slate-400">در حال دریافت صف…</div>}
-      {!loading && list.length === 0 && <div className="p-6 text-center text-slate-400">Leadی در این دسته نیست.</div>}
+      {!loading && list.length === 0 && <div className="p-6 text-center text-slate-400">سرنخ فروشی در این دسته نیست.</div>}
       {list.map((lead) => {
         const activeCall = activeCallLeadId === lead.id;
         const currentDetail = detail?.id === lead.id ? detail : null;
@@ -164,15 +170,15 @@ export function SaasSalesQueueView() {
           </div>
 
           {currentDetail && <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-            {currentDetail.relationship?.ownerName && <div className="flex items-center gap-2 text-emerald-700"><ShieldCheck className="h-4 w-4" />رابطه فعال: {currentDetail.relationship.ownerName} · policy: {currentDetail.relationship.lockMode}</div>}
+            {currentDetail.relationship?.ownerName && <div className="flex items-center gap-2 text-emerald-700"><ShieldCheck className="h-4 w-4" />رابطه فعال: {currentDetail.relationship.ownerName} · شیوه حفاظت: {relationshipProtectionLabels[currentDetail.relationship.lockMode]}</div>}
             {currentDetail.marketingLinks.length > 0 && <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-2 text-cyan-900">
-              زمینه فروش: {currentDetail.marketingLinks.map((link) => `${link.type === 'campaign' ? 'Campaign' : 'Promotion'} ${link.referenceCode}${link.displayName ? ` — ${link.displayName}` : ''}`).join('، ')}
+              زمینه فروش: {currentDetail.marketingLinks.map((link) => `${link.type === 'campaign' ? 'کمپین' : 'پیشنهاد فروش'} ${link.referenceCode}${link.displayName ? ` — ${link.displayName}` : ''}`).join('، ')}
             </div>}
             {currentDetail.calls.length === 0 && <div className="text-slate-400">هنوز تماسی ثبت نشده است.</div>}
             {currentDetail.calls.map((call) => <div key={call.id} className="rounded-lg border border-slate-200 bg-white p-2">
               <div>{formatSalesDate(call.startedAt)} — {SALES_CALL_OUTCOME_LABELS[call.outcome]} {call.effective ? '· مؤثر' : '· ناموفق/غیرمؤثر'}</div>
               <div className="mt-1 text-slate-400">{call.companyName} · {call.salespersonName} · {call.campaignReference ?? 'بدون کمپین'}</div>
-              {call.marketingSnapshot.length > 0 && <div className="mt-1 text-slate-400">snapshot: {call.marketingSnapshot.map((link) => `${link.type}:${link.referenceCode}`).join('، ')}</div>}
+              {call.marketingSnapshot.length > 0 && <div className="mt-1 text-slate-400">زمینه ثبت‌شده: {call.marketingSnapshot.map((link) => `${link.type === 'campaign' ? 'کمپین' : 'پیشنهاد فروش'}: ${link.referenceCode}`).join('، ')}</div>}
               {call.note && <div className="mt-1">{call.note}</div>}
             </div>)}
             {currentDetail.assignments.length > 0 && <div className="border-t border-slate-200 pt-2">آخرین تخصیص: {currentDetail.assignments.at(-1)?.assigneeName} توسط {currentDetail.assignments.at(-1)?.assignedByName}</div>}

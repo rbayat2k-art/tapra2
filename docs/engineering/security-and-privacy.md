@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت مشاهده‌شده امنیت، احراز هویت و ریسک داده در پیاده‌سازی فعلی است.
 > Owner: Security Owner
-> Last validated: 2026-08-16 against `agent/warehouse-foundation`
+> Last validated: 2026-08-16 against `agent/global-operational-shell-hardening`
 > Supersedes: none
 > Superseded by: none
 
@@ -15,6 +15,10 @@
 - session opaque و hash token در PostgreSQL است؛ cookie دارای `HttpOnly` و `SameSite=Lax` است و در production باید `Secure` باشد.
 - state-changing endpointها CSRF token می‌خواهند.
 - membership، context و permission در server دوباره محاسبه می‌شوند.
+- shell عملیاتی visibility منو، tab و action را از Permission و context سروری می‌سازد؛ این کنترل UX است و enforcement مستقل API/RLS را جایگزین نمی‌کند.
+- `resolveLegacyShellUser` فقط identity نمایشی کم‌اختیار می‌سازد و هیچ server Permission را به permission قدیمی تبدیل یا کاربر را به مدیر prototype ارتقا نمی‌دهد.
+- صفحه‌های Company-scoped پیش از mount شدن View و ارسال درخواست، context شرکت معتبر می‌خواهند. context مجموعه برای این صفحه‌ها fail-closed است.
+- client متمرکز API متن خام Backend را در UI نمایش نمی‌دهد و خطاها را بر اساس status/code به پیام امن فارسی تبدیل می‌کند؛ جزئیات فنی با correlation ID در مسیر تشخیصی باقی می‌مانند.
 - Customer context از session استخراج می‌شود و client نمی‌تواند tenant را در payload تعیین کند.
 - PostgreSQL RLS و `FORCE ROW LEVEL SECURITY` لایه دفاعی دوم برای تمام relationهای Customer 360، عملیات Sales فعلی و Audit است.
 - نقش runtime superuser، database creator یا role creator نیست.
