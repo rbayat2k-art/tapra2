@@ -550,8 +550,8 @@ export async function createSaleAndInvoice(
       await client.query(`UPDATE sales_leads SET status = 'closed_won', updated_at = now(), version = version + 1 WHERE id = $1`, [input.leadId]);
     }
     for (const [eventType, summary, metadata] of [
-      ['sales_sale_created', 'Sale recorded for Customer relationship.', { saleId, entryMode: input.entryMode }],
-      ['sales_invoice_created', 'Invoice created automatically from Sale.', { invoiceId, invoiceCode }],
+      ['sales_sale_created', 'فروش در سابقه ارتباط با مشتری ثبت شد.', { saleId, entryMode: input.entryMode }],
+      ['sales_invoice_created', 'صورتحساب فروش به‌صورت خودکار ایجاد شد.', { invoiceId, invoiceCode }],
     ] as const) {
       await client.query(`
         INSERT INTO customer_timeline_events(
@@ -784,7 +784,7 @@ export async function recordSalesPayment(
     await client.query(`
       INSERT INTO customer_timeline_events(
         workspace_id, company_id, customer_id, actor_user_account_id, event_type, summary, metadata
-      ) VALUES ($1, $2, $3, $4, 'sales_payment_recorded', 'Payment declared for Sales Invoice.', $5)
+      ) VALUES ($1, $2, $3, $4, 'sales_payment_recorded', 'پرداخت صورتحساب فروش اعلام شد.', $5)
     `, [context.workspace.id, company.id, invoice.customer_id, session.userAccountId, JSON.stringify({ invoiceId, paymentId, amount })]);
     await appendAuditEntry(client, {
       workspaceId: context.workspace.id, companyId: company.id, ...auditIdentity(session),
@@ -868,7 +868,7 @@ export async function reviewSalesPayment(
     await client.query(`
       INSERT INTO customer_timeline_events(
         workspace_id, company_id, customer_id, actor_user_account_id, event_type, summary, metadata
-      ) VALUES ($1, $2, $3, $4, 'sales_payment_reviewed', 'Payment reviewed independently by Finance.', $5)
+      ) VALUES ($1, $2, $3, $4, 'sales_payment_reviewed', 'پرداخت به‌صورت مستقل توسط واحد مالی بررسی شد.', $5)
     `, [context.workspace.id, company.id, invoice.customer_id, session.userAccountId, JSON.stringify({
       invoiceId, paymentId, decision: input.decision, invoiceStatus: derived.status,
     })]);

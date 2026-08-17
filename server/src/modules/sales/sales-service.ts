@@ -451,7 +451,7 @@ export async function createSalesLead(
     await client.query(`
       INSERT INTO sales_lead_timeline_events(
         workspace_id, company_id, lead_id, actor_user_account_id, event_type, summary, metadata
-      ) VALUES ($1, $2, $3, $4, 'lead_created', 'Lead برای رابطهٔ مشتری ایجاد شد.', $5)
+      ) VALUES ($1, $2, $3, $4, 'lead_created', 'سرنخ برای رابطهٔ مشتری ایجاد شد.', $5)
     `, [context.workspace.id, company.id, leadId, session.userAccountId, JSON.stringify({
       source: input.source, campaignReference: input.campaignReference ?? null,
       promotionReference: input.promotionReference ?? null,
@@ -459,7 +459,7 @@ export async function createSalesLead(
     await client.query(`
       INSERT INTO customer_timeline_events(
         workspace_id, company_id, customer_id, actor_user_account_id, event_type, summary, metadata
-      ) VALUES ($1, $2, $3, $4, 'sales_lead_created', 'Lead فروش برای مشتری ایجاد شد.', $5)
+      ) VALUES ($1, $2, $3, $4, 'sales_lead_created', 'سرنخ فروش برای مشتری ایجاد شد.', $5)
     `, [context.workspace.id, company.id, customerRow.id, session.userAccountId, JSON.stringify({
       leadId, trackingCode, source: input.source, campaignReference: input.campaignReference ?? null,
       promotionReference: input.promotionReference ?? null,
@@ -531,7 +531,7 @@ export async function linkSalesMarketingContext(
     await client.query(`
       INSERT INTO sales_lead_timeline_events(
         workspace_id, company_id, lead_id, actor_user_account_id, event_type, summary, metadata
-      ) VALUES ($1, $2, $3, $4, 'marketing_linked', 'زمینهٔ Campaign/Promotion به Lead متصل شد.', $5)
+      ) VALUES ($1, $2, $3, $4, 'marketing_linked', 'زمینهٔ کارزار یا ترویج به سرنخ متصل شد.', $5)
     `, [context.workspace.id, company.id, leadId, session.userAccountId, JSON.stringify({
       linkId, type: input.type, referenceCode: input.referenceCode, displayName: input.displayName ?? null,
       relationshipId,
@@ -873,7 +873,7 @@ export async function recordSalesCall(
       ) VALUES ($1, $2, $3, $4, 'call_logged', $5, $6)
     `, [
       context.workspace.id, company.id, lead.id, session.userAccountId,
-      effective ? 'تماس مؤثر ثبت و رابطهٔ فروش به‌روزرسانی شد.' : 'تلاش تماس ثبت شد؛ رابطه یا lock دائمی ایجاد نشد.',
+      effective ? 'تماس مؤثر ثبت و رابطهٔ فروش به‌روزرسانی شد.' : 'تلاش تماس ثبت شد؛ رابطه یا قفل دائمی ایجاد نشد.',
       JSON.stringify({ callId, outcome: input.outcome, effective, policyVersion: policy.version, relationshipEvent }),
     ]);
     await client.query(`

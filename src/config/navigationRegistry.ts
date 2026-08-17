@@ -29,7 +29,7 @@ export const NAV_GROUP_LABELS: Record<NavGroupId, string> = {
   sales_crm: 'فروش و CRM',
   data_marketing: 'داده و بازاریابی',
   catalog: 'کاتالوگ و پیشنهادها',
-  order_ops: 'عملیات سفارش و خدمت',
+  order_ops: 'مالی و انبار',
   finance_treasury: 'مالی و خزانه‌داری',
   communications: 'ارتباطات',
   org_admin: 'سازمان و مدیریت',

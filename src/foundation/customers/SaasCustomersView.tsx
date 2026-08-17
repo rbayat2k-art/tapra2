@@ -32,6 +32,13 @@ const eventLabels: Record<string, string> = {
   customer_split: 'بازگردانی ادغام',
   customer_identity_merged: 'یکپارچه‌سازی هویت مرکزی',
   customer_identity_split: 'بازگردانی هویت مرکزی',
+  sales_lead_created: 'ایجاد سرنخ فروش',
+  sales_call_logged: 'ثبت تماس فروش',
+  sales_marketing_linked: 'اتصال زمینه بازاریابی',
+  sales_sale_created: 'ثبت فروش',
+  sales_invoice_created: 'ایجاد صورتحساب فروش',
+  sales_payment_recorded: 'ثبت اعلام پرداخت',
+  sales_payment_reviewed: 'بررسی مالی پرداخت',
 };
 
 const sourceLabels: Record<string, string> = {
@@ -52,6 +59,22 @@ export function customerEventLabel(eventType: string): string {
 
 export function customerSourceLabel(sourceType: string): string {
   return sourceLabels[sourceType] ?? 'منبع ثبت‌شده';
+}
+
+const eventSummaries: Record<string, string> = {
+  sales_lead_created: 'سرنخ فروش برای مشتری ایجاد شد.',
+  sales_sale_created: 'فروش در سابقه ارتباط با مشتری ثبت شد.',
+  sales_invoice_created: 'صورتحساب فروش به‌صورت خودکار ایجاد شد.',
+  sales_payment_recorded: 'پرداخت صورتحساب فروش اعلام شد.',
+  sales_payment_reviewed: 'پرداخت به‌صورت مستقل توسط واحد مالی بررسی شد.',
+};
+
+export function customerEventSummary(eventType: string, summary: string): string {
+  return eventSummaries[eventType] ?? summary;
+}
+
+export function customerSourceName(sourceName: string): string {
+  return sourceName === 'Deterministic development seed' ? 'دادهٔ پایدار محیط توسعه' : sourceName;
 }
 
 function formatDate(value: string): string {
@@ -286,11 +309,11 @@ function CustomerProfilePanel({
       </ProfileCard>
 
       <ProfileCard icon={<Link2 size={18} />} title="منابع داده">
-        {profile.sources.map((source) => <div key={source.id} className="rounded-xl bg-slate-950 p-3 text-sm"><strong>{customerSourceLabel(source.sourceType)}</strong><p className="mt-1 text-slate-400">{source.sourceName}</p><small className="text-slate-500">ورود: {formatDate(source.ingestedAt)}</small></div>)}
+        {profile.sources.map((source) => <div key={source.id} className="rounded-xl bg-slate-950 p-3 text-sm"><strong>{customerSourceLabel(source.sourceType)}</strong><p className="mt-1 text-slate-400">{customerSourceName(source.sourceName)}</p><small className="text-slate-500">ورود: {formatDate(source.ingestedAt)}</small></div>)}
       </ProfileCard>
 
       <ProfileCard icon={<History size={18} />} title="تاریخچه">
-        {profile.timeline.map((event) => <div key={event.id} className="border-r-2 border-emerald-800 pr-3"><strong className="text-sm">{customerEventLabel(event.eventType)}</strong><p className="text-xs text-slate-400">{event.summary}</p><time className="text-[11px] text-slate-500">{formatDate(event.occurredAt)}</time></div>)}
+        {profile.timeline.map((event) => <div key={event.id} className="border-r-2 border-emerald-800 pr-3"><strong className="text-sm">{customerEventLabel(event.eventType)}</strong><p className="text-xs text-slate-400">{customerEventSummary(event.eventType, event.summary)}</p><time className="text-[11px] text-slate-500">{formatDate(event.occurredAt)}</time></div>)}
       </ProfileCard>
     </div>
 
