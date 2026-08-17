@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده `Sale → Invoice → Payment → Financial Review` است.
 > Owner: Sales Domain Owner
-> Last validated: 2026-08-16 against migrations `0015`–`0022` and Backend tests
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`, migrations `0015`–`0022`, UI tests and Backend tests
 > Supersedes: بخش اجراشده Invoice/Payment در اسناد آینده Sales
 > Superseded by: none
 
@@ -72,6 +72,7 @@
 - `SaasSalesInvoiceView` مسیر «فاکتور فروش» و «تأیید مالی فروش» را از API دریافت می‌کند؛ در کارتابل Financial Review فقط وابستگی‌های همان کارتابل بارگذاری می‌شوند.
 - labelهای status، روش پرداخت، نوع Line و وضعیت اجرا فارسی و RTL هستند؛ codeهای English فقط در contract داخلی می‌مانند.
 - UI مجوز ایجاد نمی‌کند و خطای Backend را به پیام فارسی امن تبدیل می‌کند.
+- فرم قلم کالا `catalogReference` را با عنوان کسب‌وکاری «کد کالای انبار» دریافت و به قرارداد موجود ارسال می‌کند؛ این مقدار UUID نیست و تنها راه CURRENT برای resolve شدن Line به `Inventory Item` است. قلم کالایی بدون این اتصال همچنان قابل ثبت فاکتور است، اما در UI با وضعیت «متصل نشده» دیده می‌شود و برای Reservation واجد شرایط نیست.
 - `SalesInvoiceView` و `SalesFinancialConfirmationView` قدیمی برای بازیابی کد legacy باقی‌اند، اما در این دو مسیر عملیاتی mount نمی‌شوند.
 
 ## شواهد
