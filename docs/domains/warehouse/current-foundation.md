@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده Warehouse Foundation و مرزهای آن است.
 > Owner: Warehouse Domain Owner
-> Last validated: 2026-08-16 against migrations `0019`–`0023`, Backend tests and production build
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`, migrations `0019`–`0023`, UI tests and production build
 > Supersedes: بخش Warehouse در `docs/domains/sales/fulfillment-policy.md` فقط در محدوده رفتارهای اجراشده این سند
 > Superseded by: none
 
@@ -44,6 +44,8 @@ Warehouse Foundation اکنون server-authoritative و PostgreSQL-backed است
 Permissionهای `warehouse.read/manage`, `warehouse.item.manage`, receiving، reservation، transfer، adjustment، count، return و movement reversal سمت server enforce می‌شوند. جدول‌های دامنه `ENABLE RLS` و `FORCE RLS` دارند. Scopeهای `BRANCH`, `DEPARTMENT`, `TEAM` و `SELF` تا زمان attribution صریح Warehouse به آن Scopeها fail-closed هستند؛ Scopeهای CURRENT فقط `WORKSPACE` و `COMPANY` هستند.
 
 Audit با `auditIdentity(session)` هویت actor واقعی، effective user و Impersonation را حفظ می‌کند. approvalهای maker-checker در Impersonation ممنوع‌اند. UI فقط presentation boundary است و مرجع امنیت نیست.
+
+در UI عملیاتی، هر فضای کاری و هر action فقط با Permission دقیق همان عملیات نمایش داده می‌شود؛ داشتن `warehouse.read` به‌تنهایی فرم یا دکمه mutation را فعال نمی‌کند. علت آزادسازی، برگشت و ثبت معکوس در فرم درون‌صفحه‌ای دریافت می‌شود و UI برای رزرو یا برگشتی UUID از کاربر نمی‌گیرد. انتخاب ردیف رزرو از فاکتورهای کالایی `financially_approved` و `eligible` انجام می‌شود؛ بنابراین نقش رزروکننده برای استفاده از این selector کسب‌وکاری باید یکی از Permissionهای مشاهده فاکتور را نیز در همان Company داشته باشد.
 
 ## شواهد پیاده‌سازی
 
