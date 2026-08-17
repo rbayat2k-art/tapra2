@@ -66,6 +66,14 @@ const ids = {
   customerBeta: '70000000-0000-4000-8000-000000000002',
   financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
   financialAccountBeta: '80000000-0000-4000-8000-000000000002',
+  qaReceiptKey: '90000000-0000-4000-8000-000000000001',
+  qaLeadKey: '90000000-0000-4000-8000-000000000002',
+  qaAssignmentKey: '90000000-0000-4000-8000-000000000003',
+  qaCallKey: '90000000-0000-4000-8000-000000000004',
+  qaSaleKey: '90000000-0000-4000-8000-000000000005',
+  qaPaymentKey: '90000000-0000-4000-8000-000000000006',
+  qaReservationKey: '90000000-0000-4000-8000-000000000007',
+  qaCorrelationId: '90000000-0000-4000-8000-000000000008',
 } as const;
 
 type SeedEnvironment = 'development' | 'test' | 'production';
@@ -157,7 +165,7 @@ async function seedOperationalAcceptanceData(): Promise<void> {
     id: ids.roleAlphaWarehouseOperator, code: 'warehouse_operator', name: 'اپراتور انبار',
   }, warehousePermissions);
   const warehouseSession = qaSession(ids.accountWarehouseOperator, ids.personWarehouseOperator, ids.membershipWarehouseOperator, 'اپراتور انبار', 'warehouse-operator@tapra.local');
-  const mutation: WarehouseMutationContext = { context: warehouseContext, session: warehouseSession, correlationId: 'development-seed-operational' };
+  const mutation: WarehouseMutationContext = { context: warehouseContext, session: warehouseSession, correlationId: ids.qaCorrelationId };
 
   let overview = await listWarehouseOverview(warehouseContext) as {
     warehouses: Array<{ id: string; code: string }>;
@@ -193,38 +201,38 @@ async function seedOperationalAcceptanceData(): Promise<void> {
     const receipt = await createReceipt(mutation, {
       warehouseId: warehouse.id, receivingLocationId: receivingLocation.id, receiptType: 'PURCHASE',
       sourceNote: 'رسید خرید نمونه پذیرش', lines: [{ inventoryItemId: item.id, quantity: '25', evidenceNote: 'سند امن توسعه' }],
-    }, 'seed-operational-receipt-alpha');
+    }, ids.qaReceiptKey);
     await postReceipt(mutation, receipt.id);
   }
 
   const lead = await createSalesLead(managerContext, managerSession, {
     customerId: ids.customerAlpha, source: 'داده پذیرش محلی', declaredInterest: 'کالای نمونه پذیرش',
     priority: 'high', campaignReference: 'QA-CAMPAIGN-01', context: { environment: 'development' },
-  }, 'seed-operational-lead-alpha', 'development-seed-operational');
+  }, ids.qaLeadKey, ids.qaCorrelationId);
   const assigned = lead.currentAssignee?.membershipId === ids.membershipSalesOne
     ? lead
-    : await assignSalesLead(managerContext, managerSession, lead.id, { targetMembershipId: ids.membershipSalesOne }, 'seed-operational-assignment-alpha', 'development-seed-operational');
+    : await assignSalesLead(managerContext, managerSession, lead.id, { targetMembershipId: ids.membershipSalesOne }, ids.qaAssignmentKey, ids.qaCorrelationId);
   if (assigned.calls.length === 0) {
     await recordSalesCall(sellerContext, sellerSession, lead.id, {
       outcome: 'ready_for_invoice', startedAt: new Date(Date.now() - 15 * 60_000).toISOString(),
       note: 'تماس مؤثر نمونه برای سناریوی پذیرش', context: { environment: 'development' },
-    }, 'seed-operational-call-alpha', 'development-seed-operational');
+    }, ids.qaCallKey, ids.qaCorrelationId);
   }
   let invoice = await createSaleAndInvoice(sellerContext, sellerSession, {
     customerId: ids.customerAlpha, leadId: lead.id, entryMode: 'direct', source: { environment: 'development' },
     lines: [{ itemType: 'goods', catalogReference: 'QA-GOODS-001', itemName: 'کالای نمونه پذیرش', quantity: 2, unitPrice: '5000000', discountAmount: '0', sourceType: 'manual_addition' }],
-  }, 'seed-operational-sale-alpha', 'development-seed-operational');
-  if (invoice.status === 'awaiting_supervisor_approval') invoice = await approveSalesInvoice(managerContext, managerSession, invoice.id, 'development-seed-operational');
+  }, ids.qaSaleKey, ids.qaCorrelationId);
+  if (invoice.status === 'awaiting_supervisor_approval') invoice = await approveSalesInvoice(managerContext, managerSession, invoice.id, ids.qaCorrelationId);
   if (invoice.status === 'awaiting_payment') invoice = await recordSalesPayment(sellerContext, sellerSession, invoice.id, {
     amount: invoice.finalAmount, paymentMethod: 'card_to_card', occurredAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-    lastFourDigits: '۱۲۳۴', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'QA-PAYMENT-001', receiptReference: 'QA-RECEIPT-001',
-  }, 'seed-operational-payment-alpha', 'development-seed-operational');
+    lastFourDigits: '1234', destinationAccountId: ids.financialAccountAlpha, trackingNumber: 'QA-PAYMENT-001', receiptReference: 'QA-RECEIPT-001',
+  }, ids.qaPaymentKey, ids.qaCorrelationId);
   const submittedPayment = invoice.payments.find((payment) => payment.status === 'submitted');
-  if (submittedPayment) invoice = await reviewSalesPayment(financeContext, financeSession, invoice.id, submittedPayment.id, { decision: 'approved' }, 'development-seed-operational');
+  if (submittedPayment) invoice = await reviewSalesPayment(financeContext, financeSession, invoice.id, submittedPayment.id, { decision: 'approved' }, ids.qaCorrelationId);
   const reservableLine = invoice.lines.find((line) => line.itemType === 'goods' && line.fulfillmentStatus === 'eligible');
   overview = await listWarehouseOverview(warehouseContext) as typeof overview;
   if (reservableLine && !overview.reservations.some((entry) => entry.invoiceLineId === reservableLine.id && entry.status !== 'RELEASED')) {
-    await createReservation(mutation, { invoiceLineId: reservableLine.id }, 'seed-operational-reservation-alpha');
+    await createReservation(mutation, { invoiceLineId: reservableLine.id }, ids.qaReservationKey);
   }
 }
 
@@ -290,11 +298,11 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       ids.accountSalesOne, ids.personSalesOne, salesHash,
       ids.accountSalesTwo, ids.personSalesTwo,
       ids.accountSalesSupervisor, ids.personSalesSupervisor, operationsHash,
-      ids.accountPaperEntry, ids.personPaperEntry, operationsHash,
+      ids.accountPaperEntry, ids.personPaperEntry,
       ids.accountFinanceReviewer, ids.personFinanceReviewer, financeHash,
-      ids.accountCustomerOperator, ids.personCustomerOperator, operationsHash,
+      ids.accountCustomerOperator, ids.personCustomerOperator,
       ids.accountWarehouseOperator, ids.personWarehouseOperator, warehouseHash,
-      ids.accountWarehouseApprover, ids.personWarehouseApprover, warehouseHash,
+      ids.accountWarehouseApprover, ids.personWarehouseApprover,
     ]);
     await client.query(`
       INSERT INTO memberships(id, workspace_id, company_id, person_id) VALUES
@@ -484,7 +492,12 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
         ($4, 'customer.read'), ($4, 'customer.create'), ($4, 'customer.identity.manage'),
         ($4, 'customer.import.read'), ($4, 'customer.import.create'), ($4, 'customer.import.review'),
         ($4, 'sales.lead.create'),
-        ($5, 'sales.invoice.read_all'),
+        ($5, 'sales.invoice.read_all'), ($5, 'warehouse.read'), ($5, 'warehouse.manage'),
+        ($5, 'warehouse.item.manage'), ($5, 'warehouse.receiving.create'),
+        ($5, 'warehouse.receiving.post'), ($5, 'warehouse.receiving.manual'),
+        ($5, 'warehouse.reservation.manage'), ($5, 'warehouse.transfer.manage'),
+        ($5, 'warehouse.adjustment.create'), ($5, 'warehouse.count.create'),
+        ($5, 'warehouse.return.manage'), ($5, 'warehouse.movement.reverse'),
         ($6, 'warehouse.read'), ($6, 'warehouse.adjustment.approve'), ($6, 'warehouse.count.approve')
       ON CONFLICT DO NOTHING
     `, [
@@ -498,7 +511,12 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
       CROSS JOIN permissions permission
       WHERE permission.code LIKE 'warehouse.%'
       ON CONFLICT DO NOTHING
-    `, [[roleAlphaManager, roleBetaManager, roleWorkspaceAdmin, roleAlphaWarehouseOperator]]);
+    `, [[roleAlphaManager, roleBetaManager, roleWorkspaceAdmin]]);
+    await client.query(`
+      DELETE FROM role_permissions
+      WHERE role_id = $1
+        AND permission_code IN ('warehouse.adjustment.approve', 'warehouse.count.approve')
+    `, [roleAlphaWarehouseOperator]);
     await client.query(`
       INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id) VALUES
         ($1, $2, $3, 'COMPANY', $4),
