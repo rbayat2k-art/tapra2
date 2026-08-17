@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای رفتار اجراشده Warehouse Foundation و مرزهای آن است.
 > Owner: Warehouse Domain Owner
-> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`, migrations `0019`–`0023`, UI tests and production build
+> Last validated: 2026-08-17 against `agent/operational-ui-acceptance-v1`, migrations `0019`–`0024`, UI tests and production build
 > Supersedes: بخش Warehouse در `docs/domains/sales/fulfillment-policy.md` فقط در محدوده رفتارهای اجراشده این سند
 > Superseded by: none
 
@@ -25,7 +25,7 @@ Warehouse Foundation اکنون server-authoritative و PostgreSQL-backed است
 | Inventory Item | کالای پایدار با `sku`, `catalog_reference`, `uom` و tracking mode؛ Line کالای free-text یا unresolved قابل رزرو نیست. |
 | Receiving | Purchase Receiving و Manual Receiving؛ حالت Manual به Permission مستقل، reason، evidence و Audit نیاز دارد. |
 | Reservation | فقط current Invoice Line کالایی، دارای Inventory Item پایدار و دارای eligibility مالی؛ allocation فقط از location فعال `SELLABLE` انجام می‌شود، می‌تواند از چند Warehouse باشد و shortage/partial reservation را ثبت کند. |
-| Release | Reservation آزاد می‌شود، اما موجودی فیزیکی تغییر نمی‌کند. |
+| Release | Reservation آزاد می‌شود، اما موجودی فیزیکی تغییر نمی‌کند؛ ردیف جاری و واجد شرایط دوباره قابل رزرو است و سابقه رزرو آزادشده حفظ می‌شود. |
 | Transfer | ایجاد، خروج کامل از مبدأ و دریافت کامل در مقصد؛ reversal فقط به‌صورت اتمی برای کل سند Transfer مجاز است و برگشت یک `TRANSFER_OUT` یا `TRANSFER_IN` منفرد ممنوع است. schema برای partial receipt سازگار است ولی workflow جزئی در v1 فعال نیست. |
 | Adjustment | create/submit/approve با Permissionهای جدا و maker-checker؛ creator یا نشست Impersonation نمی‌تواند تأیید کند. |
 | Count | شمارش و approval مستقل؛ اختلاف با balance قفل‌شده هنگام approval به ledger وارد می‌شود. |
@@ -49,7 +49,7 @@ Audit با `auditIdentity(session)` هویت actor واقعی، effective user �
 
 ## شواهد پیاده‌سازی
 
-- `server/migrations/0019_warehouse_inventory_core.sql` تا `0023_warehouse_integrity_remediation.sql`
+- `server/migrations/0019_warehouse_inventory_core.sql` تا `0024_reservation_release_reentry.sql`
 - `server/src/modules/warehouse/`
 - `server/tests/warehouse.integration.test.ts`
 - `server/tests/warehouse-migration-compatibility.test.ts`

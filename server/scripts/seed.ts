@@ -195,11 +195,11 @@ async function seedOperationalAcceptanceData(): Promise<void> {
     sku: 'QA-GOODS-001', name: 'کالای نمونه پذیرش', catalogReference: 'QA-GOODS-001', trackingMode: 'NONE', uom: 'PCS',
   }) as { id: string; catalogReference: string };
   overview = await listWarehouseOverview(warehouseContext) as typeof overview;
-  const receivingLocation = overview.locations.find((entry) => entry.warehouseId === warehouse!.id && entry.locationType === 'RECEIVING');
-  if (!receivingLocation) throw new Error('Operational seed receiving location was not resolved.');
+  const stockLocation = overview.locations.find((entry) => entry.warehouseId === warehouse!.id && entry.locationType === 'SELLABLE');
+  if (!stockLocation) throw new Error('Operational seed sellable location was not resolved.');
   if (!overview.movements.some((entry) => entry.sourceType === 'WAREHOUSE_RECEIPT')) {
     const receipt = await createReceipt(mutation, {
-      warehouseId: warehouse.id, receivingLocationId: receivingLocation.id, receiptType: 'PURCHASE',
+      warehouseId: warehouse.id, receivingLocationId: stockLocation.id, receiptType: 'PURCHASE',
       sourceNote: 'رسید خرید نمونه پذیرش', lines: [{ inventoryItemId: item.id, quantity: '25', evidenceNote: 'سند امن توسعه' }],
     }, ids.qaReceiptKey);
     await postReceipt(mutation, receipt.id);
@@ -633,7 +633,7 @@ export async function seedDatabase(connectionString = process.env.DATABASE_MIGRA
             workspace_id, company_id, customer_id, source_type, source_name,
             source_reference, confidence, verification_status, created_by_user_account_id
           )
-          SELECT $1::uuid, $2::uuid, $3::uuid, 'manual', 'Deterministic development seed', $3::uuid::text,
+          SELECT $1::uuid, $2::uuid, $3::uuid, 'manual', 'دادهٔ پایدار محیط توسعه', $3::uuid::text,
             1, 'verified', $4::uuid
           WHERE NOT EXISTS (
             SELECT 1 FROM customer_sources WHERE customer_id = $3::uuid

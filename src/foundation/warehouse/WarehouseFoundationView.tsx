@@ -119,14 +119,17 @@ export function WarehouseFoundationView() {
     finally { setLoading(false); }
   }, [canRead, session?.activeContext?.contextKey]);
   useEffect(() => { void load(); }, [load]);
+  const loadInvoices = useCallback(async () => {
+    if (!permissions.includes('warehouse.reservation.manage') || !canReadInvoices) {
+      setInvoices([]);
+      return;
+    }
+    try { setInvoices((await foundationApi.listSalesInvoices()).invoices); }
+    catch { setInvoices([]); }
+  }, [canReadInvoices, permissions, session?.activeContext?.contextKey]);
   useEffect(() => {
-    if (!permissions.includes('warehouse.reservation.manage') || !canReadInvoices) { setInvoices([]); return; }
-    let active = true;
-    foundationApi.listSalesInvoices()
-      .then(({ invoices: available }) => { if (active) setInvoices(available); })
-      .catch(() => { if (active) setInvoices([]); });
-    return () => { active = false; };
-  }, [canReadInvoices, session?.activeContext?.contextKey]);
+    void loadInvoices();
+  }, [loadInvoices]);
   useEffect(() => {
     if (!allowedSections.includes(section)) setSection(allowedSections[0] ?? 'inventory');
   }, [allowedSections, section]);
@@ -134,7 +137,7 @@ export function WarehouseFoundationView() {
   const perform = async (action: () => Promise<unknown>, message: string) => {
     if (!session) return;
     setSaving(true); setError(null); setSuccess(null);
-    try { await action(); setSuccess(message); await load(); }
+    try { await action(); setSuccess(message); await Promise.all([load(), loadInvoices()]); }
     catch (caught) { setError(messageFrom(caught)); }
     finally { setSaving(false); }
   };

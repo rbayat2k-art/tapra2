@@ -90,54 +90,54 @@ export async function assertLocation(
 export async function listWarehouseOverview(context: MembershipContext): Promise<Record<string, unknown>> {
   requireWarehousePermission(context, 'warehouse.read');
   return withWorkspaceTransaction({ workspaceId: context.workspace.id, companyId: context.company?.id ?? null }, async (client) => {
-    const [warehouses, locations, items, balances, movements, receipts, reservations, allocations, transfers, adjustments, counts, returns, returnLines] = await Promise.all([
-      client.query(`SELECT id, operator_company_id AS "operatorCompanyId", operator_unit_id AS "operatorUnitId", code, name,
+    const [warehouses, locations, items, balances, movements, receipts, reservations, allocations, transfers, adjustments, counts, returns, returnLines] = [
+      await client.query(`SELECT id, operator_company_id AS "operatorCompanyId", operator_unit_id AS "operatorUnitId", code, name,
         description, is_active AS "isActive", created_at AS "createdAt" FROM warehouses ORDER BY name, id`),
-      client.query(`SELECT id, warehouse_id AS "warehouseId", code, name, location_type AS "locationType",
+      await client.query(`SELECT id, warehouse_id AS "warehouseId", code, name, location_type AS "locationType",
         is_active AS "isActive" FROM warehouse_locations ORDER BY warehouse_id, code, id`),
-      client.query(`SELECT id, sku, name, catalog_reference AS "catalogReference", tracking_mode AS "trackingMode", uom,
+      await client.query(`SELECT id, sku, name, catalog_reference AS "catalogReference", tracking_mode AS "trackingMode", uom,
         is_active AS "isActive" FROM inventory_items ORDER BY name, id`),
-      client.query(`SELECT balance.warehouse_id AS "warehouseId", balance.location_id AS "locationId",
+      await client.query(`SELECT balance.warehouse_id AS "warehouseId", balance.location_id AS "locationId",
         balance.stock_identity_id AS "stockIdentityId", balance.owner_company_id AS "ownerCompanyId",
         balance.on_hand_quantity::text AS "onHandQuantity", identity.inventory_item_id AS "inventoryItemId",
         identity.lot_id AS "lotId", identity.serial_id AS "serialId", item.sku, item.name, item.uom
         FROM inventory_balances balance JOIN stock_identities identity ON identity.id = balance.stock_identity_id
         JOIN inventory_items item ON item.id = identity.inventory_item_id
         WHERE balance.on_hand_quantity > 0 ORDER BY item.name, balance.warehouse_id, balance.location_id`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", stock_identity_id AS "stockIdentityId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", stock_identity_id AS "stockIdentityId",
         movement_type AS "movementType", from_warehouse_id AS "fromWarehouseId", from_location_id AS "fromLocationId",
         to_warehouse_id AS "toWarehouseId", to_location_id AS "toLocationId", quantity::text,
         source_type AS "sourceType", source_id AS "sourceId", source_line_id AS "sourceLineId",
         reverses_movement_id AS "reversesMovementId", reason, occurred_at AS "occurredAt"
         FROM inventory_movements ORDER BY occurred_at DESC, id DESC LIMIT 200`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId",
         receiving_location_id AS "receivingLocationId", receipt_type AS "receiptType", status, source_note AS "sourceNote",
         reason, created_at AS "createdAt", posted_at AS "postedAt" FROM warehouse_receipts ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", invoice_id AS "invoiceId", invoice_line_id AS "invoiceLineId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", invoice_id AS "invoiceId", invoice_line_id AS "invoiceLineId",
         invoice_revision AS "invoiceRevision", inventory_item_id AS "inventoryItemId", requested_quantity::text AS "requestedQuantity",
         reserved_quantity::text AS "reservedQuantity", shortage_quantity::text AS "shortageQuantity", status,
         created_at AS "createdAt", released_at AS "releasedAt", release_reason AS "releaseReason"
         FROM inventory_reservations ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, reservation_id AS "reservationId", warehouse_id AS "warehouseId", location_id AS "locationId",
+      await client.query(`SELECT id, reservation_id AS "reservationId", warehouse_id AS "warehouseId", location_id AS "locationId",
         stock_identity_id AS "stockIdentityId", quantity::text, status, created_at AS "createdAt", released_at AS "releasedAt"
         FROM inventory_allocations ORDER BY created_at DESC, id DESC LIMIT 500`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", source_warehouse_id AS "sourceWarehouseId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", source_warehouse_id AS "sourceWarehouseId",
         destination_warehouse_id AS "destinationWarehouseId", source_location_id AS "sourceLocationId",
         destination_location_id AS "destinationLocationId", status, reason, created_at AS "createdAt",
         dispatched_at AS "dispatchedAt", received_at AS "receivedAt" FROM warehouse_transfers ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", location_id AS "locationId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", location_id AS "locationId",
         status, reason, evidence_note AS "evidenceNote", created_at AS "createdAt", submitted_at AS "submittedAt", posted_at AS "postedAt"
         FROM inventory_adjustments ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", location_id AS "locationId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", location_id AS "locationId",
         status, reason, created_at AS "createdAt", submitted_at AS "submittedAt", posted_at AS "postedAt"
         FROM inventory_counts ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", returns_location_id AS "returnsLocationId",
+      await client.query(`SELECT id, owner_company_id AS "ownerCompanyId", warehouse_id AS "warehouseId", returns_location_id AS "returnsLocationId",
         customer_id AS "customerId", invoice_id AS "invoiceId", status, reason, evidence_note AS "evidenceNote",
         created_at AS "createdAt", received_at AS "receivedAt" FROM inventory_returns ORDER BY created_at DESC, id DESC LIMIT 100`),
-      client.query(`SELECT id, return_id AS "returnId", inventory_item_id AS "inventoryItemId", quantity::text,
+      await client.query(`SELECT id, return_id AS "returnId", inventory_item_id AS "inventoryItemId", quantity::text,
         lot_code AS "lotCode", serial_code AS "serialCode", stock_identity_id AS "stockIdentityId"
         FROM inventory_return_lines ORDER BY return_id, line_number, id`),
-    ]);
+    ];
     return {
       warehouses: warehouses.rows, locations: locations.rows, items: items.rows, balances: balances.rows,
       movements: movements.rows, receipts: receipts.rows, reservations: reservations.rows, allocations: allocations.rows,
