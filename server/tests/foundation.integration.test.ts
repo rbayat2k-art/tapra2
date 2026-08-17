@@ -864,6 +864,24 @@ describe('Foundation Sprint 1 vertical slice', () => {
   });
 
   it('reconciles central identities separately from Company relationships with reversible lineage', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_identity_scope_guard_test' });
+    await owner.connect();
+    try {
+      await owner.query(`
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        SELECT $1, $2, role.id, 'COMPANY', $3
+        FROM roles role
+        WHERE role.workspace_id = $1 AND role.code = 'data_steward'
+        ON CONFLICT DO NOTHING
+      `, [
+        '10000000-0000-4000-8000-000000000001',
+        '50000000-0000-4000-8000-000000000001',
+        '20000000-0000-4000-8000-000000000001',
+      ]);
+    } finally {
+      await owner.end();
+    }
+
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
     const alphaCompanyContext = session.memberships.find((item) =>
