@@ -220,6 +220,23 @@ describe('Foundation Sprint 1 vertical slice', () => {
       .expect(({ body }) => expect(body.error.code).toBe('membership_forbidden'));
   });
 
+  it('seeds distinct acceptance personas without granting one universal operational role', async () => {
+    const scenarios = [
+      { email: 'sales-supervisor@tapra.local', password: 'TapraOperations!2026', includes: ['sales.lead.assign', 'sales.invoice.supervisor_approve'], excludes: ['sales.payment.review'] },
+      { email: 'paper-entry@tapra.local', password: 'TapraOperations!2026', includes: ['sales.sale.create_on_behalf', 'sales.invoice.read_all'], excludes: ['sales.sale.create'] },
+      { email: 'finance-review@tapra.local', password: 'TapraFinance!2026', includes: ['sales.payment.review'], excludes: ['sales.payment.record'] },
+      { email: 'customer-operator@tapra.local', password: 'TapraOperations!2026', includes: ['customer.create', 'customer.import.review'], excludes: ['customer.import.approve'] },
+      { email: 'warehouse-operator@tapra.local', password: 'TapraWarehouse!2026', includes: ['warehouse.reservation.manage', 'sales.invoice.read_all'], excludes: ['warehouse.adjustment.approve'] },
+      { email: 'warehouse-approver@tapra.local', password: 'TapraWarehouse!2026', includes: ['warehouse.adjustment.approve', 'warehouse.count.approve'], excludes: ['warehouse.adjustment.create'] },
+    ];
+    for (const scenario of scenarios) {
+      const session = await login(request.agent(createApp()), scenario.email, scenario.password);
+      const permissions = session.memberships.find((membership) => membership.workspace.slug === 'tapra-alpha')?.permissions ?? [];
+      expect(permissions, scenario.email).toEqual(expect.arrayContaining(scenario.includes));
+      for (const permission of scenario.excludes) expect(permissions, scenario.email).not.toContain(permission);
+    }
+  });
+
   it('creates and reads a persistent Customer with validation, idempotency, and AuditEntry', async () => {
     const agent = request.agent(createApp());
     let session = await login(agent, 'demo@tapra.local', 'TapraDemo!2026');
