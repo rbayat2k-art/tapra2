@@ -36,7 +36,6 @@ const ids = {
   customerAlpha: '70000000-0000-4000-8000-000000000001',
   membershipSalesOne: '50000000-0000-4000-8000-000000000004',
   membershipSalesTwo: '50000000-0000-4000-8000-000000000005',
-  roleAlphaSeller: '60000000-0000-4000-8000-000000000005',
   financialAccountAlpha: '80000000-0000-4000-8000-000000000001',
 } as const;
 
@@ -124,12 +123,13 @@ describe('Warehouse Foundation', () => {
     await owner.connect();
     try {
       await owner.query(`
-        INSERT INTO role_permissions(role_id, permission_code)
-        SELECT $1, code FROM permissions WHERE code IN (
-          'warehouse.read', 'warehouse.adjustment.create', 'warehouse.adjustment.approve',
-          'warehouse.count.create', 'warehouse.count.approve'
-        ) ON CONFLICT DO NOTHING
-      `, [ids.roleAlphaSeller]);
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        SELECT $1, $2, role.id, 'COMPANY', $3
+        FROM roles role
+        WHERE role.workspace_id = $1
+          AND role.code IN ('inventory_maker', 'inventory_approver')
+        ON CONFLICT DO NOTHING
+      `, [ids.workspaceAlpha, ids.membershipSalesOne, ids.companyAlpha]);
     } finally {
       await owner.end();
     }

@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: This document for current development setup and commands
 > Owner: Engineering Owner
-> Last validated: 2026-08-11 against `agent/canonical-product-integration`
+> Last validated: 2026-08-17 against `agent/role-permission-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -36,3 +36,11 @@
 | `npm test` | integration test روی `tapra2_test` |
 
 داده seed صرفاً توسعه‌ای است و نباید برای production استفاده شود.
+
+## روش توسعه محصول
+
+ترتیب مصوب توسعه هر vertical slice چنین است و پرش از business contract یا acceptance مجاز نیست:
+
+`Master Blueprint → approved role/workflow → UI → business contract → permission/scope → backend gap → implementation → local product acceptance → regression tests → audit → PR/CI → merge`
+
+هر کار جدید از آخرین `origin/stable` روی branch/worktree ایزوله آغاز می‌شود. `stable` مستقیم تغییر نمی‌کند؛ merge فقط پس از Draft PR، CI و review مستقل انجام می‌شود.

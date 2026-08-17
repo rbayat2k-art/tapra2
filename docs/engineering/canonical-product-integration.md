@@ -3,7 +3,7 @@
 > Status: CURRENT
 > Source of truth: این سند برای وضعیت اجرایی ادغام محصول legacy با Foundation SaaS است.
 > Owner: Product Integration
-> Last validated: 2026-08-16 against `agent/global-operational-shell-hardening`
+> Last validated: 2026-08-17 against `agent/role-permission-foundation`
 > Supersedes: none
 > Superseded by: none
 
@@ -25,6 +25,7 @@ Tapra2 یک shell عملیاتی واحد دارد. ورود، context فعال�
 - هر عنوان، منو، دکمه، فرم، label، tooltip، status، warning، error، success message و confirmation جدید باید فارسی باشد.
 - اصطلاحات فنی English فقط در code، API، database و اسناد فنی باقی می‌مانند.
 - UI عادی نباید نام‌هایی مانند `PostgreSQL`، `localStorage`، `Workspace` یا `Scope` را بدون نیاز کاری صریح به کاربر نمایش دهد؛ این مفاهیم باید با واژگان قابل‌فهم محصول بیان شوند.
+- action فاقد Permission باید مخفی باشد. action دارای Permission که پیش‌شرط کسب‌وکارش برقرار نیست باید غیرفعال بماند و علت روشن فارسی در همان context نمایش داده شود.
 
 این بخش authority قرارداد زبان و نمایش UI است. اسناد و راهنماهای دیگر باید به آن لینک دهند و متن Rule را تکرار نکنند.
 
@@ -61,6 +62,6 @@ login محلی legacy در مسیر عادی قابل‌استفاده نیست.
 - tenant check مرورگر: Company بتا Customer نمونه بتا را دید و Customer نمونه آلفا را ندید.
 - browser console: بدون warning/error در سناریوی بررسی‌شده؛ یک `<main>` و بدون overflow افقی در desktop/mobile.
 
-پوسته عملیاتی علاوه بر enforcement مستقل Backend، View و action فاقد Permission را نمایش نمی‌دهد. خطاهای API در client متمرکز به پیام امن فارسی برگردانده می‌شوند و متن خام یا فنی Backend در UI عادی نمایش داده نمی‌شود. این کنترل‌های نمایشی مرز امنیتی جایگزین server نیستند.
+پوسته عملیاتی علاوه بر enforcement مستقل Backend، View و action فاقد Permission را نمایش نمی‌دهد. Warehouse Foundation نیز mutationها را به permission جزئی همان action محدود می‌کند؛ پیش‌شرط ناقص، دکمهٔ مجاز را با علت فارسی غیرفعال می‌کند. خطاهای API در client متمرکز به پیام امن فارسی برگردانده می‌شوند و متن خام یا فنی Backend در UI عادی نمایش داده نمی‌شود. این کنترل‌های نمایشی مرز امنیتی جایگزین server نیستند.
 
 این validation گواه production readiness کامل نیست. ماژول‌های prototype-backed باید به‌ترتیب vertical slice به Backend منتقل شوند.

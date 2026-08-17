@@ -757,14 +757,14 @@ describe('Sales Backend Vertical Slice 1', () => {
     });
   });
 
-  it('lets an on-behalf workspace admin select valid sellers without Lead assignment authority', async () => {
+  it('lets a PAPER_ENTRY operator select valid sellers without Lead assignment authority', async () => {
     const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_sale_seller_lookup_test' });
     const onBehalfRoleId = randomUUID();
     await owner.connect();
     try {
       await owner.query(`
         INSERT INTO roles(id, workspace_id, code, name)
-        VALUES ($1, $2, 'workspace_admin_on_behalf_test', 'مدیر فضای کاری ثبت کاغذی')
+        VALUES ($1, $2, 'paper_entry_operator_test', 'اپراتور ثبت کاغذی آزمون')
       `, [onBehalfRoleId, ids.workspaceAlpha]);
       await owner.query(`
         INSERT INTO role_permissions(role_id, permission_code)
@@ -886,13 +886,16 @@ describe('Sales Backend Vertical Slice 1', () => {
     await owner.connect();
     try {
       await owner.query(`
-        INSERT INTO role_permissions(role_id, permission_code)
-        VALUES
-          ('60000000-0000-4000-8000-000000000005', 'sales.payment.review'),
-          ('60000000-0000-4000-8000-000000000005', 'sales.invoice.read_all'),
-          ('60000000-0000-4000-8000-000000000006', 'sales.invoice.read_own')
+        INSERT INTO role_assignments(workspace_id, membership_id, role_id, scope_type, company_id)
+        SELECT $1, target.membership_id, role.id, 'COMPANY', $2
+        FROM (VALUES ($3::uuid), ($4::uuid)) AS target(membership_id)
+        CROSS JOIN LATERAL (
+          SELECT id FROM roles
+          WHERE workspace_id = $1 AND code = 'financial_reviewer'
+          ORDER BY created_at, id LIMIT 1
+        ) role
         ON CONFLICT DO NOTHING
-      `);
+      `, [ids.workspaceAlpha, ids.companyAlpha, ids.membershipSalesOne, ids.membershipSalesTwo]);
     } finally {
       await owner.end();
     }

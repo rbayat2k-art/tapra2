@@ -8,6 +8,7 @@ import { resetEnvironmentForTests } from '../src/config/env.js';
 import { closePool, withTenantTransaction } from '../src/infrastructure/database/pool.js';
 import { runMigrations } from '../scripts/migrate.js';
 import { assertSafeSeedTarget, seedDatabase } from '../scripts/seed.js';
+import { CURRENT_ROLE_BUNDLES } from '../src/modules/access/current-role-bundles.js';
 import { normalizeIdentityText, normalizePhone, parseCustomerImportCsv } from '../src/modules/customer-imports/csv-parser.js';
 
 interface SessionResponse {
@@ -196,6 +197,42 @@ describe('Foundation Sprint 1 vertical slice', () => {
     expect(() => assertSafeSeedTarget('postgresql://postgres:placeholder@localhost:5432/tapra2_dev', 'tapra2_owner', 'development')).toThrow(/tapra2_owner/);
     expect(assertSafeSeedTarget(ownerDev, 'tapra2_owner', 'development')).toEqual({ database: 'tapra2_dev' });
     expect(assertSafeSeedTarget(appTest, 'tapra2_app', 'test')).toEqual({ database: 'tapra2_test' });
+  });
+
+  it('synchronizes least-privilege CURRENT bundles without seed overgrant', async () => {
+    const owner = new Client({ connectionString: migrationUrl, application_name: 'tapra2_role_bundle_seed_test' });
+    await owner.connect();
+    try {
+      const result = await owner.query<{ workspace_id: string; code: string; permissions: string[] }>(`
+        SELECT role.workspace_id, role.code,
+               coalesce(array_agg(role_permission.permission_code ORDER BY role_permission.permission_code)
+                 FILTER (WHERE role_permission.permission_code IS NOT NULL), ARRAY[]::text[]) AS permissions
+        FROM roles role
+        LEFT JOIN role_permissions role_permission ON role_permission.role_id = role.id
+        WHERE role.code = ANY($1::text[])
+        GROUP BY role.workspace_id, role.code
+        ORDER BY role.workspace_id, role.code
+      `, [CURRENT_ROLE_BUNDLES.map((bundle) => bundle.code)]);
+
+      expect(result.rows).toHaveLength(CURRENT_ROLE_BUNDLES.length * 2);
+      for (const row of result.rows) {
+        const bundle = CURRENT_ROLE_BUNDLES.find((candidate) => candidate.code === row.code);
+        expect(bundle, row.code).toBeDefined();
+        expect(row.permissions, row.code).toEqual([...bundle!.permissions].sort());
+      }
+
+      const workspaceAdmin = result.rows.find((row) => row.code === 'workspace_admin');
+      expect(workspaceAdmin?.permissions).toHaveLength(7);
+      expect(workspaceAdmin?.permissions.every((permission) => permission.startsWith('organization.'))).toBe(true);
+      for (const row of result.rows) {
+        const granted = new Set(row.permissions);
+        expect(granted.has('sales.payment.record') && granted.has('sales.payment.review'), row.code).toBe(false);
+        expect(granted.has('warehouse.adjustment.create') && granted.has('warehouse.adjustment.approve'), row.code).toBe(false);
+        expect(granted.has('warehouse.count.create') && granted.has('warehouse.count.approve'), row.code).toBe(false);
+      }
+    } finally {
+      await owner.end();
+    }
   });
 
   it('rejects unauthenticated customer reads', async () => {

@@ -554,3 +554,20 @@ Payment برگشتی پس از ساخته‌شدن correction همچنان `need
 
 **Impact:**
 هیچ history، review reason یا Audit حذف نمی‌شود؛ migrationهای `0015`، `0016` و `0017` بازنویسی نمی‌شوند. هر lineage ناقص در زمان migration fail-safe متوقف می‌شود تا تبدیل مبهم یا مخرب انجام نشود.
+
+---
+
+### Date: 2026-08-17
+
+**Title:** Role and Permission Foundation approved as least-privilege CURRENT bundles
+
+**Context:**
+seed توسعه Roleهای `workspace_admin` و `customer_manager` را با permissionهای چند دامنه ترکیب می‌کرد و UI انبار با داشتن `warehouse.read` همه فرم‌های mutation را نشان می‌داد. این دادهٔ توسعه نباید طراحی Role تولیدی تلقی می‌شد و قرارداد maker-checker باید در packaging و presentation نیز روشن می‌ماند.
+
+**Decision:**
+authorization فقط از `Permission + Scope + Resource Policy` می‌آید و Role نام یک bundle convenience است. Workspace Admin فقط هفت permission سازمانی دارد. Seller، Sales Supervisor، Sales Manager و PAPER_ENTRY Operator جدا هستند؛ Payment Recorder از Financial Reviewer و Inventory Maker از Inventory Approver جداست. Senior Sales Supervisor و Sales Deputy با Role مدیریتی و Scope گسترده‌تر مدل می‌شوند و تا تصویب مسئولیت متمایز Role تازه نمی‌گیرند. Scope پشتیبانی‌نشده fail-closed و approval حساس در Impersonation ممنوع می‌ماند. ماژول‌های Legacy/Prototype صرفاً به‌عنوان دانش حفظ می‌شوند و با این foundation authority تولیدی نمی‌گیرند.
+
+UI action فاقد permission را مخفی می‌کند؛ action مجاز با business precondition ناقص غیرفعال و همراه علت روشن فارسی است. seed bundleها را از catalog CURRENT همگام می‌کند و کاربر demo فقط برای پوشش integration چند bundle مستقل می‌گیرد.
+
+**Impact:**
+هیچ permission code یا migration تازه‌ای ساخته نشد. overgrant Roleهای seed حذف، bundleهای CURRENT قابل‌تست و actionهای Warehouse permission-aware شدند. maker-checker Backend و ممنوعیت Impersonation بدون تضعیف باقی ماندند؛ Treasury، Support، Chat، Letters، Communications، Catalog، Campaign، Coordination و Fulfillment ارتقا نیافتند.
